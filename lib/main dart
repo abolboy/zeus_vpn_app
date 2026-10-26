@@ -1,21 +1,207 @@
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
+import 'package:flutter_v2ray_client/flutter_v2ray_client.dart';
+import 'dart:convert';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const ZeusVpnApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class ZeusVpnApp extends StatelessWidget {
+  const ZeusVpnApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'ZEUS VPN',
-      theme: ThemeData.dark(),
-      home: Scaffold(
-        appBar: AppBar(title: const Text('ZEUS VPN')),
-        body: const Center(
-          child: Text('اپ آماده است!', style: TextStyle(fontSize: 20)),
+      theme: ThemeData.dark().copyWith(
+        primaryColor: Colors.blueAccent,
+        scaffoldBackgroundColor: const Color(0xFF121212),
+      ),
+      home: const VpnHomePage(),
+    );
+  }
+}
+
+class VpnHomePage extends StatefulWidget {
+  const VpnHomePage({super.key});
+
+  @override
+  State<VpnHomePage> createState() => _VpnHomePageState();
+}
+
+class _VpnHomePageState extends State<VpnHomePage> {
+  final TextEditingController _subController = TextEditingController();
+  final Dio _dio = Dio();
+  
+  List<String> _configs = [];
+  String? _selectedConfig;
+  
+  bool _isLoading = false;
+  bool _isConnected = false;
+  String _status = 'قطع';
+
+  late FlutterV2ray _v2ray;
+
+  @override
+  void initState() {
+    super.initState();
+    _v2ray = FlutterV2ray(
+      onStatusChanged: (status) {
+        setState(() {
+          _status = status.state;
+          _isConnected = (status.state == 'CONNECTED');
+        });
+      },
+    );
+    _v2ray.initializeV2Ray();
+  }
+
+  // دریافت لینک‌ها از پنل ZEUS
+  Future<void> _fetchConfigs() async {
+    if (_subController.text.isEmpty) return;
+    
+    setState(() {
+      _isLoading = true;
+      _configs = [];
+    });
+
+    try {
+      final response = await _dio.get(
+        _subController.text.trim(),
+        options: Options(headers: {'User-Agent': 'v2rayNG/1.8.5'}),
+      );
+
+      String body = response.data.toString().trim();
+      
+      // تلاش برای دیکد کردن Base64 (استاندارد لینک‌های اشتراک)
+      try {
+        body = utf8.decode(base64.decode(base64.normalize(body)));
+      } catch (_) {
+        // اگر پلین بود، همون رو استفاده کن
+      }
+
+      final links = body.split('\n')
+          .map((e) => e.trim())
+          .where((e) => e.startsWith('vless://') || e.startsWith('trojan://') || e.startsWith('vmess://'))
+          .toList();
+
+      setState(() {
+        _configs = links;
+        if (_configs.isNotEmpty) {
+          _selectedConfig = _configs.first;
+        }
+      });
+    } catch (e) {
+      _showSnackBar('خطا در دریافت لینک‌ها: $e');
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // اتصال به VPN
+  Future<void> _toggleConnection() async {
+    if (_isConnected) {
+      await _v2ray.stopV2Ray();
+      return;
+    }
+
+    if (_selectedConfig == null) {
+      _showSnackBar('لطفاً ابتدا لینک اشتراک را دریافت کنید.');
+      return;
+    }
+
+    final hasPermission = await _v2ray.requestPermission();
+    if (!hasPermission) {
+      _showSnackBar('دسترسی VPN داده نشد.');
+      return;
+    }
+
+    await _v2ray.startV2Ray(
+      remark: 'ZEUS Server',
+      config: _selectedConfig!,
+      proxyOnly: false,
+    );
+  }
+
+  void _showSnackBar(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('ZEUS VPN'),
+        centerTitle: true,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _subController,
+              decoration: const InputDecoration(
+                labelText: 'لینک اشتراک (Sub Link)',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.link),
+              ),
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              onPressed: _isLoading ? null : _fetchConfigs,
+              icon: const Icon(Icons.download),
+              label: Text(_isLoading ? 'در حال دریافت...' : 'دریافت سرورها'),
+            ),
+            const SizedBox(height: 24),
+            
+            if (_configs.isNotEmpty)
+              DropdownButtonFormField<String>(
+                value: _selectedConfig,
+                decoration: const InputDecoration(
+                  labelText: 'انتخاب سرور',
+                  border: OutlineInputBorder(),
+                ),
+                items: _configs.map((config) {
+                  final name = config.split('#').last;
+                  return DropdownMenuItem(
+                    value: config,
+                    child: Text(name.length > 30 ? name.substring(0, 30) : name, overflow: TextOverflow.ellipsis),
+                  );
+                }).toList(),
+                onChanged: (val) => setState(() => _selectedConfig = val),
+              ),
+            
+            const Spacer(),
+            
+            Text(
+              'وضعیت: $_status',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: _isConnected ? Colors.green : Colors.red,
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            SizedBox(
+              height: 60,
+              child: ElevatedButton(
+                onPressed: _toggleConnection,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _isConnected ? Colors.red : Colors.green,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                ),
+                child: Text(
+                  _isConnected ? 'قطع اتصال' : 'اتصال',
+                  style: const TextStyle(fontSize: 20, color: Colors.white),
+                ),
+              ),
+            ),
+            const SizedBox(height: 32),
+          ],
         ),
       ),
     );
