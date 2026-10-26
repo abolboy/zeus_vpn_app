@@ -1,0 +1,15 @@
+name: zeus_vpn
+description: A VPN app using Zeus Panel.
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_v2ray_client: ^3.2.0
+  dio: ^5.4.0
+
+flutter:
+  uses-material-design: true
