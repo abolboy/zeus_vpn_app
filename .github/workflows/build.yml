@@ -198,12 +198,14 @@ jobs:
             }
           }
           EOF
-          
-      - name: Patch AndroidManifest for VPN
+
+      - name: Patch Gradle and Manifest for VPN
         run: |
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-          sed -i 's/<application/<application android:extractNativeLibs="true" android:usesCleartextTraffic="true"/' $MANIFEST
-          echo "Manifest updated successfully"
+          # ۱. اضافه کردن استفاده از اینترنت بدون SSL به مانیفست (برای برخی کانفیگ‌ها)
+          sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
+          
+          # ۲. اضافه کردن تنظیم useLegacyPackaging در فایل build.gradle.kts (راه‌حل جدید گوگل)
+          sed -i 's/android {/android {\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' android/app/build.gradle.kts
           
       - name: Install dependencies
         run: flutter pub get
