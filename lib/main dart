@@ -14,7 +14,8 @@ class ZeusVpnApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'ZEUS VPN',
-      theme: ThemeData.dark().copyWith(
+      theme: ThemeData(
+        brightness: Brightness.dark,
         primaryColor: Colors.blueAccent,
         scaffoldBackgroundColor: const Color(0xFF121212),
       ),
@@ -94,7 +95,6 @@ class _VpnHomePageState extends State<VpnHomePage> {
     final hasPermission = await _v2ray.requestPermission();
     if (!hasPermission) { _showSnackBar('دسترسی VPN داده نشد.'); return; }
 
-    // با flutter_v2ray باید کانفیگ رو پارس کنیم
     final parser = FlutterV2ray.parseFromURL(_selectedConfig!);
     await _v2ray.startV2Ray(
       remark: 'ZEUS Server',
