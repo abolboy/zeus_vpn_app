@@ -34,6 +34,7 @@ jobs:
           import 'package:dio/dio.dart';
           import 'package:flutter_v2ray/flutter_v2ray.dart';
           import 'dart:convert';
+          import 'dart:io';
 
           void main() {
             runApp(const ZeusVpnApp());
@@ -68,10 +69,14 @@ jobs:
             final Dio _dio = Dio();
             
             List<String> _configs = [];
+            Map<String, int> _latencies = {}; // برای ذخیره پینگ هر سرور
             String? _selectedConfig;
+            
             bool _isLoading = false;
             bool _isConnected = false;
+            bool _isTestingSpeed = false;
             String _status = 'قطع';
+            String _speedResult = '';
 
             late FlutterV2ray _v2ray;
 
@@ -83,15 +88,21 @@ jobs:
                   setState(() {
                     _status = status.state;
                     _isConnected = (status.state == 'CONNECTED');
+                    if (!_isConnected) _speedResult = ''; // پاک کردن نتیجه سرعت بعد از قطع شدن
                   });
                 },
               );
               _v2ray.initializeV2Ray();
             }
 
+            // ۱. دریافت سرورها و شروع خودکار تست پینگ
             Future<void> _fetchConfigs() async {
               if (_subController.text.isEmpty) return;
-              setState(() { _isLoading = true; _configs = []; });
+              setState(() { 
+                _isLoading = true; 
+                _configs = []; 
+                _latencies = {}; 
+              });
 
               try {
                 final response = await _dio.get(
@@ -113,6 +124,10 @@ jobs:
                   _configs = links;
                   if (_configs.isNotEmpty) _selectedConfig = _configs.first;
                 });
+
+                // شروع تست پینگ برای تمام سرورها
+                _testAllLatencies();
+
               } catch (e) {
                 _showSnackBar('خطا در دریافت لینک‌ها: $e');
               } finally {
@@ -120,6 +135,63 @@ jobs:
               }
             }
 
+            // ۲. محاسبه تاخیر (Ping) با استفاده از اتصال Socket
+            Future<void> _testAllLatencies() async {
+              for (String config in _configs) {
+                try {
+                  final uri = Uri.parse(config);
+                  final host = uri.host;
+                  final port = uri.port;
+
+                  final stopwatch = Stopwatch()..start();
+                  final socket = await Socket.connect(host, port, timeout: const Duration(seconds: 3));
+                  stopwatch.stop();
+                  socket.destroy();
+
+                  setState(() {
+                    _latencies[config] = stopwatch.elapsedMilliseconds;
+                  });
+                } catch (e) {
+                  setState(() {
+                    _latencies[config] = -1; // -1 یعنی تایم اوت یا خطا
+                  });
+                }
+              }
+            }
+
+            // ۳. تست سرعت (فقط در حالت متصل)
+            Future<void> _testSpeed() async {
+              setState(() {
+                _isTestingSpeed = true;
+                _speedResult = 'در حال تست...';
+              });
+
+              try {
+                final stopwatch = Stopwatch()..start();
+                // دانلود ۵ مگابایت از سرور کلادفلر برای تست سرعت
+                final response = await _dio.get(
+                  'https://speed.cloudflare.com/__down?bytes=5000000',
+                  options: Options(responseType: ResponseType.bytes),
+                );
+                stopwatch.stop();
+
+                double seconds = stopwatch.elapsedMilliseconds / 1000.0;
+                double bytes = response.data.length.toDouble();
+                double mbps = ((bytes * 8) / (seconds * 1024 * 1024)).toStringAsFixed(2) as double;
+
+                setState(() {
+                  _speedResult = '$mbps Mbps';
+                });
+              } catch (e) {
+                setState(() {
+                  _speedResult = 'خطا در تست سرعت';
+                });
+              } finally {
+                setState(() => _isTestingSpeed = false);
+              }
+            }
+
+            // ۴. اتصال و قطع اتصال
             Future<void> _toggleConnection() async {
               if (_isConnected) { await _v2ray.stopV2Ray(); return; }
               if (_selectedConfig == null) { _showSnackBar('لطفاً ابتدا لینک اشتراک را دریافت کنید.'); return; }
@@ -163,22 +235,77 @@ jobs:
                         label: Text(_isLoading ? 'در حال دریافت...' : 'دریافت سرورها'),
                       ),
                       const SizedBox(height: 24),
+                      
+                      // لیست سرورها به همراه نمایش پینگ
                       if (_configs.isNotEmpty)
-                        DropdownButtonFormField<String>(
-                          value: _selectedConfig,
-                          decoration: const InputDecoration(labelText: 'انتخاب سرور', border: OutlineInputBorder()),
-                          items: _configs.map((config) {
-                            final name = config.split('#').last;
-                            return DropdownMenuItem(
-                              value: config,
-                              child: Text(name.length > 30 ? name.substring(0, 30) : name, overflow: TextOverflow.ellipsis),
-                            );
-                          }).toList(),
-                          onChanged: (val) => setState(() => _selectedConfig = val),
+                        Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              isExpanded: true,
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              value: _selectedConfig,
+                              items: _configs.map((config) {
+                                final name = config.split('#').last;
+                                final ping = _latencies[config];
+                                String pingText = '';
+                                Color pingColor = Colors.grey;
+                                if (ping != null) {
+                                  if (ping == -1) {
+                                    pingText = 'TimeOut';
+                                    pingColor = Colors.red;
+                                  } else {
+                                    pingText = '$ping ms';
+                                    pingColor = ping < 200 ? Colors.green : (ping < 500 ? Colors.orange : Colors.red);
+                                  }
+                                }
+
+                                return DropdownMenuItem(
+                                  value: config,
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Expanded(child: Text(name, overflow: TextOverflow.ellipsis)),
+                                      if (pingText.isNotEmpty)
+                                        Text(pingText, style: TextStyle(color: pingColor, fontSize: 12)),
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: (val) => setState(() => _selectedConfig = val),
+                            ),
+                          ),
                         ),
+                      
                       const Spacer(),
+                      
+                      // نمایش نتیجه تست سرعت
+                      if (_speedResult.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: Text('سرعت دانلود: $_speedResult', 
+                            textAlign: TextAlign.center, 
+                            style: const TextStyle(fontSize: 16, color: Colors.blueAccent, fontWeight: FontWeight.bold)),
+                        ),
+
                       Text('وضعیت: $_status', textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _isConnected ? Colors.green : Colors.red)),
                       const SizedBox(height: 16),
+                      
+                      // دکمه تست سرعت (فقط وقتی وصل هستیم نمایش داده می‌شود)
+                      if (_isConnected)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: ElevatedButton.icon(
+                            onPressed: _isTestingSpeed ? null : _testSpeed,
+                            icon: const Icon(Icons.speed),
+                            label: Text(_isTestingSpeed ? 'در حال تست...' : 'تست سرعت اینترنت'),
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey),
+                          ),
+                        ),
+
                       SizedBox(
                         height: 60,
                         child: ElevatedButton(
@@ -201,10 +328,7 @@ jobs:
 
       - name: Patch Gradle and Manifest for VPN
         run: |
-          # ۱. اضافه کردن استفاده از اینترنت بدون SSL به مانیفست (برای برخی کانفیگ‌ها)
           sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
-          
-          # ۲. اضافه کردن تنظیم useLegacyPackaging در فایل build.gradle.kts (راه‌حل جدید گوگل)
           sed -i 's/android {/android {\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' android/app/build.gradle.kts
           
       - name: Install dependencies
