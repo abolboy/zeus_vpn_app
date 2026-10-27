@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
-import 'package:flutter_v2ray_client/flutter_v2ray_client.dart';
+import 'package:flutter_v2ray/flutter_v2ray.dart';
 import 'dart:convert';
 
 void main() {
@@ -36,7 +36,6 @@ class _VpnHomePageState extends State<VpnHomePage> {
   
   List<String> _configs = [];
   String? _selectedConfig;
-  
   bool _isLoading = false;
   bool _isConnected = false;
   String _status = 'قطع';
@@ -57,14 +56,9 @@ class _VpnHomePageState extends State<VpnHomePage> {
     _v2ray.initializeV2Ray();
   }
 
-  // دریافت لینک‌ها از پنل ZEUS
   Future<void> _fetchConfigs() async {
     if (_subController.text.isEmpty) return;
-    
-    setState(() {
-      _isLoading = true;
-      _configs = [];
-    });
+    setState(() { _isLoading = true; _configs = []; });
 
     try {
       final response = await _dio.get(
@@ -73,13 +67,9 @@ class _VpnHomePageState extends State<VpnHomePage> {
       );
 
       String body = response.data.toString().trim();
-      
-      // تلاش برای دیکد کردن Base64 (استاندارد لینک‌های اشتراک)
       try {
         body = utf8.decode(base64.decode(base64.normalize(body)));
-      } catch (_) {
-        // اگر پلین بود، همون رو استفاده کن
-      }
+      } catch (_) {}
 
       final links = body.split('\n')
           .map((e) => e.trim())
@@ -88,9 +78,7 @@ class _VpnHomePageState extends State<VpnHomePage> {
 
       setState(() {
         _configs = links;
-        if (_configs.isNotEmpty) {
-          _selectedConfig = _configs.first;
-        }
+        if (_configs.isNotEmpty) _selectedConfig = _configs.first;
       });
     } catch (e) {
       _showSnackBar('خطا در دریافت لینک‌ها: $e');
@@ -99,27 +87,18 @@ class _VpnHomePageState extends State<VpnHomePage> {
     }
   }
 
-  // اتصال به VPN
   Future<void> _toggleConnection() async {
-    if (_isConnected) {
-      await _v2ray.stopV2Ray();
-      return;
-    }
-
-    if (_selectedConfig == null) {
-      _showSnackBar('لطفاً ابتدا لینک اشتراک را دریافت کنید.');
-      return;
-    }
+    if (_isConnected) { await _v2ray.stopV2Ray(); return; }
+    if (_selectedConfig == null) { _showSnackBar('لطفاً ابتدا لینک اشتراک را دریافت کنید.'); return; }
 
     final hasPermission = await _v2ray.requestPermission();
-    if (!hasPermission) {
-      _showSnackBar('دسترسی VPN داده نشد.');
-      return;
-    }
+    if (!hasPermission) { _showSnackBar('دسترسی VPN داده نشد.'); return; }
 
+    // با flutter_v2ray باید کانفیگ رو پارس کنیم
+    final parser = FlutterV2ray.parseFromURL(_selectedConfig!);
     await _v2ray.startV2Ray(
       remark: 'ZEUS Server',
-      config: _selectedConfig!,
+      config: parser.getFullConfiguration(),
       proxyOnly: false,
     );
   }
@@ -131,10 +110,7 @@ class _VpnHomePageState extends State<VpnHomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('ZEUS VPN'),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('ZEUS VPN'), centerTitle: true),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -155,14 +131,10 @@ class _VpnHomePageState extends State<VpnHomePage> {
               label: Text(_isLoading ? 'در حال دریافت...' : 'دریافت سرورها'),
             ),
             const SizedBox(height: 24),
-            
             if (_configs.isNotEmpty)
               DropdownButtonFormField<String>(
                 value: _selectedConfig,
-                decoration: const InputDecoration(
-                  labelText: 'انتخاب سرور',
-                  border: OutlineInputBorder(),
-                ),
+                decoration: const InputDecoration(labelText: 'انتخاب سرور', border: OutlineInputBorder()),
                 items: _configs.map((config) {
                   final name = config.split('#').last;
                   return DropdownMenuItem(
@@ -172,20 +144,9 @@ class _VpnHomePageState extends State<VpnHomePage> {
                 }).toList(),
                 onChanged: (val) => setState(() => _selectedConfig = val),
               ),
-            
             const Spacer(),
-            
-            Text(
-              'وضعیت: $_status',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: _isConnected ? Colors.green : Colors.red,
-              ),
-            ),
+            Text('وضعیت: $_status', textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _isConnected ? Colors.green : Colors.red)),
             const SizedBox(height: 16),
-            
             SizedBox(
               height: 60,
               child: ElevatedButton(
@@ -194,10 +155,7 @@ class _VpnHomePageState extends State<VpnHomePage> {
                   backgroundColor: _isConnected ? Colors.red : Colors.green,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
                 ),
-                child: Text(
-                  _isConnected ? 'قطع اتصال' : 'اتصال',
-                  style: const TextStyle(fontSize: 20, color: Colors.white),
-                ),
+                child: Text(_isConnected ? 'قطع اتصال' : 'اتصال', style: const TextStyle(fontSize: 20, color: Colors.white)),
               ),
             ),
             const SizedBox(height: 32),
@@ -206,3 +164,4 @@ class _VpnHomePageState extends State<VpnHomePage> {
       ),
     );
   }
+}
