@@ -27,7 +27,6 @@ jobs:
       - name: Generate Android files
         run: flutter create --platforms=android .
         
-      # 🌟 تولید کلید کاملاً تمیز و ثابت برای آپدیت‌های آینده (بدون خطای already exists)
       - name: Setup Fixed Keystore
         run: |
           rm -rf ~/.android
@@ -55,9 +54,12 @@ jobs:
             uses-material-design: true
           EOF
           
-      - name: Inject Custom main.dart
+      - name: Write main.dart using Python
         run: |
-          cat << 'EOF' > lib/main.dart
+          python3 - << 'PYEOF'
+          import textwrap
+          
+          content = textwrap.dedent('''
           import 'package:flutter/material.dart';
           import 'package:dio/dio.dart';
           import 'package:flutter_v2ray_client/flutter_v2ray.dart';
@@ -105,7 +107,6 @@ jobs:
             });
           }
 
-          // 🌟 مدل کامل تنظیمات PattNG
           class PattSettings {
             String fingerprint;
             String fragment;
@@ -312,7 +313,6 @@ jobs:
               } catch (_) { return 'Unknown Server'; }
             }
 
-            // 🚀 اعمال کامل تنظیمات PattNG روی کانفیگ
             String _applyPattNGSettings(String configUri) {
               try {
                 final uri = Uri.parse(configUri);
@@ -372,7 +372,6 @@ jobs:
             Future<void> _fetchAllConfigs() async {
               if (_subUrls.isEmpty) return;
               
-              // 🔧 ذخیره انتخاب قبلی برای جلوگیری از باگ ریست شدن
               String? previousSelection = _selectedNodeUri;
 
               setState(() { 
@@ -415,7 +414,6 @@ jobs:
               setState(() {
                 _allNodes = fetchedNodes;
                 
-                // 🔧 بازگرداندن انتخاب قبلی یا انتخاب اولین نود
                 if (previousSelection != null && _allNodes.any((n) => n.rawUri == previousSelection)) {
                   _selectedNodeUri = previousSelection;
                 } else if (_allNodes.isNotEmpty) {
@@ -517,7 +515,6 @@ jobs:
               );
             }
 
-            // 🚀 پنل کامل تنظیمات PattNG
             void _showPattSettingsPanel() {
               showModalBottomSheet(
                 context: context,
@@ -733,7 +730,6 @@ jobs:
               );
             }
 
-            // 🚀 مدیریت اشتراک‌ها
             void _showSubscriptionManager() {
               TextEditingController newSubController = TextEditingController();
               
@@ -878,7 +874,6 @@ jobs:
               );
             }
 
-            // 🚀 نمایش لیست سرورها با رفع کامل باگ انتخاب
             void _showServerListModal() {
               showModalBottomSheet(
                 context: context,
@@ -911,13 +906,10 @@ jobs:
 
                                   return GestureDetector(
                                     onTap: () {
-                                      // 🔧 رفع باگ: آپدیت انتخاب در صفحه اصلی
                                       setState(() {
                                         _selectedNodeUri = node.rawUri;
                                       });
-                                      // 🔧 رفرش کردن BottomSheet
                                       setModalState(() {});
-                                      // بستن منو (صفحه اصلی به طور خودکار با setState بالا رفرش می‌شود)
                                       Navigator.pop(context);
                                     },
                                     child: AnimatedContainer(
@@ -964,7 +956,6 @@ jobs:
                   );
                 }
               ).then((_) {
-                // 🔧 بعد از بسته شدن منو، یک بار دیگر صفحه اصلی را رفرش می‌کنیم تا مطمئن شویم UI آپدیت شده است.
                 if (mounted) setState(() {});
               });
             }
@@ -1257,8 +1248,12 @@ jobs:
             @override
             bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
           }
-          EOF
-
+          ''')
+          
+          with open('lib/main.dart', 'w', encoding='utf-8') as f:
+              f.write(content)
+          PYEOF
+          
       - name: Patch AndroidManifest for VPN & Notifications
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
