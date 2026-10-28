@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'dart:math';
-
 const Color neonCyan = Color(0xFF00F0FF);
 const Color neonMagenta = Color(0xFFFF007F);
 const Color neonGreen = Color(0xFF00FF88);
