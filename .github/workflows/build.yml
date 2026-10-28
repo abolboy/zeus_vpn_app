@@ -54,70 +54,13 @@ jobs:
             uses-material-design: true
           EOF
           
-      - name: Patch Gradle Settings for V2Ray Native Libraries
+      - name: Patch AndroidManifest
         run: |
-          python3 - << 'PYEOF'
-          import os
+          sed -i 's/<application/<uses-permission android:name="android.permission.POST_NOTIFICATIONS"\/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"\/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"\/>\n    <application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
           
-          # 1. Patch android/gradle.properties
-          gradle_props = "android/gradle.properties"
-          with open(gradle_props, "a") as f:
-              f.write("\nandroid.bundle.enableUncompressedNativeLibs=false\n")
-
-          # 2. Patch android/app/build.gradle.kts
-          gradle_file = "android/app/build.gradle.kts"
-          with open(gradle_file, "r") as f:
-              content = f.read()
-
-          # Insert packagingOptions & abiFilters
-          patch_code = """
-          packaging {
-              jniLibs {
-                  useLegacyPackaging = true
-              }
-          }
-          splits {
-              abi {
-                  isEnable = true
-                  reset()
-                  include("x86_64", "armeabi-v7a", "arm64-v8a")
-                  isUniversalApk = true
-              }
-          }
-          """
-
-          if "useLegacyPackaging" not in content:
-              content = content.replace("android {", "android {\n" + patch_code)
-
-          release_ndk = """
-          ndk {
-              abiFilters.addAll(listOf("x86_64", "armeabi-v7a", "arm64-v8a"))
-              debugSymbolLevel = "FULL"
-          }
-          """
-          if "abiFilters" not in content:
-              content = content.replace("buildTypes {", "buildTypes {\n        release {\n" + release_ndk + "\n        }")
-
-          with open(gradle_file, "w") as f:
-              f.write(content)
-
-          # 3. Patch AndroidManifest.xml
-          manifest_file = "android/app/src/main/AndroidManifest.xml"
-          with open(manifest_file, "r") as f:
-              manifest_content = f.read()
-
-          permissions = """<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
-              """
-
-          if "POST_NOTIFICATIONS" not in manifest_content:
-              manifest_content = manifest_content.replace("<application", permissions + "\n    <application android:usesCleartextTraffic=\"true\"")
-
-          with open(manifest_file, "w") as f:
-              f.write(manifest_content)
-          print("Android configurations patched successfully.")
-          PYEOF
+      - name: Patch Gradle
+        run: |
+          sed -i 's/android {/android {\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' android/app/build.gradle.kts
           
       - name: Install dependencies
         run: flutter pub get
