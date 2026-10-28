@@ -33,18 +33,16 @@ jobs:
           mkdir -p ~/.android
           keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           
+      - name: Patch Android Files (Permissions & Gradle)
+        run: |
+          # اضافه کردن دسترسی‌های اینترنت، نوتیفیکیشن و فورگراند سرویس
+          sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>\n    <application android:extractNativeLibs="true" android:usesCleartextTraffic="true"|' android/app/src/main/AndroidManifest.xml
+          
+          # اصلاح ساختار Gradle برای اجرای هسته بومی (Native) پکیج V2Ray
+          sed -i 's/android {/android {\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' android/app/build.gradle.kts
+          
       - name: Install dependencies
         run: flutter pub get
-        
-      - name: Patch AndroidManifest for VPN & Notifications
-        run: |
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-          sed -i 's/<application/<uses-permission android:name="android.permission.POST_NOTIFICATIONS"\/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"\/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"\/>\n    <application android:usesCleartextTraffic="true"/' $MANIFEST
-          
-      - name: Patch Gradle for VPN
-        run: |
-          GRADLE_FILE="android/app/build.gradle.kts"
-          sed -i 's/android {/android {\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' $GRADLE_FILE
         
       - name: Build APK
         run: flutter build apk --release --no-tree-shake-icons
