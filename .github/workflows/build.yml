@@ -24,23 +24,13 @@ jobs:
           channel: 'stable'
           cache: true
           
-      - name: Generate Android files
-        run: flutter create --platforms=android --org com.zeus .
+      - name: Generate Android files (Default Package)
+        run: flutter create --platforms=android .
         
-      # 🌟 کش کردن کلید برای آپدیت بدون حذف نسخه قبلی
-      - name: Cache Android Debug Keystore
-        uses: actions/cache@v4
-        id: keystore-cache
-        with:
-          path: ~/.android/debug.keystore
-          key: ${{ runner.os }}-debug-keystore-v4
-          restore-keys: |
-            ${{ runner.os }}-debug-keystore-
-            
-      - name: Generate Keystore if not cached
-        if: steps.keystore-cache.outputs.cache-hit != 'true'
+      # 🌟 تولید کلید ثابت (قفل‌شده) برای آپدیت‌های آینده
+      - name: Setup Fixed Keystore
         run: |
-          rm -f ~/.android/debug.keystore
+          rm -rf ~/.android
           mkdir -p ~/.android
           keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           
@@ -115,7 +105,6 @@ jobs:
             });
           }
 
-          // مدل تنظیمات PattNG
           class PattSettings {
             String fingerprint;
             String fragment;
@@ -152,7 +141,6 @@ jobs:
             bool _isTestingSpeed = false;
             String _speedTestResult = '';
             
-            // تنظیمات PattNG
             PattSettings _pattSettings = PattSettings();
 
             String _uploadSpeed = '0 B/s';
@@ -242,7 +230,6 @@ jobs:
               final prefs = await SharedPreferences.getInstance();
               _subUrls = prefs.getStringList('subUrls') ?? [];
               
-              // بارگذاری تنظیمات PattNG
               _pattSettings.fingerprint = prefs.getString('patt_fp') ?? 'unsafe';
               _pattSettings.fragment = prefs.getString('patt_frag') ?? 'tlshello';
               _pattSettings.cipherSuites = prefs.getString('patt_cipher') ?? '';
@@ -281,7 +268,6 @@ jobs:
                 final uri = Uri.parse(configUri);
                 Map<String, String> queryParams = Map.from(uri.queryParameters);
                 
-                // اعمال تنظیمات از پنل PattNG
                 queryParams['fp'] = _pattSettings.fingerprint;
                 queryParams['fragment'] = _pattSettings.fragment;
                 
@@ -302,9 +288,7 @@ jobs:
             }
 
             Future<void> _fetchAllConfigs() async {
-              if (_subUrls.isEmpty) {
-                return;
-              }
+              if (_subUrls.isEmpty) return;
               
               setState(() { 
                 _isLoading = true; 
@@ -471,7 +455,6 @@ jobs:
                               child: ListView(
                                 padding: const EdgeInsets.symmetric(horizontal: 20),
                                 children: [
-                                  // Fingerprint
                                   _buildSettingsHeader('FINGERPRINT'),
                                   DropdownButtonFormField<String>(
                                     value: _pattSettings.fingerprint,
@@ -495,7 +478,6 @@ jobs:
                                   
                                   const SizedBox(height: 20),
                                   
-                                  // Fragment
                                   _buildSettingsHeader('FRAGMENTATION'),
                                   DropdownButtonFormField<String>(
                                     value: _pattSettings.fragment,
@@ -519,7 +501,6 @@ jobs:
                                   
                                   const SizedBox(height: 20),
                                   
-                                  // Cipher Suites
                                   _buildSettingsHeader('CIPHER SUITES (OPTIONAL)'),
                                   TextField(
                                     style: const TextStyle(color: Colors.white),
@@ -538,7 +519,6 @@ jobs:
                                   
                                   const SizedBox(height: 20),
                                   
-                                  // Allow Insecure
                                   SwitchListTile(
                                     title: Text('ALLOW INSECURE', style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 14)),
                                     subtitle: Text('Connect to non-encrypted VLESS/Trojan', style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 11)),
@@ -550,7 +530,6 @@ jobs:
                                     },
                                   ),
                                   
-                                  // Enable IPv6
                                   SwitchListTile(
                                     title: Text('ENABLE IPv6', style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 14)),
                                     subtitle: Text('Force IPv6 for outbound connections', style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 11)),
@@ -578,7 +557,7 @@ jobs:
                                   ),
                                   onPressed: () {
                                     Navigator.pop(context);
-                                    _fetchAllConfigs(); // رفرش کانفیگ‌ها با تنظیمات جدید
+                                    _fetchAllConfigs();
                                   },
                                   child: Text('APPLY & SYNC ALL', style: TextStyle(color: neonGreen, fontWeight: FontWeight.bold, letterSpacing: 2)),
                                 ),
@@ -868,7 +847,6 @@ jobs:
                             ),
                           ),
                           
-                          // دکمه‌های بالای صفحه
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 20),
                             child: Row(
