@@ -47,36 +47,31 @@ def patch_gradle():
         text = f.read()
     if "useLegacyPackaging" in text:
         print("gradle already ok")
-        return
-    block = "    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }\n"
-    if "android {" in text:
-        text = text.replace("android {", "android {\n" + block, 1)
     else:
-        text += "\nandroid {\n" + block + "}\n"
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(text)
-    print("gradle patched: " + path)
+        block = "    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }\n"
+        if "android {" in text:
+            text = text.replace("android {", "android {\n" + block, 1)
+        else:
+            text += "\nandroid {\n" + block + "}\n"
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+        print("gradle patched: " + path)
 
-def patch_props():
-    line = "android.bundle.enableUncompressedNativeLibs = false\n"
+def clean_props():
     if not os.path.exists(PROPS):
-        with open(PROPS, "w", encoding="utf-8") as f:
-            f.write("org.gradle.jvmargs=-Xmx4G\n" + line)
-        print("props created")
+        print("props not found, skip")
         return
     with open(PROPS, "r", encoding="utf-8") as f:
-        text = f.read()
-    if "enableUncompressedNativeLibs" in text:
-        print("props already ok")
-        return
-    if not text.endswith("\n"):
-        text += "\n"
-    text += line
-    with open(PROPS, "w", encoding="utf-8") as f:
-        f.write(text)
-    print("props patched")
+        lines = f.readlines()
+    kept = [ln for ln in lines if "enableUncompressedNativeLibs" not in ln]
+    if len(kept) != len(lines):
+        with open(PROPS, "w", encoding="utf-8") as f:
+            f.writelines(kept)
+        print("props cleaned")
+    else:
+        print("props ok")
 
 patch_manifest()
 patch_gradle()
-patch_props()
+clean_props()
 print("ALL PATCHES DONE")
