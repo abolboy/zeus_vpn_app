@@ -24,22 +24,48 @@ jobs:
           channel: 'stable'
           cache: true
           
-      - name: Generate Android files
-        run: flutter create --platforms=android .
-        
+      - name: Generate Android if missing
+        run: |
+          if [ ! -d "android" ]; then
+            flutter create --platforms=android .
+          fi
+          
       - name: Setup Fixed Keystore
         run: |
           rm -rf ~/.android
           mkdir -p ~/.android
           keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           
-      - name: Patch Android Files (Permissions & Gradle)
+      - name: Patch Android Files (Safe Python Method)
         run: |
-          # اضافه کردن دسترسی‌های اینترنت، نوتیفیکیشن و فورگراند سرویس
-          sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>\n    <application android:extractNativeLibs="true" android:usesCleartextTraffic="true"|' android/app/src/main/AndroidManifest.xml
+          python3 -c "
+          import os
+          manifest = 'android/app/src/main/AndroidManifest.xml'
+          if os.path.exists(manifest):
+              with open(manifest, 'r') as f: content = f.read()
+              perms = '<uses-permission android:name=\"android.permission.INTERNET\" />\n    <uses-permission android:name=\"android.permission.POST_NOTIFICATIONS\"/>\n    <uses-permission android:name=\"android.permission.FOREGROUND_SERVICE\"/>\n    <uses-permission android:name=\"android.permission.FOREGROUND_SERVICE_SPECIAL_USE\"/>'
+              if 'android.permission.INTERNET' not in content:
+                  content = content.replace('<application', perms + '\n    <application android:extractNativeLibs=\"true\" android:usesCleartextTraffic=\"true\"')
+                  with open(manifest, 'w') as f: f.write(content)
           
-          # اصلاح ساختار Gradle برای اجرای هسته بومی (Native) پکیج V2Ray
-          sed -i 's/android {/android {\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' android/app/build.gradle.kts
+          gradle_kts = 'android/app/build.gradle.kts'
+          gradle_groovy = 'android/app/build.gradle'
+          gradle_file = gradle_kts if os.path.exists(gradle_kts) else gradle_groovy
+          if os.path.exists(gradle_file):
+              with open(gradle_file, 'r') as f: g_content = f.read()
+              if 'useLegacyPackaging' not in g_content:
+                  if 'packaging {' in g_content:
+                      g_content = g_content.replace('packaging {', 'packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n')
+                  else:
+                      g_content = g_content.replace('android {', 'android {\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }\n')
+                  with open(gradle_file, 'w') as f: f.write(g_content)
+                  
+          gradle_props = 'android/gradle.properties'
+          if os.path.exists(gradle_props):
+              with open(gradle_props, 'r') as f: p_content = f.read()
+              if 'enableUncompressedNativeLibs' not in p_content:
+                  with open(gradle_props, 'a') as f: f.write('\nandroid.bundle.enableUncompressedNativeLibs = false\n')
+          "
           
       - name: Install dependencies
         run: flutter pub get
@@ -50,5 +76,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-release
+          name: zeus-vpn-apk
           path: build/app/outputs/flutter-apk/app-release.apk
