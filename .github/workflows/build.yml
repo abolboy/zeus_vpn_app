@@ -31,7 +31,7 @@ jobs:
         run: |
           cat << 'EOF' > pubspec.yaml
           name: zeus_vpn
-          description: A VPN app using Zeus Panel.
+          description: A Cyberpunk VPN app using Zeus Panel.
           version: 1.0.0+1
 
           environment:
@@ -40,7 +40,7 @@ jobs:
           dependencies:
             flutter:
               sdk: flutter
-            flutter_v2ray: ^1.0.10
+            flutter_v2ray_client: ^3.4.1
             dio: ^5.4.0
             shared_preferences: ^2.2.3
 
@@ -53,7 +53,8 @@ jobs:
           cat << 'EOF' > lib/main.dart
           import 'package:flutter/material.dart';
           import 'package:dio/dio.dart';
-          import 'package:flutter_v2ray/flutter_v2ray.dart';
+          import 'package:flutter_v2ray_client/flutter_v2ray.dart';
+          import 'package:flutter_v2ray_client/model/v2ray_status.dart';
           import 'package:shared_preferences/shared_preferences.dart';
           import 'dart:convert';
           import 'dart:io';
@@ -100,17 +101,21 @@ jobs:
             bool _isConnected = false;
             bool _isTestingSpeed = false;
             bool _isConfigListExpanded = false; 
+            String _speedTestResult = '';
+
+            // آمار واقعی از V2RayStatus
+            String _uploadSpeed = '0 B/s';
+            String _downloadSpeed = '0 B/s';
+            String _duration = '00:00:00';
             String _status = 'DISCONNECTED';
-            String _speedResult = '';
 
             final Color neonCyan = const Color(0xFF00F0FF);
             final Color neonMagenta = const Color(0xFFFF007F);
             final Color neonGreen = const Color(0xFF00FF88);
             final Color darkBg = const Color(0xFF050505);
 
-            late FlutterV2ray _v2ray;
+            late V2ray _v2ray;
             late AnimationController _pulseController;
-            late AnimationController _glitchController;
             late Animation<double> _pulseAnimation;
 
             @override
@@ -126,29 +131,49 @@ jobs:
                 CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
               );
 
-              _glitchController = AnimationController(
-                vsync: this,
-                duration: const Duration(milliseconds: 300),
-              )..repeat(reverse: true);
-
-              _v2ray = FlutterV2ray(
-                onStatusChanged: (status) {
-                  setState(() {
-                    _status = status.state;
-                    _isConnected = (status.state == 'CONNECTED');
-                    if (!_isConnected) _speedResult = '';
-                  });
+              _v2ray = V2ray(
+                onStatusChanged: (V2RayStatus status) {
+                  if (mounted) {
+                    setState(() {
+                      _status = status.state;
+                      _isConnected = (status.state == 'CONNECTED');
+                      
+                      // تبدیل بایت بر ثانیه به فرمت خوانا
+                      _uploadSpeed = _formatSpeed(status.uploadSpeed);
+                      _downloadSpeed = _formatSpeed(status.downloadSpeed);
+                      _duration = status.duration;
+                      
+                      if (!_isConnected) {
+                        _speedTestResult = '';
+                        _uploadSpeed = '0 B/s';
+                        _downloadSpeed = '0 B/s';
+                        _duration = '00:00:00';
+                      }
+                    });
+                  }
                 },
               );
-              _v2ray.initializeV2Ray();
+              _initV2Ray();
               _loadSavedLink();
+            }
+
+            Future<void> _initV2Ray() async {
+              await _v2ray.initialize(
+                notificationIconResourceType: "mipmap",
+                notificationIconResourceName: "ic_launcher",
+              );
             }
 
             @override
             void dispose() {
               _pulseController.dispose();
-              _glitchController.dispose();
               super.dispose();
+            }
+
+            String _formatSpeed(int bytesPerSecond) {
+              if (bytesPerSecond < 1024) return '$bytesPerSecond B/s';
+              if (bytesPerSecond < 1024 * 1024) return '${(bytesPerSecond / 1024).toStringAsFixed(1)} KB/s';
+              return '${(bytesPerSecond / (1024 * 1024)).toStringAsFixed(1)} MB/s';
             }
 
             Future<void> _loadSavedLink() async {
@@ -203,7 +228,7 @@ jobs:
                 _testAllLatencies();
 
               } catch (e) {
-                _showSnackBar('خطا در دریافت لینک‌ها. لینک را چک کنید.', isError: true);
+                _showSnackBar('Error fetching servers. Check link.', isError: true);
               } finally {
                 setState(() => _isLoading = false);
               }
@@ -224,12 +249,13 @@ jobs:
               }
             }
 
-            Future<void> _testSpeed() async {
-              setState(() { _isTestingSpeed = true; _speedResult = 'TESTING...'; });
+            // تست سرعت واقعی با دانلود فایل
+            Future<void> _runSpeedTest() async {
+              setState(() { _isTestingSpeed = true; _speedTestResult = 'TESTING...'; });
               try {
                 final stopwatch = Stopwatch()..start();
                 final response = await _dio.get(
-                  'https://speed.cloudflare.com/__down?bytes=10000000',
+                  'https://speed.cloudflare.com/__down?bytes=10000000', // 10 MB
                   options: Options(responseType: ResponseType.bytes),
                 );
                 stopwatch.stop();
@@ -237,9 +263,9 @@ jobs:
                 if (seconds == 0) seconds = 0.1;
                 double bytes = response.data.length.toDouble();
                 double speedMbps = (bytes * 8) / (seconds * 1024 * 1024);
-                setState(() => _speedResult = '${speedMbps.toStringAsFixed(1)} Mbps');
+                setState(() => _speedTestResult = '${speedMbps.toStringAsFixed(1)} Mbps');
               } catch (e) {
-                setState(() => _speedResult = 'FAILED');
+                setState(() => _speedTestResult = 'FAILED');
               } finally {
                 setState(() => _isTestingSpeed = false);
               }
@@ -252,9 +278,9 @@ jobs:
               final hasPermission = await _v2ray.requestPermission();
               if (!hasPermission) { _showSnackBar('VPN permission denied.', isError: true); return; }
 
-              final parser = FlutterV2ray.parseFromURL(_selectedConfig!);
+              final parser = V2ray.parseFromURL(_selectedConfig!);
               await _v2ray.startV2Ray(
-                remark: 'ZEUS Server',
+                remark: parser.remark,
                 config: parser.getFullConfiguration(),
                 proxyOnly: false,
               );
@@ -272,7 +298,6 @@ jobs:
 
             @override
             Widget build(BuildContext context) {
-              // استخراج اطلاعات سرور انتخاب شده برای نمایش در هدر
               String selectedName = _selectedConfig != null ? _parseConfigName(_selectedConfig!) : 'NO SERVER SELECTED';
               String selectedPingText = '';
               Color selectedPingColor = Colors.grey;
@@ -290,8 +315,9 @@ jobs:
                 backgroundColor: darkBg,
                 body: Stack(
                   children: [
+                    // پس‌زمینه گرید سایبرپانک
                     Positioned.fill(
-                      child: CustomPaint(painter: CyberGridPainter(neonCyan.withOpacity(0.1))),
+                      child: CustomPaint(painter: CyberGridPainter(neonCyan.withOpacity(0.08))),
                     ),
                     Positioned(
                       top: -100, left: -100,
@@ -311,14 +337,15 @@ jobs:
                     SafeArea(
                       child: Column(
                         children: [
-                          // هدر (Glitch)
+                          // هدر با افکت Glitch
                           Padding(
                             padding: const EdgeInsets.symmetric(vertical: 15),
-                            child: AnimatedBuilder(
-                              animation: _glitchController,
-                              builder: (context, child) {
+                            child: TweenAnimationBuilder<double>(
+                              tween: Tween(begin: -1, end: 1),
+                              duration: const Duration(milliseconds: 200),
+                              builder: (context, value, child) {
                                 return Transform.translate(
-                                  offset: Offset(sin(_glitchController.value * 100) * 2, 0),
+                                  offset: Offset(sin(value * pi) * 3, 0),
                                   child: Text(
                                     'ZEUS VPN',
                                     style: TextStyle(
@@ -378,7 +405,7 @@ jobs:
                           
                           const SizedBox(height: 10),
 
-                          // هدر هوشمند لیست سرورها (نمایش وضعیت)
+                          // هدر هوشمند لیست سرورها
                           if (_configs.isNotEmpty)
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -439,7 +466,7 @@ jobs:
                               ),
                             ),
 
-                          // لیست سرورها
+                          // لیست سرورها (باز و بسته شونده)
                           AnimatedCrossFade(
                             firstChild: const SizedBox(width: double.infinity, height: 0),
                             secondChild: Container(
@@ -523,26 +550,26 @@ jobs:
 
                           const Spacer(),
 
-                          // داشبورد آماری
+                          // پنل آمار واقعی (آپلود/دانلود/مدت زمان)
                           if (_isConnected)
                             Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
+                              padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 10),
                               child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                                 children: [
-                                  _buildStatItem('UPLOAD', '2.4 MB/s', neonMagenta),
-                                  _buildStatItem('DOWNLOAD', '12.8 MB/s', neonCyan),
-                                  _buildStatItem('PING', '24 ms', neonGreen),
+                                  _buildRealStat('UPLOAD', _uploadSpeed, Icons.arrow_upward, neonMagenta),
+                                  _buildRealStat('DOWNLOAD', _downloadSpeed, Icons.arrow_downward, neonCyan),
+                                  _buildRealStat('TIME', _duration, Icons.timer, neonGreen),
                                 ],
                               ),
                             ),
 
-                          // تست سرعت
+                          // دکمه تست سرعت واقعی
                           if (_isConnected)
                             Padding(
                               padding: const EdgeInsets.only(bottom: 10),
                               child: GestureDetector(
-                                onTap: _isTestingSpeed ? null : _testSpeed,
+                                onTap: _isTestingSpeed ? null : _runSpeedTest,
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                                   decoration: BoxDecoration(
@@ -551,14 +578,14 @@ jobs:
                                     border: Border.all(color: neonMagenta.withOpacity(0.5)),
                                   ),
                                   child: Text(
-                                    _isTestingSpeed ? 'TESTING...' : (_speedResult.isNotEmpty ? 'SPEED: $_speedResult' : 'RUN SPEED TEST'),
+                                    _isTestingSpeed ? 'TESTING...' : (_speedTestResult.isNotEmpty ? 'SPEED: $_speedTestResult' : 'RUN SPEED TEST'),
                                     style: TextStyle(color: neonMagenta, fontWeight: FontWeight.bold, letterSpacing: 1, fontSize: 12),
                                   ),
                                 ),
                               ),
                             ),
 
-                          // دکمه پاور
+                          // دکمه پاور نئونی
                           GestureDetector(
                             onTap: _toggleConnection,
                             child: ScaleTransition(
@@ -610,10 +637,16 @@ jobs:
               );
             }
 
-            Widget _buildStatItem(String label, String value, Color color) {
+            Widget _buildRealStat(String label, String value, IconData icon, Color color) {
               return Column(
                 children: [
-                  Text(label, style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 10, letterSpacing: 1)),
+                  Row(
+                    children: [
+                      Icon(icon, color: color, size: 14),
+                      const SizedBox(width: 4),
+                      Text(label, style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 10, letterSpacing: 1)),
+                    ],
+                  ),
                   const SizedBox(height: 4),
                   Text(value, style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.bold)),
                 ],
@@ -650,16 +683,29 @@ jobs:
           }
           EOF
 
-      - name: Patch Gradle and Manifest for VPN
+      - name: Patch Gradle, Manifest, and Properties for VPN
         run: |
-          sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
-          sed -i 's/android {/android {\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' android/app/build.gradle.kts
+          # ۱. تنظیمات Manifest
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          sed -i 's/<application/<application android:usesCleartextTraffic="true"/' $MANIFEST
+          
+          # ۲. تنظیمات Gradle (پکیجینگ و معماری‌ها)
+          GRADLE_FILE="android/app/build.gradle.kts"
+          
+          # اضافه کردن useLegacyPackaging
+          sed -i 's/android {/android {\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }\n    splits {\n        abi {\n            enable true\n            reset()\n            include "x86_64", "armeabi-v7a", "arm64-v8a"\n            universalApk true\n        }\n    }/' $GRADLE_FILE
+          
+          # اضافه کردن abiFilters به buildTypes.release (برای اطمینان از پشتیبانی NDK)
+          sed -i 's/buildTypes {/buildTypes {\n        release {\n            ndk {\n                abiFilters "x86_64", "armeabi-v7a", "arm64-v8a"\n            }\n        }/' $GRADLE_FILE
+          
+          # ۳. تنظیمات gradle.properties
+          echo "android.bundle.enableUncompressedNativeLibs=false" >> android/gradle.properties
           
       - name: Install dependencies
         run: flutter pub get
         
       - name: Build APK
-        run: flutter build apk --release
+        run: flutter build apk --release --no-tree-shake-icons
         
       - name: Upload APK
         uses: actions/upload-artifact@v4
