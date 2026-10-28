@@ -54,12 +54,9 @@ jobs:
             uses-material-design: true
           EOF
           
-      - name: Write main.dart using Python
+      - name: Inject main.dart
         run: |
-          python3 - << 'PYEOF'
-          import textwrap
-          
-          content = textwrap.dedent('''
+          cat << 'DART_EOF' > lib/main.dart
           import 'package:flutter/material.dart';
           import 'package:dio/dio.dart';
           import 'package:flutter_v2ray_client/flutter_v2ray.dart';
@@ -1248,11 +1245,7 @@ jobs:
             @override
             bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
           }
-          ''')
-          
-          with open('lib/main.dart', 'w', encoding='utf-8') as f:
-              f.write(content)
-          PYEOF
+          DART_EOF
           
       - name: Patch AndroidManifest for VPN & Notifications
         run: |
