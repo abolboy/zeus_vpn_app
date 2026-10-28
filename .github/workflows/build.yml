@@ -1,58 +1,35 @@
-name: Build ZEUS VPN APK
+name: Build APK
 
 on:
-  workflow_dispatch:
   push:
     branches: [main, master]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
+      - name: Checkout
+        uses: actions/checkout@v4
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
-
+          distribution: temurin
+          java-version: 17
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
-          cache: true
-
-      - name: Generate Fixed Keystore
-        run: |
-          rm -rf ~/.android
-          mkdir -p ~/.android
-          keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-
-      - name: Patch Android Files
-        run: |
-          python3 -c "
-          manifest_path = 'android/app/src/main/AndroidManifest.xml'
-          with open(manifest_path, 'r') as f: content = f.read()
-          perms = '\n    <uses-permission android:name=\"android.permission.INTERNET\"/>\n    <uses-permission android:name=\"android.permission.POST_NOTIFICATIONS\"/>\n    <uses-permission android:name=\"android.permission.FOREGROUND_SERVICE\"/>\n    <uses-permission android:name=\"android.permission.FOREGROUND_SERVICE_SPECIAL_USE\"/>\n'
-          if 'android.permission.INTERNET' not in content:
-              content = content.replace('<manifest', '<manifest android:extractNativeLibs=\"true\"').replace('<application', perms + '    <application')
-              with open(manifest_path, 'w') as f: f.write(content)
-          
-          gradle_path = 'android/app/build.gradle.kts'
-          with open(gradle_path, 'r') as f: gradle = f.read()
-          if 'useLegacyPackacking' not in gradle and 'useLegacyPackaging' not in gradle:
-              if 'packaging {' in gradle: gradle = gradle.replace('packaging {', 'packaging {\n        jniLibs { useLegacyPackaging = true }')
-              else: gradle = gradle.replace('android {', 'android {\n    packaging { jniLibs { useLegacyPackaging = true } }')
-              with open(gradle_path, 'w') as f: f.write(gradle)
-          "
-
-      - name: Install dependencies
+          channel: stable
+      - name: Create Android folder
+        run: flutter create --platforms=android .
+      - name: Patch Android files
+        run: python3 tools/patch_android.py
+      - name: Create keystore
+        run: rm -rf ~/.android && mkdir -p ~/.android && keytool -genkeypair -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname CN=Android,OU=Test,O=Test,C=US
+      - name: Pub get
         run: flutter pub get
-
       - name: Build APK
         run: flutter build apk --release
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
