@@ -27,7 +27,7 @@ jobs:
       - name: Generate Android files
         run: flutter create --platforms=android .
         
-      # 🌟 راه‌حل قطعی برای کلید ثابت (بدون نیاز به Base64)
+      # 🌟 کش کردن کلید برای آپدیت بدون حذف نسخه قبلی
       - name: Cache Android Debug Keystore
         uses: actions/cache@v3
         id: keystore-cache
@@ -116,7 +116,11 @@ jobs:
             bool _isTestingSpeed = false;
             bool _isConfigListExpanded = false; 
             String _speedTestResult = '';
+            
+            // وضعیت لاگ زنده
+            String _liveLog = '> SYSTEM READY...';
 
+            // آمار واقعی
             String _uploadSpeed = '0 B/s';
             String _downloadSpeed = '0 B/s';
             String _duration = '00:00:00';
@@ -155,11 +159,14 @@ jobs:
                       _downloadSpeed = _formatSpeed(status.downloadSpeed);
                       _duration = status.duration;
                       
-                      if (!_isConnected) {
+                      if (_isConnected) {
+                        _liveLog = '> SECURE TUNNEL ESTABLISHED.';
+                      } else {
                         _speedTestResult = '';
                         _uploadSpeed = '0 B/s';
                         _downloadSpeed = '0 B/s';
                         _duration = '00:00:00';
+                        _liveLog = '> TUNNEL DISCONNECTED.';
                       }
                     });
                   }
@@ -205,15 +212,13 @@ jobs:
               } catch (_) { return 'Unknown Server'; }
             }
 
-            // ⚡ تزریق تنظیمات PattNG به کانفیگ
+            // ⚡ تزریق تنظیمات PattNG
             String _applyPattNGSettings(String configUri) {
               try {
                 final uri = Uri.parse(configUri);
                 Map<String, String> queryParams = Map.from(uri.queryParameters);
-                
                 queryParams['fp'] = 'unsafe';
                 queryParams['fragment'] = 'tlshello';
-                
                 return uri.replace(queryParameters: queryParams).toString();
               } catch (_) {
                 return configUri;
@@ -231,6 +236,7 @@ jobs:
                 _configs = []; 
                 _latencies = {}; 
                 _isConfigListExpanded = true;
+                _liveLog = '> FETCHING SUBSCRIPTION...';
               });
 
               try {
@@ -245,17 +251,19 @@ jobs:
                 final links = body.split('\n')
                     .map((e) => e.trim())
                     .where((e) => e.startsWith('vless://') || e.startsWith('trojan://') || e.startsWith('vmess://'))
-                    .map((link) => _applyPattNGSettings(link)) // اعمال تنظیمات
+                    .map((link) => _applyPattNGSettings(link))
                     .toList();
 
                 setState(() {
                   _configs = links;
                   if (_configs.isNotEmpty) _selectedConfig = _configs.first;
+                  _liveLog = '> ${links.length} NODES INJECTED WITH PATT-NG.';
                 });
 
                 _testAllLatencies();
 
               } catch (e) {
+                setState(() => _liveLog = '> ERROR: SUBSCRIPTION FETCH FAILED.');
                 _showSnackBar('Error fetching servers. Check link.', isError: true);
               } finally {
                 setState(() => _isLoading = false);
@@ -275,6 +283,7 @@ jobs:
                   setState(() => _latencies[config] = -1);
                 }
               }
+              setState(() => _liveLog = '> LATENCY SCAN COMPLETE.');
             }
 
             Future<void> _runSpeedTest() async {
@@ -293,9 +302,15 @@ jobs:
                 if (seconds == 0) seconds = 0.1;
                 double bytes = response.data.length.toDouble();
                 double speedMbps = (bytes * 8) / (seconds * 1024 * 1024);
-                setState(() => _speedTestResult = '${speedMbps.toStringAsFixed(1)} Mbps');
+                setState(() {
+                  _speedTestResult = '${speedMbps.toStringAsFixed(1)} Mbps';
+                  _liveLog = '> SPEED TEST: $_speedTestResult';
+                });
               } catch (e) {
-                setState(() => _speedTestResult = 'FAILED');
+                setState(() {
+                  _speedTestResult = 'FAILED';
+                  _liveLog = '> SPEED TEST FAILED.';
+                });
               } finally {
                 setState(() => _isTestingSpeed = false);
               }
@@ -305,8 +320,14 @@ jobs:
               if (_isConnected) { await _v2ray.stopV2Ray(); return; }
               if (_selectedConfig == null) { _showSnackBar('Please select a server first.', isError: true); return; }
 
+              setState(() => _liveLog = '> INITIATING TUNNEL...');
+
               final hasPermission = await _v2ray.requestPermission();
-              if (!hasPermission) { _showSnackBar('VPN permission denied.', isError: true); return; }
+              if (!hasPermission) { 
+                setState(() => _liveLog = '> ERROR: VPN PERMISSION DENIED.');
+                _showSnackBar('VPN permission denied.', isError: true); 
+                return; 
+              }
 
               final parser = V2ray.parseFromURL(_selectedConfig!);
               await _v2ray.startV2Ray(
@@ -366,8 +387,9 @@ jobs:
                     SafeArea(
                       child: Column(
                         children: [
+                          // هدر (Glitch)
                           Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 15),
+                            padding: const EdgeInsets.only(top: 15, bottom: 5),
                             child: TweenAnimationBuilder<double>(
                               tween: Tween(begin: -1, end: 1),
                               duration: const Duration(milliseconds: 200),
@@ -391,7 +413,19 @@ jobs:
                               },
                             ),
                           ),
+                          
+                          // لاگ زنده
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            child: Text(
+                              _liveLog,
+                              style: TextStyle(color: neonGreen.withOpacity(0.8), fontSize: 10, fontFamily: 'monospace'),
+                            ),
+                          ),
+                          
+                          const SizedBox(height: 10),
 
+                          // بخش لینک اشتراک
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
                             child: ClipRRect(
@@ -430,8 +464,21 @@ jobs:
                             ),
                           ),
                           
-                          const SizedBox(height: 10),
+                          // نشان‌های استتار PattNG
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
+                            child: Row(
+                              children: [
+                                _buildBadge('UNSAFE FP', neonMagenta),
+                                const SizedBox(width: 8),
+                                _buildBadge('FRAGMENTATION', neonCyan),
+                              ],
+                            ),
+                          ),
+                          
+                          const SizedBox(height: 5),
 
+                          // هدر هوشمند لیست سرورها
                           if (_configs.isNotEmpty)
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -462,7 +509,7 @@ jobs:
                                             ),
                                             const SizedBox(height: 2),
                                             Text(
-                                              '${_configs.length} SERVERS AVAILABLE',
+                                              '${_configs.length} NODES SECURED',
                                               style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 10, letterSpacing: 1),
                                             ),
                                           ],
@@ -492,10 +539,11 @@ jobs:
                               ),
                             ),
 
+                          // لیست سرورها
                           AnimatedCrossFade(
                             firstChild: const SizedBox(width: double.infinity, height: 0),
                             secondChild: Container(
-                              constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.35),
+                              constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.3),
                               margin: const EdgeInsets.symmetric(horizontal: 20),
                               decoration: BoxDecoration(
                                 color: Colors.white.withOpacity(0.02),
@@ -575,6 +623,7 @@ jobs:
 
                           const Spacer(),
 
+                          // پنل آمار واقعی
                           if (_isConnected)
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 10),
@@ -588,6 +637,7 @@ jobs:
                               ),
                             ),
 
+                          // دکمه تست سرعت
                           if (_isConnected)
                             Padding(
                               padding: const EdgeInsets.only(bottom: 10),
@@ -608,6 +658,7 @@ jobs:
                               ),
                             ),
 
+                          // دکمه پاور نئونی
                           GestureDetector(
                             onTap: _toggleConnection,
                             child: ScaleTransition(
@@ -655,6 +706,21 @@ jobs:
                       ),
                     ),
                   ],
+                ),
+              );
+            }
+
+            Widget _buildBadge(String text, Color color) {
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: color.withOpacity(0.5)),
+                ),
+                child: Text(
+                  text,
+                  style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 1),
                 ),
               );
             }
