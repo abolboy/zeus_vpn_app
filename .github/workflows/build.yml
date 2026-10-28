@@ -111,16 +111,14 @@ jobs:
             Map<String, int> _latencies = {};
             String? _selectedConfig;
             
+            bool _isInitialized = false;
             bool _isLoading = false;
             bool _isConnected = false;
             bool _isTestingSpeed = false;
-            bool _isConfigListExpanded = false; 
             String _speedTestResult = '';
             
-            // وضعیت لاگ زنده
-            String _liveLog = '> SYSTEM READY...';
+            String _liveLog = '> SYSTEM BOOTING...';
 
-            // آمار واقعی
             String _uploadSpeed = '0 B/s';
             String _downloadSpeed = '0 B/s';
             String _duration = '00:00:00';
@@ -133,6 +131,7 @@ jobs:
 
             late V2ray _v2ray;
             late AnimationController _pulseController;
+            late AnimationController _rotateController;
             late Animation<double> _pulseAnimation;
 
             @override
@@ -144,7 +143,12 @@ jobs:
                 duration: const Duration(seconds: 2),
               )..repeat(reverse: true);
               
-              _pulseAnimation = Tween<double>(begin: 1.0, end: 1.05).animate(
+              _rotateController = AnimationController(
+                vsync: this,
+                duration: const Duration(seconds: 4),
+              )..repeat();
+
+              _pulseAnimation = Tween<double>(begin: 0.95, end: 1.05).animate(
                 CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
               );
 
@@ -160,7 +164,7 @@ jobs:
                       _duration = status.duration;
                       
                       if (_isConnected) {
-                        _liveLog = '> SECURE TUNNEL ESTABLISHED.';
+                        _liveLog = '> SECURE TUNNEL ESTABLISHED. PATT-NG ACTIVE.';
                       } else {
                         _speedTestResult = '';
                         _uploadSpeed = '0 B/s';
@@ -181,11 +185,18 @@ jobs:
                 notificationIconResourceType: "mipmap",
                 notificationIconResourceName: "ic_launcher",
               );
+              if (mounted) {
+                setState(() {
+                  _isInitialized = true;
+                  _liveLog = '> CORE ONLINE. AWAITING COMMAND.';
+                });
+              }
             }
 
             @override
             void dispose() {
               _pulseController.dispose();
+              _rotateController.dispose();
               super.dispose();
             }
 
@@ -235,8 +246,7 @@ jobs:
                 _isLoading = true; 
                 _configs = []; 
                 _latencies = {}; 
-                _isConfigListExpanded = true;
-                _liveLog = '> FETCHING SUBSCRIPTION...';
+                _liveLog = '> FETCHING ENCRYPTED CONFIG...';
               });
 
               try {
@@ -257,7 +267,7 @@ jobs:
                 setState(() {
                   _configs = links;
                   if (_configs.isNotEmpty) _selectedConfig = _configs.first;
-                  _liveLog = '> ${links.length} NODES INJECTED WITH PATT-NG.';
+                  _liveLog = '> ${links.length} NODES INJECTED WITH PATT-NG PAYLOADS.';
                 });
 
                 _testAllLatencies();
@@ -272,18 +282,21 @@ jobs:
 
             Future<void> _testAllLatencies() async {
               for (String config in _configs) {
-                try {
-                  final uri = Uri.parse(config);
-                  final stopwatch = Stopwatch()..start();
-                  final socket = await Socket.connect(uri.host, uri.port, timeout: const Duration(seconds: 3));
-                  stopwatch.stop();
-                  socket.destroy();
-                  setState(() => _latencies[config] = stopwatch.elapsedMilliseconds);
-                } catch (e) {
-                  setState(() => _latencies[config] = -1);
-                }
+                _pingSingleServer(config); // اجرای موازی برای جلوگیری از فریز شدن
               }
-              setState(() => _liveLog = '> LATENCY SCAN COMPLETE.');
+            }
+
+            Future<void> _pingSingleServer(String config) async {
+              try {
+                final uri = Uri.parse(config);
+                final stopwatch = Stopwatch()..start();
+                final socket = await Socket.connect(uri.host, uri.port, timeout: const Duration(seconds: 3));
+                stopwatch.stop();
+                socket.destroy();
+                if (mounted) setState(() => _latencies[config] = stopwatch.elapsedMilliseconds);
+              } catch (e) {
+                if (mounted) setState(() => _latencies[config] = -1);
+              }
             }
 
             Future<void> _runSpeedTest() async {
@@ -304,12 +317,12 @@ jobs:
                 double speedMbps = (bytes * 8) / (seconds * 1024 * 1024);
                 setState(() {
                   _speedTestResult = '${speedMbps.toStringAsFixed(1)} Mbps';
-                  _liveLog = '> SPEED TEST: $_speedTestResult';
+                  _liveLog = '> BANDWIDTH SCAN: $_speedTestResult';
                 });
               } catch (e) {
                 setState(() {
                   _speedTestResult = 'FAILED';
-                  _liveLog = '> SPEED TEST FAILED.';
+                  _liveLog = '> SPEED TEST TIMEOUT.';
                 });
               } finally {
                 setState(() => _isTestingSpeed = false);
@@ -317,10 +330,11 @@ jobs:
             }
 
             Future<void> _toggleConnection() async {
+              if (!_isInitialized) { _showSnackBar('Core is initializing...', isError: true); return; }
               if (_isConnected) { await _v2ray.stopV2Ray(); return; }
               if (_selectedConfig == null) { _showSnackBar('Please select a server first.', isError: true); return; }
 
-              setState(() => _liveLog = '> INITIATING TUNNEL...');
+              setState(() => _liveLog = '> INITIATING SECURE TUNNEL...');
 
               final hasPermission = await _v2ray.requestPermission();
               if (!hasPermission) { 
@@ -347,9 +361,93 @@ jobs:
               );
             }
 
+            // 🚀 باز کردن لیست سرورها در BottomSheet
+            void _showServerListModal() {
+              showModalBottomSheet(
+                context: context,
+                backgroundColor: Colors.transparent,
+                isScrollControlled: true,
+                builder: (context) {
+                  return Container(
+                    height: MediaQuery.of(context).size.height * 0.6,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0A0A0F),
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                      border: Border(top: BorderSide(color: neonCyan.withOpacity(0.5), width: 2)),
+                    ),
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 10),
+                        Container(width: 50, height: 4, decoration: BoxDecoration(color: neonCyan.withOpacity(0.5), borderRadius: BorderRadius.circular(10))),
+                        const SizedBox(height: 15),
+                        Text('NODE SELECTION', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: neonCyan, letterSpacing: 2)),
+                        const SizedBox(height: 10),
+                        Expanded(
+                          child: ListView.builder(
+                            padding: const EdgeInsets.symmetric(horizontal: 15),
+                            itemCount: _configs.length,
+                            itemBuilder: (context, index) {
+                              final config = _configs[index];
+                              final isSelected = config == _selectedConfig;
+                              final name = _parseConfigName(config);
+                              final ping = _latencies[config];
+
+                              String pingText = '--';
+                              Color pingColor = Colors.grey;
+                              if (ping != null) {
+                                if (ping == -1) { pingText = 'TIMEOUT'; pingColor = neonMagenta; }
+                                else { 
+                                  pingText = '$ping ms'; 
+                                  pingColor = ping < 200 ? neonGreen : (ping < 500 ? Colors.orange : neonMagenta); 
+                                }
+                              }
+
+                              return GestureDetector(
+                                onTap: () {
+                                  setState(() => _selectedConfig = config);
+                                  Navigator.pop(context);
+                                },
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 200),
+                                  margin: const EdgeInsets.only(bottom: 10),
+                                  padding: const EdgeInsets.all(15),
+                                  decoration: BoxDecoration(
+                                    color: isSelected ? neonCyan.withOpacity(0.15) : Colors.white.withOpacity(0.03),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: isSelected ? neonCyan : Colors.transparent),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Expanded(
+                                        child: Text(name, style: TextStyle(color: isSelected ? Colors.white : Colors.white70, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: pingColor.withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(4),
+                                          border: Border.all(color: pingColor.withOpacity(0.5)),
+                                        ),
+                                        child: Text(pingText, style: TextStyle(color: pingColor, fontSize: 10, fontWeight: FontWeight.bold)),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+              );
+            }
+
             @override
             Widget build(BuildContext context) {
-              String selectedName = _selectedConfig != null ? _parseConfigName(_selectedConfig!) : 'NO SERVER SELECTED';
+              String selectedName = _selectedConfig != null ? _parseConfigName(_selectedConfig!) : 'TAP TO SELECT NODE';
               String selectedPingText = '';
               Color selectedPingColor = Colors.grey;
               
@@ -366,47 +464,39 @@ jobs:
                 backgroundColor: darkBg,
                 body: Stack(
                   children: [
+                    // افکت پس‌زمینه
                     Positioned.fill(
-                      child: CustomPaint(painter: CyberGridPainter(neonCyan.withOpacity(0.08))),
+                      child: CustomPaint(painter: CyberGridPainter(neonCyan.withOpacity(0.05))),
                     ),
                     Positioned(
                       top: -100, left: -100,
-                      child: Container(
-                        width: 300, height: 300,
-                        decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: [BoxShadow(color: neonCyan.withOpacity(0.15), blurRadius: 100, spreadRadius: 50)]),
-                      ),
+                      child: Container(width: 300, height: 300, decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: [BoxShadow(color: neonCyan.withOpacity(0.1), blurRadius: 100, spreadRadius: 50)])),
                     ),
                     Positioned(
                       bottom: -100, right: -100,
-                      child: Container(
-                        width: 300, height: 300,
-                        decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: [BoxShadow(color: neonMagenta.withOpacity(0.15), blurRadius: 100, spreadRadius: 50)]),
-                      ),
+                      child: Container(width: 300, height: 300, decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: [BoxShadow(color: neonMagenta.withOpacity(0.1), blurRadius: 100, spreadRadius: 50)])),
                     ),
                     
                     SafeArea(
                       child: Column(
                         children: [
-                          // هدر (Glitch)
+                          // هدر
                           Padding(
-                            padding: const EdgeInsets.only(top: 15, bottom: 5),
+                            padding: const EdgeInsets.only(top: 20, bottom: 10),
                             child: TweenAnimationBuilder<double>(
                               tween: Tween(begin: -1, end: 1),
                               duration: const Duration(milliseconds: 200),
                               builder: (context, value, child) {
                                 return Transform.translate(
-                                  offset: Offset(sin(value * pi) * 3, 0),
+                                  offset: Offset(sin(value * pi) * 2, 0),
                                   child: Text(
                                     'ZEUS VPN',
                                     style: TextStyle(
-                                      fontSize: 36,
+                                      fontSize: 32,
                                       fontWeight: FontWeight.w900,
-                                      letterSpacing: 6,
+                                      letterSpacing: 8,
                                       color: Colors.white,
-                                      shadows: [
-                                        Shadow(color: neonCyan, blurRadius: 10),
-                                        Shadow(color: neonMagenta, blurRadius: 20),
-                                      ],
+                                      shadows: [Shadow(color: neonCyan, blurRadius: 10), Shadow(color: neonMagenta, blurRadius: 20)],
                                     ),
                                   ),
                                 );
@@ -414,294 +504,201 @@ jobs:
                             ),
                           ),
                           
-                          // لاگ زنده
+                          // لینک و تنظیمات
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 20),
-                            child: Text(
-                              _liveLog,
-                              style: TextStyle(color: neonGreen.withOpacity(0.8), fontSize: 10, fontFamily: 'monospace'),
-                            ),
-                          ),
-                          
-                          const SizedBox(height: 10),
-
-                          // بخش لینک اشتراک
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: BackdropFilter(
-                                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.05),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: neonCyan.withOpacity(0.4), width: 1),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: BackdropFilter(
+                                      filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.05),
+                                          border: Border.all(color: neonCyan.withOpacity(0.3)),
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
                                         child: TextField(
                                           controller: _subController,
-                                          style: const TextStyle(color: Colors.white, fontSize: 13),
+                                          style: const TextStyle(color: Colors.white, fontSize: 12),
                                           decoration: InputDecoration(
-                                            hintText: 'Enter Sub Link...',
-                                            hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
+                                            hintText: 'ENTER SUB LINK...',
+                                            hintStyle: TextStyle(color: Colors.white.withOpacity(0.2), fontSize: 11),
                                             border: InputBorder.none,
-                                            isDense: true,
                                           ),
                                         ),
                                       ),
-                                      IconButton(
-                                        icon: Icon(Icons.refresh, color: neonCyan),
-                                        onPressed: _isLoading ? null : _fetchConfigs,
-                                      ),
-                                    ],
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ),
-                          ),
-                          
-                          // نشان‌های استتار PattNG
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
-                            child: Row(
-                              children: [
-                                _buildBadge('UNSAFE FP', neonMagenta),
-                                const SizedBox(width: 8),
-                                _buildBadge('FRAGMENTATION', neonCyan),
+                                const SizedBox(width: 10),
+                                GestureDetector(
+                                  onTap: _isLoading ? null : _fetchConfigs,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: neonCyan.withOpacity(0.1),
+                                      border: Border.all(color: neonCyan.withOpacity(0.5)),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Icon(Icons.sync, color: neonCyan, size: 20),
+                                  ),
+                                ),
                               ],
                             ),
                           ),
                           
-                          const SizedBox(height: 5),
+                          const SizedBox(height: 20),
 
-                          // هدر هوشمند لیست سرورها
-                          if (_configs.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 20),
-                              child: GestureDetector(
-                                onTap: () => setState(() => _isConfigListExpanded = !_isConfigListExpanded),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
-                                  decoration: BoxDecoration(
-                                    color: neonCyan.withOpacity(0.1),
-                                    borderRadius: _isConfigListExpanded 
-                                        ? const BorderRadius.vertical(top: Radius.circular(10)) 
-                                        : BorderRadius.circular(10),
-                                    border: Border.all(color: neonCyan.withOpacity(0.5)),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.dns, color: neonCyan, size: 18),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              selectedName,
-                                              style: TextStyle(color: neonCyan, fontWeight: FontWeight.bold, fontSize: 14),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              '${_configs.length} NODES SECURED',
-                                              style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 10, letterSpacing: 1),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      if (selectedPingText.isNotEmpty)
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                          decoration: BoxDecoration(
-                                            color: selectedPingColor.withOpacity(0.1),
-                                            borderRadius: BorderRadius.circular(4),
-                                            border: Border.all(color: selectedPingColor.withOpacity(0.5)),
-                                          ),
-                                          child: Text(
-                                            selectedPingText,
-                                            style: TextStyle(color: selectedPingColor, fontSize: 11, fontWeight: FontWeight.bold),
-                                          ),
-                                        ),
-                                      const SizedBox(width: 10),
-                                      Icon(
-                                        _isConfigListExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                                        color: neonCyan,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-
-                          // لیست سرورها
-                          AnimatedCrossFade(
-                            firstChild: const SizedBox(width: double.infinity, height: 0),
-                            secondChild: Container(
-                              constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.3),
-                              margin: const EdgeInsets.symmetric(horizontal: 20),
+                          // دکمه انتخاب سرور
+                          GestureDetector(
+                            onTap: _configs.isEmpty ? () => _showSnackBar('Fetch servers first!', isError: true) : _showServerListModal,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                               decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.02),
-                                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(10)),
-                                border: Border.all(color: neonCyan.withOpacity(0.3)),
+                                color: Colors.white.withOpacity(0.05),
+                                borderRadius: BorderRadius.circular(30),
+                                border: Border.all(color: neonMagenta.withOpacity(0.5)),
                               ),
-                              child: ListView.builder(
-                                shrinkWrap: true,
-                                padding: const EdgeInsets.all(8),
-                                itemCount: _configs.length,
-                                itemBuilder: (context, index) {
-                                  final config = _configs[index];
-                                  final isSelected = config == _selectedConfig;
-                                  final name = _parseConfigName(config);
-                                  final ping = _latencies[config];
-                                  
-                                  String pingText = '--';
-                                  Color pingColor = Colors.grey;
-                                  if (ping != null) {
-                                    if (ping == -1) { pingText = 'TIMEOUT'; pingColor = neonMagenta; }
-                                    else { 
-                                      pingText = '$ping ms'; 
-                                      pingColor = ping < 200 ? neonGreen : (ping < 500 ? Colors.orange : neonMagenta); 
-                                    }
-                                  }
-
-                                  return GestureDetector(
-                                    onTap: () => setState(() => _selectedConfig = config),
-                                    child: AnimatedContainer(
-                                      duration: const Duration(milliseconds: 200),
-                                      margin: const EdgeInsets.only(bottom: 8),
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                      decoration: BoxDecoration(
-                                        color: isSelected ? neonCyan.withOpacity(0.15) : Colors.transparent,
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                          color: isSelected ? neonCyan : Colors.white.withOpacity(0.1),
-                                        ),
-                                      ),
-                                      child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              name,
-                                              style: TextStyle(
-                                                color: isSelected ? neonCyan : Colors.white70,
-                                                fontSize: 13,
-                                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                              ),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 10),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                                            decoration: BoxDecoration(
-                                              color: pingColor.withOpacity(0.1),
-                                              borderRadius: BorderRadius.circular(4),
-                                              border: Border.all(color: pingColor.withOpacity(0.5)),
-                                            ),
-                                            child: Text(
-                                              pingText,
-                                              style: TextStyle(color: pingColor, fontSize: 10, fontWeight: FontWeight.bold),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                },
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.dns, color: neonMagenta, size: 16),
+                                  const SizedBox(width: 10),
+                                  ConstrainedBox(
+                                    constraints: const BoxConstraints(maxWidth: 150),
+                                    child: Text(selectedName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13), overflow: TextOverflow.ellipsis),
+                                  ),
+                                  if (selectedPingText.isNotEmpty) ...[
+                                    const SizedBox(width: 8),
+                                    Text('[$selectedPingText]', style: TextStyle(color: selectedPingColor, fontSize: 11, fontWeight: FontWeight.bold)),
+                                  ],
+                                  const SizedBox(width: 8),
+                                  Icon(Icons.keyboard_arrow_down, color: neonMagenta, size: 16),
+                                ],
                               ),
                             ),
-                            crossFadeState: _isConfigListExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-                            duration: const Duration(milliseconds: 300),
                           ),
 
                           const Spacer(),
 
-                          // پنل آمار واقعی
-                          if (_isConnected)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 10),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                                children: [
-                                  _buildRealStat('UPLOAD', _uploadSpeed, Icons.arrow_upward, neonMagenta),
-                                  _buildRealStat('DOWNLOAD', _downloadSpeed, Icons.arrow_downward, neonCyan),
-                                  _buildRealStat('TIME', _duration, Icons.timer, neonGreen),
-                                ],
-                              ),
-                            ),
-
-                          // دکمه تست سرعت
-                          if (_isConnected)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: GestureDetector(
-                                onTap: _isTestingSpeed ? null : _runSpeedTest,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                                  decoration: BoxDecoration(
-                                    color: neonMagenta.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(color: neonMagenta.withOpacity(0.5)),
-                                  ),
-                                  child: Text(
-                                    _isTestingSpeed ? 'TESTING...' : (_speedTestResult.isNotEmpty ? 'SPEED: $_speedTestResult' : 'RUN SPEED TEST'),
-                                    style: TextStyle(color: neonMagenta, fontWeight: FontWeight.bold, letterSpacing: 1, fontSize: 12),
-                                  ),
-                                ),
-                              ),
-                            ),
-
-                          // دکمه پاور نئونی
+                          // دکمه پاور با افکت چرخشی
                           GestureDetector(
                             onTap: _toggleConnection,
                             child: ScaleTransition(
                               scale: _isConnected ? _pulseAnimation : const AlwaysStoppedAnimation(1.0),
-                              child: Container(
-                                width: 110,
-                                height: 110,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: darkBg,
-                                  border: Border.all(
-                                    color: _isConnected ? neonGreen : neonCyan,
-                                    width: 3,
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: (_isConnected ? neonGreen : neonCyan).withOpacity(0.5),
-                                      blurRadius: 30,
-                                      spreadRadius: 5,
+                              child: Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  // هاله چرخان
+                                  RotationTransition(
+                                    turns: _rotateController,
+                                    child: Container(
+                                      width: 160,
+                                      height: 160,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        gradient: SweepGradient(
+                                          colors: _isConnected 
+                                              ? [neonGreen, Colors.transparent, neonGreen]
+                                              : [neonCyan, Colors.transparent, neonCyan],
+                                        ),
+                                      ),
                                     ),
-                                  ],
-                                ),
-                                child: Center(
-                                  child: Icon(
-                                    Icons.power_settings_new,
-                                    size: 50,
-                                    color: _isConnected ? neonGreen : neonCyan,
                                   ),
-                                ),
+                                  // دکمه اصلی
+                                  Container(
+                                    width: 140,
+                                    height: 140,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: darkBg,
+                                      border: Border.all(color: _isConnected ? neonGreen : neonCyan, width: 2),
+                                      boxShadow: [BoxShadow(color: (_isConnected ? neonGreen : neonCyan).withOpacity(0.3), blurRadius: 20, spreadRadius: 2)],
+                                    ),
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.power_settings_new, size: 45, color: _isConnected ? neonGreen : neonCyan),
+                                        const SizedBox(height: 5),
+                                        Text(_isConnected ? _duration : 'CONNECT', style: TextStyle(color: _isConnected ? neonGreen : neonCyan, fontSize: 12, letterSpacing: 1)),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
-                          const SizedBox(height: 15),
-                          Text(
-                            _status,
-                            style: TextStyle(
-                              color: _isConnected ? neonGreen : neonCyan.withOpacity(0.7),
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 4,
-                              fontSize: 12,
+
+                          const Spacer(),
+
+                          // پنل ضد سانسور PattNG
+                          Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 20),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.02),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: neonCyan.withOpacity(0.2)),
+                            ),
+                            child: Column(
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text('ANTI-CENSORSHIP PROTOCOL', style: TextStyle(color: neonCyan, fontSize: 10, fontWeight: FontWeight.bold)),
+                                    Icon(Icons.security, color: neonGreen, size: 14),
+                                  ],
+                                ),
+                                const Divider(color: Colors.white12),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                  children: [
+                                    _buildPattStat('UNSAFE FP', 'ACTIVE', neonMagenta),
+                                    _buildPattStat('TLS FRAGMENT', 'INJECTED', neonCyan),
+                                    _buildPattStat('CIPHER SUITE', 'AUTO', neonGreen),
+                                  ],
+                                ),
+                              ],
                             ),
                           ),
-                          const SizedBox(height: 20),
+                          
+                          const SizedBox(height: 15),
+
+                          // آمار
+                          if (_isConnected)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 20),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                children: [
+                                  _buildStat('UP', _uploadSpeed, Icons.arrow_upward, neonMagenta),
+                                  _buildStat('DOWN', _downloadSpeed, Icons.arrow_downward, neonCyan),
+                                  GestureDetector(
+                                    onTap: _isTestingSpeed ? null : _runSpeedTest,
+                                    child: _buildStat('SPEED', _isTestingSpeed ? '...' : (_speedTestResult.isNotEmpty ? _speedTestResult : 'TEST'), Icons.speed, neonGreen),
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                          const SizedBox(height: 15),
+
+                          // ترمینال زنده
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                            color: Colors.black.withOpacity(0.5),
+                            child: Text(
+                              _liveLog,
+                              style: TextStyle(color: neonGreen.withOpacity(0.8), fontSize: 10, fontFamily: 'monospace'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -710,33 +707,22 @@ jobs:
               );
             }
 
-            Widget _buildBadge(String text, Color color) {
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: color.withOpacity(0.5)),
-                ),
-                child: Text(
-                  text,
-                  style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 1),
-                ),
+            Widget _buildPattStat(String title, String value, Color color) {
+              return Column(
+                children: [
+                  Text(value, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 2),
+                  Text(title, style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 8)),
+                ],
               );
             }
 
-            Widget _buildRealStat(String label, String value, IconData icon, Color color) {
+            Widget _buildStat(String title, String value, IconData icon, Color color) {
               return Column(
                 children: [
-                  Row(
-                    children: [
-                      Icon(icon, color: color, size: 14),
-                      const SizedBox(width: 4),
-                      Text(label, style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 10, letterSpacing: 1)),
-                    ],
-                  ),
+                  Icon(icon, color: color, size: 16),
                   const SizedBox(height: 4),
-                  Text(value, style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.bold)),
+                  Text(value, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
                 ],
               );
             }
@@ -748,19 +734,16 @@ jobs:
 
             @override
             void paint(Canvas canvas, Size size) {
-              final paint = Paint()
-                ..color = gridColor
-                ..strokeWidth = 1.0;
-
-              final double horizon = size.height * 0.5;
+              final paint = Paint()..color = gridColor..strokeWidth = 1.0;
+              final double horizon = size.height * 0.4;
               final double centerX = size.width / 2;
 
-              for (double i = 1; i <= 10; i++) {
-                final double y = horizon + (size.height - horizon) * (i / 10) * (i / 10);
+              for (double i = 1; i <= 15; i++) {
+                final double y = horizon + (size.height - horizon) * (i / 15) * (i / 15);
                 canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
               }
 
-              for (double i = -10; i <= 10; i++) {
+              for (double i = -15; i <= 15; i++) {
                 final double x = centerX + (size.width / 10) * i;
                 canvas.drawLine(Offset(centerX, horizon), Offset(x, size.height), paint);
               }
@@ -771,11 +754,14 @@ jobs:
           }
           EOF
 
-      - name: Patch Gradle and Manifest for VPN
+      - name: Patch AndroidManifest for VPN & Notifications
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
-          sed -i 's/<application/<application android:usesCleartextTraffic="true"/' $MANIFEST
+          # تزریق مجوزها
+          sed -i 's/<application/<uses-permission android:name="android.permission.POST_NOTIFICATIONS"\/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"\/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"\/>\n    <application android:usesCleartextTraffic="true"/' $MANIFEST
           
+      - name: Patch Gradle for VPN
+        run: |
           GRADLE_FILE="android/app/build.gradle.kts"
           sed -i 's/android {/android {\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' $GRADLE_FILE
           
