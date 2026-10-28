@@ -27,7 +27,6 @@ jobs:
       - name: Generate Android files
         run: flutter create --platforms=android .
         
-      # 🌟 ترفند اصلی: جایگزینی کلید موقت با کلید ثابت (تا نیازی به حذف نسخه قبلی نباشد)
       - name: Setup Fixed Keystore
         run: |
           mkdir -p ~/.android
@@ -197,6 +196,27 @@ jobs:
               } catch (_) { return 'Unknown Server'; }
             }
 
+            // ⚡ تزریق تنظیمات PattNG به کانفیگ
+            String _applyPattNGSettings(String configUri) {
+              try {
+                final uri = Uri.parse(configUri);
+                Map<String, String> queryParams = Map.from(uri.queryParameters);
+                
+                // ۱. تنظیم اثرانگشت امن (Unsafe Fingerprint)
+                queryParams['fp'] = 'unsafe';
+                
+                // ۲. فعال‌سازی شکستن بسته‌ها (Fragmentation)
+                queryParams['fragment'] = 'tlshello';
+                
+                // ۳. تنظیم Cipher Suites سفارشی (در صورت پشتیبانی)
+                // queryParams['cipherSuites'] = 'TLS_AES_128_GCM_SHA256'; 
+                
+                return uri.replace(queryParameters: queryParams).toString();
+              } catch (_) {
+                return configUri;
+              }
+            }
+
             Future<void> _fetchConfigs() async {
               if (_subController.text.isEmpty) return;
               
@@ -222,6 +242,7 @@ jobs:
                 final links = body.split('\n')
                     .map((e) => e.trim())
                     .where((e) => e.startsWith('vless://') || e.startsWith('trojan://') || e.startsWith('vmess://'))
+                    .map((link) => _applyPattNGSettings(link)) // اعمال تنظیمات
                     .toList();
 
                 setState(() {
