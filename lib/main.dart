@@ -92,7 +92,11 @@ class VpnHomePage extends StatefulWidget {
 }
 
 class _VpnHomePageState extends State<VpnHomePage> with TickerProviderStateMixin {
-  final Dio _dio = Dio();
+  final Dio _dio = Dio(BaseOptions(
+    connectTimeout: const Duration(seconds: 8),
+    receiveTimeout: const Duration(seconds: 20),
+    sendTimeout: const Duration(seconds: 10),
+  ));
 
   List<String> _subUrls = [];
   List<ServerNode> _allNodes = [];
@@ -260,20 +264,11 @@ class _VpnHomePageState extends State<VpnHomePage> with TickerProviderStateMixin
 
       queryParams['fp'] = _pattSettings.fingerprint;
 
-      if (_pattSettings.fragment != 'none') {
-        queryParams['fragment'] = _pattSettings.fragment;
-      }
       if (_pattSettings.cipherSuites.isNotEmpty) {
         queryParams['cs'] = _pattSettings.cipherSuites;
       }
       if (_pattSettings.allowInsecure) {
         queryParams['allowInsecure'] = '1';
-      }
-      if (_pattSettings.enableIPv6) {
-        queryParams['enableIPv6'] = '1';
-      }
-      if (_pattSettings.enableMux) {
-        queryParams['mux'] = '1';
       }
       if (_pattSettings.enableReality) {
         queryParams['security'] = 'reality';
@@ -281,9 +276,16 @@ class _VpnHomePageState extends State<VpnHomePage> with TickerProviderStateMixin
         queryParams['sid'] = _pattSettings.realityShortId;
         queryParams['spx'] = _pattSettings.realitySpiderX;
       }
-      if (_pattSettings.flow.isNotEmpty && _pattSettings.flow != 'none') {
+
+      if (uri.scheme == 'vless' &&
+          _pattSettings.network == 'tcp' &&
+          _pattSettings.flow.isNotEmpty &&
+          _pattSettings.flow != 'none') {
         queryParams['flow'] = _pattSettings.flow;
+      } else {
+        queryParams.remove('flow');
       }
+
       if (_pattSettings.alpn.isNotEmpty) {
         queryParams['alpn'] = _pattSettings.alpn;
       }
@@ -306,6 +308,45 @@ class _VpnHomePageState extends State<VpnHomePage> with TickerProviderStateMixin
       return uri.replace(queryParameters: queryParams).toString();
     } catch (_) {
       return configUri;
+    }
+  }
+
+  String _applyCoreSettings(String config) {
+    try {
+      final Map<String, dynamic> json = jsonDecode(config) as Map<String, dynamic>;
+      final List? outs = json['outbounds'] as List?;
+      if (outs == null || outs.isEmpty) return config;
+      final Map<String, dynamic> mainOut = outs[0] as Map<String, dynamic>;
+
+      if (_pattSettings.enableMux) {
+        mainOut['mux'] = {'enabled': true, 'concurrency': 8};
+      }
+
+      if (_pattSettings.fragment != 'none') {
+        final Map<String, dynamic> stream =
+            (mainOut['streamSettings'] as Map<String, dynamic>?) ?? <String, dynamic>{};
+        final Map<String, dynamic> sockopt =
+            (stream['sockopt'] as Map<String, dynamic>?) ?? <String, dynamic>{};
+        sockopt['dialerProxy'] = 'zeus-fragment';
+        stream['sockopt'] = sockopt;
+        mainOut['streamSettings'] = stream;
+        outs.add(<String, dynamic>{
+          'tag': 'zeus-fragment',
+          'protocol': 'freedom',
+          'settings': {
+            'fragment': {
+              'packets': _pattSettings.fragment.startsWith('tlshello') ? 'tlshello' : _pattSettings.fragment,
+              'length': '100-200',
+              'interval': '10-20',
+            },
+          },
+        });
+      }
+
+      json['outbounds'] = outs;
+      return jsonEncode(json);
+    } catch (_) {
+      return config;
     }
   }
 
@@ -342,7 +383,8 @@ class _VpnHomePageState extends State<VpnHomePage> with TickerProviderStateMixin
                 e.startsWith('vless://') ||
                 e.startsWith('trojan://') ||
                 e.startsWith('vmess://'))
-            .map((link) => _applyPattNGSettings(link))
+            .map((link) =>
+                link.startsWith('vmess://') ? link : _applyPattNGSettings(link))
             .toList();
 
         for (String link in links) {
@@ -353,7 +395,7 @@ class _VpnHomePageState extends State<VpnHomePage> with TickerProviderStateMixin
           ));
         }
       } catch (e) {
-        // Skip failed sub
+        debugPrint('sub fetch error ($subTag): $e');
       }
     }
 
@@ -376,14 +418,28 @@ class _VpnHomePageState extends State<VpnHomePage> with TickerProviderStateMixin
   }
 
   Future<void> _testAllLatencies() async {
-    for (var node in _allNodes) {
-      _pingSingleServer(node);
-    }
+    const int concurrency = 20;
+    final List<ServerNode> queue = List<ServerNode>.from(_allNodes);
+    await Future.wait(List.generate(concurrency, (_) async {
+      while (queue.isNotEmpty) {
+        final ServerNode node = queue.removeAt(0);
+        await _pingSingleServer(node);
+      }
+    }));
   }
 
   Future<void> _pingSingleServer(ServerNode node) async {
     try {
       final uri = Uri.parse(node.rawUri);
+      if (uri.port == 0) {
+        if (mounted) {
+          setState(() {
+            node.pingText = 'TIMEOUT';
+            node.pingColor = neonMagenta;
+          });
+        }
+        return;
+      }
       final stopwatch = Stopwatch()..start();
       final socket = await Socket.connect(
         uri.host,
@@ -421,7 +477,7 @@ class _VpnHomePageState extends State<VpnHomePage> with TickerProviderStateMixin
         'https://speed.cloudflare.com/__down?bytes=10000000',
         options: Options(
           responseType: ResponseType.bytes,
-          receiveTimeout: const Duration(seconds: 15),
+          receiveTimeout: const Duration(seconds: 30),
         ),
       );
       stopwatch.stop();
@@ -462,9 +518,10 @@ class _VpnHomePageState extends State<VpnHomePage> with TickerProviderStateMixin
     }
 
     final parser = V2ray.parseFromURL(_selectedNodeUri!);
+    final String config = _applyCoreSettings(parser.getFullConfiguration());
     await _v2ray.startV2Ray(
       remark: parser.remark,
-      config: parser.getFullConfiguration(),
+      config: config,
       proxyOnly: false,
     );
   }
@@ -523,11 +580,11 @@ class _VpnHomePageState extends State<VpnHomePage> with TickerProviderStateMixin
                           setModalState(() => _pattSettings.allowInsecure = val);
                           _savePattSettings();
                         }),
-                        _buildSwitch('ENABLE IPv6', 'Force IPv6 outbound', _pattSettings.enableIPv6, (val) {
+                        _buildSwitch('ENABLE IPv6', 'Saved only (needs routing rules)', _pattSettings.enableIPv6, (val) {
                           setModalState(() => _pattSettings.enableIPv6 = val);
                           _savePattSettings();
                         }),
-                        _buildSwitch('ENABLE MUX', 'Multiplexing', _pattSettings.enableMux, (val) {
+                        _buildSwitch('ENABLE MUX', 'Multiplexing (applied to core JSON)', _pattSettings.enableMux, (val) {
                           setModalState(() => _pattSettings.enableMux = val);
                           _savePattSettings();
                         }),
@@ -931,7 +988,9 @@ class _VpnHomePageState extends State<VpnHomePage> with TickerProviderStateMixin
     String selectedPing = '--';
     Color selectedPingColor = Colors.grey;
 
-    if (_selectedNodeUri != null && _allNodes.isNotEmpty) {
+    if (_isLoading) {
+      selectedName = 'SYNCING...';
+    } else if (_selectedNodeUri != null && _allNodes.isNotEmpty) {
       final node = _allNodes.firstWhere(
         (element) => element.rawUri == _selectedNodeUri,
         orElse: () => _allNodes.first,
