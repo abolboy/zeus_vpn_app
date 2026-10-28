@@ -27,10 +27,19 @@ jobs:
       - name: Generate Android files
         run: flutter create --platforms=android .
         
-      - name: Setup Fixed Keystore
+      # 🌟 راه‌حل قطعی برای کلید ثابت (بدون نیاز به Base64)
+      - name: Cache Android Debug Keystore
+        uses: actions/cache@v3
+        id: keystore-cache
+        with:
+          path: ~/.android/debug.keystore
+          key: ${{ runner.os }}-debug-keystore-v1
+          
+      - name: Generate Keystore if not cached
+        if: steps.keystore-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/.android
-          echo "MIIEqDCCApCgAwIBAgIJAJ..." | base64 -d > ~/.android/debug.keystore
+          keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           
       - name: Overwrite pubspec.yaml
         run: |
@@ -202,14 +211,8 @@ jobs:
                 final uri = Uri.parse(configUri);
                 Map<String, String> queryParams = Map.from(uri.queryParameters);
                 
-                // ۱. تنظیم اثرانگشت امن (Unsafe Fingerprint)
                 queryParams['fp'] = 'unsafe';
-                
-                // ۲. فعال‌سازی شکستن بسته‌ها (Fragmentation)
                 queryParams['fragment'] = 'tlshello';
-                
-                // ۳. تنظیم Cipher Suites سفارشی (در صورت پشتیبانی)
-                // queryParams['cipherSuites'] = 'TLS_AES_128_GCM_SHA256'; 
                 
                 return uri.replace(queryParameters: queryParams).toString();
               } catch (_) {
