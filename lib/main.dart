@@ -1,10 +1,11 @@
-import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
+import 'package:flutter_v2ray_client/flutter_v2ray.dart';
+import 'package:flutter_v2ray_client/model/v2ray_status.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/material.dart';
-import 'package:flutter_v2ray_client/flutter_v2ray_client.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:dio/dio.dart';
+import 'dart:math';
 
 void main() {
   runApp(const ZeusVpnApp());
@@ -17,392 +18,1202 @@ class ZeusVpnApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'ZEUS VPN',
-      theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF05050A),
-        colorScheme: ColorScheme.dark(
-          primary: const Color(0xFF00F0FF),
-          secondary: const Color(0xFFFF003C),
-        ),
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: const Color(0xFF050505),
       ),
-      home: const HomePage(),
+      home: const VpnHomePage(),
     );
   }
 }
 
-class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+class ServerNode {
+  final String subTag;
+  final String rawUri;
+  final String displayName;
+  String pingText;
+  Color pingColor;
 
-  @override
-  State<HomePage> createState() => _HomePageState();
+  ServerNode({
+    required this.subTag,
+    required this.rawUri,
+    required this.displayName,
+    this.pingText = '--',
+    this.pingColor = Colors.grey,
+  });
 }
 
-class _HomePageState extends State<HomePage> {
-  final FlutterV2ray _v2ray = FlutterV2ray();
-  V2RayStatus _status = const V2RayStatus();
+class PattSettings {
+  String fingerprint;
+  String fragment;
+  String cipherSuites;
+  bool allowInsecure;
+  bool enableIPv6;
+  bool enableMux;
+  bool enableReality;
+  String realityPublicKey;
+  String realityShortId;
+  String realitySpiderX;
+  String flow;
+  String alpn;
+  String sni;
+  String path;
+  String host;
+  String headerType;
+  String network;
+
+  PattSettings({
+    this.fingerprint = 'unsafe',
+    this.fragment = 'tlshello',
+    this.cipherSuites = '',
+    this.allowInsecure = false,
+    this.enableIPv6 = false,
+    this.enableMux = false,
+    this.enableReality = false,
+    this.realityPublicKey = '',
+    this.realityShortId = '',
+    this.realitySpiderX = '/',
+    this.flow = 'xtls-rprx-vision',
+    this.alpn = 'h2,http/1.1',
+    this.sni = '',
+    this.path = '/',
+    this.host = '',
+    this.headerType = 'none',
+    this.network = 'tcp',
+  });
+}
+
+class VpnHomePage extends StatefulWidget {
+  const VpnHomePage({super.key});
+
+  @override
+  State<VpnHomePage> createState() => _VpnHomePageState();
+}
+
+class _VpnHomePageState extends State<VpnHomePage> with TickerProviderStateMixin {
+  final Dio _dio = Dio();
+
+  List<String> _subUrls = [];
+  List<ServerNode> _allNodes = [];
+  String? _selectedNodeUri;
+
+  bool _isInitialized = false;
+  bool _isLoading = false;
   bool _isConnected = false;
-  
-  List<String> _subLinks = [];
-  List<Map<String, dynamic>> _servers = [];
-  int? _selectedServerIndex;
-  int? _previousSelection; // رفع باگ انتخاب سرور
-  
-  final TextEditingController _subController = TextEditingController();
+  bool _isTestingSpeed = false;
+  String _speedTestResult = '';
+
+  PattSettings _pattSettings = PattSettings();
+
+  String _uploadSpeed = '0 B/s';
+  String _downloadSpeed = '0 B/s';
+  String _duration = '00:00:00';
+  String _status = 'DISCONNECTED';
+
+  final Color neonCyan = const Color(0xFF00F0FF);
+  final Color neonMagenta = const Color(0xFFFF007F);
+  final Color neonGreen = const Color(0xFF00FF88);
+  final Color darkBg = const Color(0xFF050505);
+
+  late V2ray _v2ray;
+  late AnimationController _pulseController;
+  late AnimationController _rotateController;
+  late Animation<double> _pulseAnimation;
 
   @override
   void initState() {
     super.initState();
-    _loadData();
-    _v2ray.status().listen((status) {
-      if (mounted) {
-        setState(() {
-          _status = status;
-        });
-      }
-    });
-  }
 
-  Future<void> _loadData() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _subLinks = prefs.getStringList('sub_links') ?? [];
-    });
-    if (_subLinks.isNotEmpty) _fetchServers();
-  }
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
 
-  Future<void> _saveData() async {
-    final prefs = await SharedPreferences.getInstance();
-    prefs.setStringList('sub_links', _subLinks);
-  }
+    _rotateController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    )..repeat();
 
-  Future<void> _addSubLink() async {
-    if (_subController.text.isNotEmpty) {
-      setState(() {
-        _subLinks.add(_subController.text.trim());
-        _subController.clear();
-      });
-      _saveData();
-      _fetchServers();
-    }
-  }
+    _pulseAnimation = Tween<double>(begin: 0.95, end: 1.05).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
 
-  Future<void> _fetchServers() async {
-    List<Map<String, dynamic>> allServers = [];
-    final dio = Dio();
-    
-    for (String sub in _subLinks) {
-      try {
-        final response = await dio.get(sub);
-        final decoded = utf8.decode(base64Decode(response.data.toString().trim()));
-        final lines = decoded.split('\n');
-        for (var line in lines) {
-          if (line.isNotEmpty && (line.startsWith('vless://') || line.startsWith('trojan://'))) {
-            allServers.add({'config': line, 'name': _extractName(line), 'ping': -1});
-          }
+    _v2ray = V2ray(
+      onStatusChanged: (V2RayStatus status) {
+        if (mounted) {
+          setState(() {
+            _status = status.state;
+            _isConnected = (status.state == 'CONNECTED');
+
+            _uploadSpeed = _formatSpeed(status.uploadSpeed);
+            _downloadSpeed = _formatSpeed(status.downloadSpeed);
+            _duration = status.duration ?? '00:00:00';
+
+            if (!_isConnected) {
+              _speedTestResult = '';
+              _uploadSpeed = '0 B/s';
+              _downloadSpeed = '0 B/s';
+              _duration = '00:00:00';
+            }
+          });
         }
-      } catch (e) {
-        debugPrint("Error fetching sub: $e");
-      }
-    }
-    
-    setState(() {
-      _servers = allServers;
-    });
-    _testAllPings();
+      },
+    );
+    _initV2Ray();
+    _loadSavedData();
   }
 
-  String _extractName(String config) {
-    if (config.contains('#')) {
-      return Uri.decodeComponent(config.split('#').last.replaceAll('\n', '').trim());
-    }
-    return 'Server ${_servers.length + 1}';
-  }
-
-  Future<void> _testAllPings() async {
-    for (int i = 0; i < _servers.length; i++) {
-      _testPing(i); // اجرای موازی
-    }
-  }
-
-  Future<void> _testPing(int index) async {
-    try {
-      String host = "8.8.8.8"; 
-      int port = 53;
-      
-      final start = DateTime.now();
-      final socket = await Socket.connect(host, port, timeout: const Duration(seconds: 2));
-      final end = DateTime.now();
-      socket.destroy();
-      
-      final ping = end.difference(start).inMilliseconds;
+  Future<void> _initV2Ray() async {
+    await _v2ray.initialize(
+      notificationIconResourceType: "mipmap",
+      notificationIconResourceName: "ic_launcher",
+    );
+    if (mounted) {
       setState(() {
-        _servers[index]['ping'] = ping;
-      });
-    } catch (e) {
-      setState(() {
-        _servers[index]['ping'] = -1;
+        _isInitialized = true;
       });
     }
-  }
-
-  Future<void> _testSpeed() async {
-    if (!_isConnected) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("ابتدا متصل شوید!")));
-      return;
-    }
-    
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("تست سرعت در حال انجام...")));
-    final dio = Dio();
-    final start = DateTime.now();
-    
-    try {
-      await dio.download("https://speed.cloudflare.com/__down?bytes=10000000", "/storage/emulated/0/Download/zeus_speedtest.tmp");
-      final end = DateTime.now();
-      final duration = end.difference(start).inMilliseconds;
-      final mbps = (10 * 8) / (duration / 1000);
-      
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("سرعت: ${mbps.toStringAsFixed(2)} Mbps")));
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("خطا در تست سرعت")));
-    }
-  }
-
-  Future<void> _connect() async {
-    if (_selectedServerIndex == null || _servers.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("یک سرور انتخاب کنید")));
-      return;
-    }
-    
-    try {
-      await _v2ray.start(
-        config: _servers[_selectedServerIndex]['config'],
-        proxyOnly: false,
-      );
-      setState(() => _isConnected = true);
-    } catch (e) {
-      debugPrint("Connect error: $e");
-    }
-  }
-
-  Future<void> _disconnect() async {
-    await _v2ray.stop();
-    setState(() => _isConnected = false);
-  }
-
-  void _selectServer(int index) {
-    setState(() {
-      _previousSelection = _selectedServerIndex; // حل باگ State
-      _selectedServerIndex = index;
-    });
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Stack(
-        children: [
-          _buildGridBackground(),
-          SafeArea(
-            child: Column(
-              children: [
-                _buildStatusPanel(),
-                const SizedBox(height: 20),
-                _buildConnectButton(),
-                const SizedBox(height: 20),
-                Expanded(child: _buildServerList()),
-              ],
-            ),
-          ),
-        ],
-      ),
-      floatingActionButton: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          FloatingActionButton(
-            heroTag: "speed",
-            mini: true,
-            onPressed: _testSpeed,
-            backgroundColor: const Color(0xFFFF003C),
-            child: const Icon(Icons.speed, color: Colors.white),
-          ),
-          const SizedBox(height: 10),
-          FloatingActionButton(
-            heroTag: "settings",
-            onPressed: _showPattngSettings,
-            backgroundColor: const Color(0xFF00F0FF),
-            child: const Icon(Icons.settings, color: Colors.black),
-          ),
-        ],
-      ),
-    );
+  void dispose() {
+    _pulseController.dispose();
+    _rotateController.dispose();
+    super.dispose();
   }
 
-  Widget _buildGridBackground() {
-    return CustomPaint(
-      painter: _GridPainter(),
-      child: Container(color: Colors.black.withOpacity(0.8)),
-    );
+  String _formatSpeed(int? bytesPerSecond) {
+    final int bps = bytesPerSecond ?? 0;
+    if (bps < 1024) return '$bps B/s';
+    if (bps < 1024 * 1024) return '${(bps / 1024).toStringAsFixed(1)} KB/s';
+    return '${(bps / (1024 * 1024)).toStringAsFixed(1)} MB/s';
   }
 
-  Widget _buildStatusPanel() {
-    return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: const Color(0xFF00F0FF), width: 1.5),
-      ),
-      child: Column(
-        children: [
-          const Text("ZEUS HUD", style: TextStyle(color: Color(0xFF00F0FF), fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 2)),
-          const SizedBox(height: 15),
-          Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-            _statItem("UPLOAD", "${_status.speedUp} B/s"),
-            _statItem("DOWNLOAD", "${_status.speedDown} B/s"),
-            _statItem("TIME", _status.duration ?? "00:00"),
-          ])
-        ],
-      ),
-    );
+  Future<void> _loadSavedData() async {
+    final prefs = await SharedPreferences.getInstance();
+    _subUrls = prefs.getStringList('subUrls') ?? [];
+
+    _pattSettings.fingerprint = prefs.getString('patt_fp') ?? 'unsafe';
+    _pattSettings.fragment = prefs.getString('patt_frag') ?? 'tlshello';
+    _pattSettings.cipherSuites = prefs.getString('patt_cs') ?? '';
+    _pattSettings.allowInsecure = prefs.getBool('patt_insecure') ?? false;
+    _pattSettings.enableIPv6 = prefs.getBool('patt_ipv6') ?? false;
+    _pattSettings.enableMux = prefs.getBool('patt_mux') ?? false;
+    _pattSettings.enableReality = prefs.getBool('patt_reality') ?? false;
+    _pattSettings.realityPublicKey = prefs.getString('patt_pbk') ?? '';
+    _pattSettings.realityShortId = prefs.getString('patt_sid') ?? '';
+    _pattSettings.realitySpiderX = prefs.getString('patt_spx') ?? '/';
+    _pattSettings.flow = prefs.getString('patt_flow') ?? 'xtls-rprx-vision';
+    _pattSettings.alpn = prefs.getString('patt_alpn') ?? 'h2,http/1.1';
+    _pattSettings.sni = prefs.getString('patt_sni') ?? '';
+    _pattSettings.path = prefs.getString('patt_path') ?? '/';
+    _pattSettings.host = prefs.getString('patt_host') ?? '';
+    _pattSettings.headerType = prefs.getString('patt_header') ?? 'none';
+    _pattSettings.network = prefs.getString('patt_network') ?? 'tcp';
+
+    if (_subUrls.isNotEmpty) {
+      _fetchAllConfigs();
+    }
   }
 
-  Widget _statItem(String title, String value) {
-    return Column(children: [
-      Text(title, style: const TextStyle(color: Colors.grey, fontSize: 10)),
-      const SizedBox(height: 5),
-      Text(value, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold))
-    ]);
+  Future<void> _saveSubs() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('subUrls', _subUrls);
   }
 
-  Widget _buildConnectButton() {
-    return GestureDetector(
-      onTap: _isConnected ? _disconnect : _connect,
-      child: Container(
-        width: 120, height: 120,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: _isConnected ? const Color(0xFFFF003C) : const Color(0xFF00F0FF),
-          boxShadow: [
-            BoxShadow(color: (_isConnected ? const Color(0xFFFF003C) : const Color(0xFF00F0FF)).withOpacity(0.5), blurRadius: 20, spreadRadius: 2)
-          ]
-        ),
-        child: Center(child: Icon(_isConnected ? Icons.power_settings_new : Icons.play_arrow, color: Colors.black, size: 50)),
-      ),
-    );
+  Future<void> _savePattSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('patt_fp', _pattSettings.fingerprint);
+    await prefs.setString('patt_frag', _pattSettings.fragment);
+    await prefs.setString('patt_cs', _pattSettings.cipherSuites);
+    await prefs.setBool('patt_insecure', _pattSettings.allowInsecure);
+    await prefs.setBool('patt_ipv6', _pattSettings.enableIPv6);
+    await prefs.setBool('patt_mux', _pattSettings.enableMux);
+    await prefs.setBool('patt_reality', _pattSettings.enableReality);
+    await prefs.setString('patt_pbk', _pattSettings.realityPublicKey);
+    await prefs.setString('patt_sid', _pattSettings.realityShortId);
+    await prefs.setString('patt_spx', _pattSettings.realitySpiderX);
+    await prefs.setString('patt_flow', _pattSettings.flow);
+    await prefs.setString('patt_alpn', _pattSettings.alpn);
+    await prefs.setString('patt_sni', _pattSettings.sni);
+    await prefs.setString('patt_path', _pattSettings.path);
+    await prefs.setString('patt_host', _pattSettings.host);
+    await prefs.setString('patt_header', _pattSettings.headerType);
+    await prefs.setString('patt_network', _pattSettings.network);
   }
 
-  Widget _buildServerList() {
-    if (_servers.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text("لینک ساب ثبت نشده است", style: TextStyle(color: Colors.white70)),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _subController,
-                style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  hintText: "لینک اشتراک را وارد کنید",
-                  hintStyle: const TextStyle(color: Colors.grey),
-                  suffixIcon: IconButton(icon: const Icon(Icons.add, color: Color(0xFF00F0FF)), onPressed: _addSubLink),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF00F0FF)))
-                ),
-              )
-            ],
-          ),
-        ),
-      );
+  String _extractName(String uriStr) {
+    try {
+      final uri = Uri.parse(uriStr);
+      if (uri.fragment.isNotEmpty) return Uri.decodeComponent(uri.fragment);
+      return '${uri.host}:${uri.port}';
+    } catch (_) {
+      return 'Unknown Server';
+    }
+  }
+
+  String _applyPattNGSettings(String configUri) {
+    try {
+      final uri = Uri.parse(configUri);
+      Map<String, String> queryParams = Map.from(uri.queryParameters);
+
+      queryParams['fp'] = _pattSettings.fingerprint;
+
+      if (_pattSettings.fragment != 'none') {
+        queryParams['fragment'] = _pattSettings.fragment;
+      }
+      if (_pattSettings.cipherSuites.isNotEmpty) {
+        queryParams['cs'] = _pattSettings.cipherSuites;
+      }
+      if (_pattSettings.allowInsecure) {
+        queryParams['allowInsecure'] = '1';
+      }
+      if (_pattSettings.enableIPv6) {
+        queryParams['enableIPv6'] = '1';
+      }
+      if (_pattSettings.enableMux) {
+        queryParams['mux'] = '1';
+      }
+      if (_pattSettings.enableReality) {
+        queryParams['security'] = 'reality';
+        queryParams['pbk'] = _pattSettings.realityPublicKey;
+        queryParams['sid'] = _pattSettings.realityShortId;
+        queryParams['spx'] = _pattSettings.realitySpiderX;
+      }
+      if (_pattSettings.flow.isNotEmpty && _pattSettings.flow != 'none') {
+        queryParams['flow'] = _pattSettings.flow;
+      }
+      if (_pattSettings.alpn.isNotEmpty) {
+        queryParams['alpn'] = _pattSettings.alpn;
+      }
+      if (_pattSettings.sni.isNotEmpty) {
+        queryParams['sni'] = _pattSettings.sni;
+      }
+      if (_pattSettings.path.isNotEmpty && _pattSettings.path != '/') {
+        queryParams['path'] = _pattSettings.path;
+      }
+      if (_pattSettings.host.isNotEmpty) {
+        queryParams['host'] = _pattSettings.host;
+      }
+      if (_pattSettings.headerType != 'none') {
+        queryParams['headerType'] = _pattSettings.headerType;
+      }
+      if (_pattSettings.network.isNotEmpty && _pattSettings.network != 'tcp') {
+        queryParams['type'] = _pattSettings.network;
+      }
+
+      return uri.replace(queryParameters: queryParams).toString();
+    } catch (_) {
+      return configUri;
+    }
+  }
+
+  Future<void> _fetchAllConfigs() async {
+    if (_subUrls.isEmpty) return;
+
+    String? previousSelection = _selectedNodeUri;
+
+    setState(() {
+      _isLoading = true;
+      _allNodes = [];
+    });
+
+    List<ServerNode> fetchedNodes = [];
+
+    for (int i = 0; i < _subUrls.length; i++) {
+      String url = _subUrls[i];
+      String subTag = 'SUB-${i + 1}';
+      try {
+        final response = await _dio.get(
+          url,
+          options: Options(headers: {'User-Agent': 'v2rayNG/1.8.5'}),
+        );
+
+        String body = response.data.toString().trim();
+        try {
+          body = utf8.decode(base64.decode(base64.normalize(body)));
+        } catch (_) {}
+
+        final links = body
+            .split('\n')
+            .map((e) => e.trim())
+            .where((e) =>
+                e.startsWith('vless://') ||
+                e.startsWith('trojan://') ||
+                e.startsWith('vmess://'))
+            .map((link) => _applyPattNGSettings(link))
+            .toList();
+
+        for (String link in links) {
+          fetchedNodes.add(ServerNode(
+            subTag: subTag,
+            rawUri: link,
+            displayName: '[$subTag] ${_extractName(link)}',
+          ));
+        }
+      } catch (e) {
+        // Skip failed sub
+      }
     }
 
-    return ListView.builder(
-      itemCount: _servers.length,
-      itemBuilder: (context, index) {
-        final server = _servers[index];
-        final ping = server['ping'];
-        Color pingColor = Colors.grey;
-        if (ping > 0 && ping < 150) pingColor = Colors.greenAccent;
-        else if (ping >= 150 && ping < 300) pingColor = Colors.orangeAccent;
-        else if (ping >= 300) pingColor = Colors.redAccent;
+    setState(() {
+      _allNodes = fetchedNodes;
 
-        return GestureDetector(
-          onTap: () => _selectServer(index),
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: _selectedServerIndex == index ? const Color(0xFF00F0FF) : Colors.transparent, width: 2)
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(child: Text(server['name'], style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500))),
-                Text(ping > 0 ? "$ping ms" : "Timeout", style: TextStyle(color: pingColor, fontWeight: FontWeight.bold))
-              ],
-            ),
-          ),
+      if (previousSelection != null &&
+          _allNodes.any((n) => n.rawUri == previousSelection)) {
+        _selectedNodeUri = previousSelection;
+      } else if (_allNodes.isNotEmpty) {
+        _selectedNodeUri = _allNodes.first.rawUri;
+      } else {
+        _selectedNodeUri = null;
+      }
+    });
+
+    _testAllLatencies();
+
+    setState(() => _isLoading = false);
+  }
+
+  Future<void> _testAllLatencies() async {
+    for (var node in _allNodes) {
+      _pingSingleServer(node);
+    }
+  }
+
+  Future<void> _pingSingleServer(ServerNode node) async {
+    try {
+      final uri = Uri.parse(node.rawUri);
+      final stopwatch = Stopwatch()..start();
+      final socket = await Socket.connect(
+        uri.host,
+        uri.port,
+        timeout: const Duration(seconds: 3),
+      );
+      stopwatch.stop();
+      socket.destroy();
+      if (mounted) {
+        setState(() {
+          node.pingText = '${stopwatch.elapsedMilliseconds} ms';
+          int p = stopwatch.elapsedMilliseconds;
+          node.pingColor =
+              p < 200 ? neonGreen : (p < 500 ? Colors.orange : neonMagenta);
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          node.pingText = 'TIMEOUT';
+          node.pingColor = neonMagenta;
+        });
+      }
+    }
+  }
+
+  Future<void> _runSpeedTest() async {
+    setState(() {
+      _isTestingSpeed = true;
+      _speedTestResult = 'TESTING...';
+    });
+    try {
+      final stopwatch = Stopwatch()..start();
+      final response = await _dio.get(
+        'https://speed.cloudflare.com/__down?bytes=10000000',
+        options: Options(
+          responseType: ResponseType.bytes,
+          receiveTimeout: const Duration(seconds: 15),
+        ),
+      );
+      stopwatch.stop();
+      double seconds = stopwatch.elapsedMilliseconds / 1000.0;
+      if (seconds == 0) seconds = 0.1;
+      double bytes = response.data.length.toDouble();
+      double speedMbps = (bytes * 8) / (seconds * 1024 * 1024);
+      setState(() {
+        _speedTestResult = '${speedMbps.toStringAsFixed(1)} Mbps';
+      });
+    } catch (e) {
+      setState(() {
+        _speedTestResult = 'FAILED';
+      });
+    } finally {
+      setState(() => _isTestingSpeed = false);
+    }
+  }
+
+  Future<void> _toggleConnection() async {
+    if (!_isInitialized) {
+      _showSnackBar('Core is initializing...', isError: true);
+      return;
+    }
+    if (_isConnected) {
+      await _v2ray.stopV2Ray();
+      return;
+    }
+    if (_selectedNodeUri == null) {
+      _showSnackBar('Please select a server first.', isError: true);
+      return;
+    }
+
+    final hasPermission = await _v2ray.requestPermission();
+    if (!hasPermission) {
+      _showSnackBar('VPN permission denied.', isError: true);
+      return;
+    }
+
+    final parser = V2ray.parseFromURL(_selectedNodeUri!);
+    await _v2ray.startV2Ray(
+      remark: parser.remark,
+      config: parser.getFullConfiguration(),
+      proxyOnly: false,
+    );
+  }
+
+  void _showSnackBar(String msg, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg, style: const TextStyle(color: Colors.white)),
+        backgroundColor: isError ? neonMagenta : neonGreen,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _showPattSettingsPanel() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.85,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0A0A0F),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                border: Border(top: BorderSide(color: neonCyan.withValues(alpha: 0.5), width: 2)),
+              ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  Container(width: 50, height: 4, decoration: BoxDecoration(color: neonCyan.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(10))),
+                  const SizedBox(height: 15),
+                  Text('PATT-NG FULL SETTINGS', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: neonCyan, letterSpacing: 2)),
+                  const SizedBox(height: 20),
+
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      children: [
+                        _buildSectionHeader('TLS / ANTI-CENSORSHIP'),
+                        _buildDropdown('FINGERPRINT', ['unsafe', 'chrome', 'firefox', 'safari', 'randomized', 'randomizednoalpn'], _pattSettings.fingerprint, (val) {
+                          setModalState(() => _pattSettings.fingerprint = val);
+                          _savePattSettings();
+                        }),
+                        _buildDropdown('FRAGMENTATION', ['tlshello', 'none', 'tlshello-0-len'], _pattSettings.fragment, (val) {
+                          setModalState(() => _pattSettings.fragment = val);
+                          _savePattSettings();
+                        }),
+                        _buildTextField('CIPHER SUITES', 'e.g., real_firefox_cipherSuites', _pattSettings.cipherSuites, (val) {
+                          _pattSettings.cipherSuites = val;
+                          _savePattSettings();
+                        }),
+                        _buildSwitch('ALLOW INSECURE', 'Non-encrypted VLESS/Trojan', _pattSettings.allowInsecure, (val) {
+                          setModalState(() => _pattSettings.allowInsecure = val);
+                          _savePattSettings();
+                        }),
+                        _buildSwitch('ENABLE IPv6', 'Force IPv6 outbound', _pattSettings.enableIPv6, (val) {
+                          setModalState(() => _pattSettings.enableIPv6 = val);
+                          _savePattSettings();
+                        }),
+                        _buildSwitch('ENABLE MUX', 'Multiplexing', _pattSettings.enableMux, (val) {
+                          setModalState(() => _pattSettings.enableMux = val);
+                          _savePattSettings();
+                        }),
+
+                        const SizedBox(height: 20),
+                        _buildSectionHeader('REALITY'),
+                        _buildSwitch('ENABLE REALITY', 'Use Reality security', _pattSettings.enableReality, (val) {
+                          setModalState(() => _pattSettings.enableReality = val);
+                          _savePattSettings();
+                        }),
+                        if (_pattSettings.enableReality) ...[
+                          _buildTextField('PUBLIC KEY (pbk)', '', _pattSettings.realityPublicKey, (val) {
+                            _pattSettings.realityPublicKey = val;
+                            _savePattSettings();
+                          }),
+                          _buildTextField('SHORT ID (sid)', '', _pattSettings.realityShortId, (val) {
+                            _pattSettings.realityShortId = val;
+                            _savePattSettings();
+                          }),
+                          _buildTextField('SPIDER X (spx)', '/', _pattSettings.realitySpiderX, (val) {
+                            _pattSettings.realitySpiderX = val;
+                            _savePattSettings();
+                          }),
+                        ],
+
+                        const SizedBox(height: 20),
+                        _buildSectionHeader('XTLS / ALPN'),
+                        _buildDropdown('FLOW', ['xtls-rprx-vision', 'none'], _pattSettings.flow, (val) {
+                          setModalState(() => _pattSettings.flow = val);
+                          _savePattSettings();
+                        }),
+                        _buildDropdown('ALPN', ['h2,http/1.1', 'h2', 'http/1.1', 'h3', ''], _pattSettings.alpn, (val) {
+                          setModalState(() => _pattSettings.alpn = val);
+                          _savePattSettings();
+                        }),
+
+                        const SizedBox(height: 20),
+                        _buildSectionHeader('TRANSPORT'),
+                        _buildDropdown('NETWORK', ['tcp', 'ws', 'grpc', 'http', 'kcp', 'quic', 'httpupgrade', 'splithttp'], _pattSettings.network, (val) {
+                          setModalState(() => _pattSettings.network = val);
+                          _savePattSettings();
+                        }),
+                        _buildTextField('SNI', 'server name indication', _pattSettings.sni, (val) {
+                          _pattSettings.sni = val;
+                          _savePattSettings();
+                        }),
+                        _buildTextField('PATH', '/', _pattSettings.path, (val) {
+                          _pattSettings.path = val;
+                          _savePattSettings();
+                        }),
+                        _buildTextField('HOST', '', _pattSettings.host, (val) {
+                          _pattSettings.host = val;
+                          _savePattSettings();
+                        }),
+                        _buildDropdown('HEADER TYPE', ['none', 'srtp', 'utp', 'wechat-video', 'dtls', 'wireguard'], _pattSettings.headerType, (val) {
+                          setModalState(() => _pattSettings.headerType = val);
+                          _savePattSettings();
+                        }),
+                      ],
+                    ),
+                  ),
+
+                  Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: neonGreen.withValues(alpha: 0.1),
+                          side: const BorderSide(color: Color(0xFF00FF88)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _fetchAllConfigs();
+                        },
+                        child: const Text('APPLY & SYNC ALL', style: TextStyle(color: Color(0xFF00FF88), fontWeight: FontWeight.bold, letterSpacing: 2)),
+                      ),
+                    ),
+                  )
+                ],
+              ),
+            );
+          },
         );
       },
     );
   }
 
-  void _showPattngSettings() {
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 15, bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: TextStyle(color: neonCyan, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+          const Divider(color: Colors.white12, height: 15),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDropdown(String label, List<String> items, String currentValue, Function(String) onChanged) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 15),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 10, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 5),
+          DropdownButtonFormField<String>(
+            value: items.contains(currentValue) ? currentValue : items.first,
+            dropdownColor: const Color(0xFF0A0A0F),
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: Colors.white.withValues(alpha: 0.05),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+            items: items.map((val) => DropdownMenuItem(value: val, child: Text(val))).toList(),
+            onChanged: (val) {
+              if (val != null) onChanged(val);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTextField(String label, String hint, String currentValue, Function(String) onChanged) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 15),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 10, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 5),
+          TextFormField(
+            initialValue: currentValue,
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+            decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.2), fontSize: 12),
+              filled: true,
+              fillColor: Colors.white.withValues(alpha: 0.05),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+            onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSwitch(String title, String subtitle, bool value, Function(bool) onChanged) {
+    return SwitchListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(title, style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 13)),
+      subtitle: Text(subtitle, style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 10)),
+      value: value,
+      onChanged: onChanged,
+    );
+  }
+
+  void _showSubscriptionManager() {
+    TextEditingController newSubController = TextEditingController();
+
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF0A0A10),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        child: ListView(
-          children: [
-            const Text("PattNG Settings", style: TextStyle(color: Color(0xFF00F0FF), fontSize: 20, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 20),
-            const Text("Fingerprint", style: TextStyle(color: Colors.white)),
-            DropdownButton<String>(
-              isExpanded: true,
-              dropdownColor: const Color(0xFF11111A),
-              value: "unsafe",
-              items: ["unsafe", "chrome", "firefox", "safari"].map((e) => DropdownMenuItem(value: e, child: Text(e, style: const TextStyle(color: Colors.white)))).toList(),
-              onChanged: (v) {},
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.7,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0A0A0F),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                border: Border(top: BorderSide(color: neonCyan.withValues(alpha: 0.5), width: 2)),
+              ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  Container(width: 50, height: 4, decoration: BoxDecoration(color: neonCyan.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(10))),
+                  const SizedBox(height: 15),
+                  Text('SUBSCRIPTION MANAGER', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: neonCyan, letterSpacing: 2)),
+                  const SizedBox(height: 15),
+
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 15),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.05),
+                              border: Border.all(color: neonMagenta.withValues(alpha: 0.3)),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: TextField(
+                              controller: newSubController,
+                              style: const TextStyle(color: Colors.white, fontSize: 12),
+                              decoration: InputDecoration(
+                                hintText: 'PASTE NEW SUB LINK...',
+                                hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.2), fontSize: 11),
+                                border: InputBorder.none,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        GestureDetector(
+                          onTap: () {
+                            if (newSubController.text.isNotEmpty) {
+                              setState(() => _subUrls.add(newSubController.text.trim()));
+                              _saveSubs();
+                              newSubController.clear();
+                              setModalState(() {});
+                            }
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: neonGreen.withValues(alpha: 0.1),
+                              border: Border.all(color: neonGreen.withValues(alpha: 0.5)),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(Icons.add, color: Color(0xFF00FF88), size: 20),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 15),
+
+                  Expanded(
+                    child: _subUrls.isEmpty
+                        ? Center(child: Text('NO SUBSCRIPTIONS ADDED', style: TextStyle(color: Colors.white.withValues(alpha: 0.3))))
+                        : ListView.builder(
+                            padding: const EdgeInsets.symmetric(horizontal: 15),
+                            itemCount: _subUrls.length,
+                            itemBuilder: (context, index) {
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                padding: const EdgeInsets.all(15),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.02),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: neonCyan.withValues(alpha: 0.2)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.link, color: neonCyan, size: 18),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        _subUrls[index],
+                                        style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: Icon(Icons.delete, color: neonMagenta, size: 20),
+                                      onPressed: () {
+                                        setState(() => _subUrls.removeAt(index));
+                                        _saveSubs();
+                                        setModalState(() {});
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+
+                  Padding(
+                    padding: const EdgeInsets.all(15),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: neonCyan.withValues(alpha: 0.1),
+                          side: const BorderSide(color: Color(0xFF00F0FF)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _fetchAllConfigs();
+                        },
+                        child: const Text('SAVE & SYNC ALL', style: TextStyle(color: Color(0xFF00F0FF), fontWeight: FontWeight.bold, letterSpacing: 2)),
+                      ),
+                    ),
+                  )
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showServerListModal() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.6,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0A0A0F),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                border: Border(top: BorderSide(color: neonCyan.withValues(alpha: 0.5), width: 2)),
+              ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  Container(width: 50, height: 4, decoration: BoxDecoration(color: neonCyan.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(10))),
+                  const SizedBox(height: 15),
+                  Text('NODE SELECTION', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: neonCyan, letterSpacing: 2)),
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 15),
+                      itemCount: _allNodes.length,
+                      itemBuilder: (context, index) {
+                        final node = _allNodes[index];
+                        final isSelected = node.rawUri == _selectedNodeUri;
+
+                        return GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _selectedNodeUri = node.rawUri;
+                            });
+                            setModalState(() {});
+                            Navigator.pop(context);
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            margin: const EdgeInsets.only(bottom: 10),
+                            padding: const EdgeInsets.all(15),
+                            decoration: BoxDecoration(
+                              color: isSelected ? neonCyan.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.03),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: isSelected ? neonCyan : Colors.transparent),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    node.displayName,
+                                    style: TextStyle(
+                                      color: isSelected ? Colors.white : Colors.white70,
+                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: node.pingColor.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: node.pingColor.withValues(alpha: 0.5)),
+                                  ),
+                                  child: Text(node.pingText, style: TextStyle(color: node.pingColor, fontSize: 10, fontWeight: FontWeight.bold)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    ).then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    String selectedName = 'TAP TO SELECT NODE';
+    String selectedPing = '--';
+    Color selectedPingColor = Colors.grey;
+
+    if (_selectedNodeUri != null && _allNodes.isNotEmpty) {
+      final node = _allNodes.firstWhere(
+        (element) => element.rawUri == _selectedNodeUri,
+        orElse: () => _allNodes.first,
+      );
+      selectedName = node.displayName;
+      selectedPing = node.pingText;
+      selectedPingColor = node.pingColor;
+    }
+
+    return Scaffold(
+      backgroundColor: darkBg,
+      body: Stack(
+        children: [
+          Positioned.fill(child: CustomPaint(painter: CyberGridPainter(neonCyan.withValues(alpha: 0.05)))),
+          Positioned(
+            top: -100,
+            left: -100,
+            child: Container(width: 300, height: 300, decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: [BoxShadow(color: neonCyan.withValues(alpha: 0.1), blurRadius: 100, spreadRadius: 50)])),
+          ),
+          Positioned(
+            bottom: -100,
+            right: -100,
+            child: Container(width: 300, height: 300, decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: [BoxShadow(color: neonMagenta.withValues(alpha: 0.1), blurRadius: 100, spreadRadius: 50)])),
+          ),
+
+          SafeArea(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 20, bottom: 10),
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween(begin: -1, end: 1),
+                    duration: const Duration(milliseconds: 200),
+                    builder: (context, value, child) {
+                      return Transform.translate(
+                        offset: Offset(sin(value * pi) * 2, 0),
+                        child: Text(
+                          'ZEUS VPN',
+                          style: TextStyle(
+                            fontSize: 32,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 8,
+                            color: Colors.white,
+                            shadows: [Shadow(color: neonCyan, blurRadius: 10), Shadow(color: neonMagenta, blurRadius: 20)],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: _showSubscriptionManager,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 15),
+                            decoration: BoxDecoration(
+                              color: neonCyan.withValues(alpha: 0.05),
+                              border: Border.all(color: neonCyan.withValues(alpha: 0.3)),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(Icons.layers, color: neonCyan, size: 18),
+                                    const SizedBox(width: 10),
+                                    Text('SUBS', style: TextStyle(color: neonCyan, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                                  ],
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(color: neonMagenta.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(10)),
+                                  child: Text('${_subUrls.length}', style: TextStyle(color: neonMagenta, fontSize: 10, fontWeight: FontWeight.bold)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      GestureDetector(
+                        onTap: _showPattSettingsPanel,
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: neonMagenta.withValues(alpha: 0.05),
+                            border: Border.all(color: neonMagenta.withValues(alpha: 0.3)),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(Icons.tune, color: neonMagenta, size: 20),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 15),
+
+                GestureDetector(
+                  onTap: _allNodes.isEmpty ? () => _showSnackBar('Fetch servers first!', isError: true) : _showServerListModal,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(30),
+                      border: Border.all(color: neonMagenta.withValues(alpha: 0.5)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.dns, color: neonMagenta, size: 16),
+                        const SizedBox(width: 10),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 150),
+                          child: Text(selectedName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13), overflow: TextOverflow.ellipsis),
+                        ),
+                        if (selectedPing != '--') ...[
+                          const SizedBox(width: 8),
+                          Text('[$selectedPing]', style: TextStyle(color: selectedPingColor, fontSize: 11, fontWeight: FontWeight.bold)),
+                        ],
+                        const SizedBox(width: 8),
+                        Icon(Icons.keyboard_arrow_down, color: neonMagenta, size: 16),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const Spacer(),
+
+                GestureDetector(
+                  onTap: _toggleConnection,
+                  child: ScaleTransition(
+                    scale: _isConnected ? _pulseAnimation : const AlwaysStoppedAnimation(1.0),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        RotationTransition(
+                          turns: _rotateController,
+                          child: Container(
+                            width: 160,
+                            height: 160,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: SweepGradient(
+                                colors: _isConnected ? [neonGreen, Colors.transparent, neonGreen] : [neonCyan, Colors.transparent, neonCyan],
+                              ),
+                            ),
+                          ),
+                        ),
+                        Container(
+                          width: 140,
+                          height: 140,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: darkBg,
+                            border: Border.all(color: _isConnected ? neonGreen : neonCyan, width: 2),
+                            boxShadow: [BoxShadow(color: (_isConnected ? neonGreen : neonCyan).withValues(alpha: 0.3), blurRadius: 20, spreadRadius: 2)],
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.power_settings_new, size: 45, color: _isConnected ? neonGreen : neonCyan),
+                              const SizedBox(height: 5),
+                              Text(_isConnected ? _duration : 'CONNECT', style: TextStyle(color: _isConnected ? neonGreen : neonCyan, fontSize: 12, letterSpacing: 1)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const Spacer(),
+
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.02),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: neonCyan.withValues(alpha: 0.2)),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('PATT-NG STATUS', style: TextStyle(color: neonCyan, fontSize: 10, fontWeight: FontWeight.bold)),
+                          Icon(Icons.security, color: neonGreen, size: 14),
+                        ],
+                      ),
+                      const Divider(color: Colors.white12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _buildPattStat('FP', _pattSettings.fingerprint.toUpperCase(), neonMagenta),
+                          _buildPattStat('FRAG', _pattSettings.fragment.toUpperCase(), neonCyan),
+                          _buildPattStat('CS', _pattSettings.cipherSuites.isNotEmpty ? 'CUSTOM' : 'AUTO', neonGreen),
+                          _buildPattStat('NET', _pattSettings.network.toUpperCase(), Colors.orange),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 15),
+
+                if (_isConnected)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _buildStat('UP', _uploadSpeed, Icons.arrow_upward, neonMagenta),
+                        _buildStat('DOWN', _downloadSpeed, Icons.arrow_downward, neonCyan),
+                        GestureDetector(
+                          onTap: _isTestingSpeed ? null : _runSpeedTest,
+                          child: _buildStat('SPEED', _isTestingSpeed ? '...' : (_speedTestResult.isNotEmpty ? _speedTestResult : 'TEST'), Icons.speed, neonGreen),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                const SizedBox(height: 30),
+              ],
             ),
-            const SizedBox(height: 20),
-            const Text("Fragment", style: TextStyle(color: Colors.white)),
-            const TextField(style: TextStyle(color: Colors.white), decoration: InputDecoration(hintText: "tlshello", hintStyle: TextStyle(color: Colors.grey))),
-            const SizedBox(height: 20),
-            const Text("ALPN", style: TextStyle(color: Colors.white)),
-            const TextField(style: TextStyle(color: Colors.white), decoration: InputDecoration(hintText: "h2, http/1.1", hintStyle: TextStyle(color: Colors.grey))),
-            const SizedBox(height: 30),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00F0FF)),
-              onPressed: () => Navigator.pop(context), 
-              child: const Text("ذخیره تنظیمات", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold))
-            )
-          ],
-        ),
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget _buildPattStat(String title, String value, Color color) {
+    return Column(
+      children: [
+        Text(value, style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 2),
+        Text(title, style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 8)),
+      ],
+    );
+  }
+
+  Widget _buildStat(String title, String value, IconData icon, Color color) {
+    return Column(
+      children: [
+        Icon(icon, color: color, size: 16),
+        const SizedBox(height: 4),
+        Text(value, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
+      ],
     );
   }
 }
 
-class _GridPainter extends CustomPainter {
+class CyberGridPainter extends CustomPainter {
+  final Color gridColor;
+  CyberGridPainter(this.gridColor);
+
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0xFF00F0FF).withOpacity(0.1)
-      ..strokeWidth = 1;
+      ..color = gridColor
+      ..strokeWidth = 1.0;
+    final double horizon = size.height * 0.4;
+    final double centerX = size.width / 2;
 
-    for (double i = 0; i < size.width; i += 30) {
-      canvas.drawLine(Offset(i, 0), Offset(i, size.height), paint);
+    for (double i = 1; i <= 15; i++) {
+      final double y = horizon + (size.height - horizon) * (i / 15) * (i / 15);
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
     }
-    for (double i = 0; i < size.height; i += 30) {
-      canvas.drawLine(Offset(0, i), Offset(size.width, i), paint);
+
+    for (double i = -15; i <= 15; i++) {
+      final double x = centerX + (size.width / 10) * i;
+      canvas.drawLine(Offset(centerX, horizon), Offset(x, size.height), paint);
     }
   }
 
   @override
-  bool shouldRepaint(CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
