@@ -33,37 +33,18 @@ jobs:
           mkdir -p ~/.android
           keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           
-      - name: Overwrite pubspec.yaml
-        run: |
-          cat << 'EOF' > pubspec.yaml
-          name: zeus_vpn
-          description: A Cyberpunk VPN app using Zeus Panel with full PattNG features.
-          version: 1.0.0+${{ github.run_number }}
-
-          environment:
-            sdk: '>=3.0.0 <4.0.0'
-
-          dependencies:
-            flutter:
-              sdk: flutter
-            flutter_v2ray_client: ^3.4.1
-            dio: ^5.4.0
-            shared_preferences: ^2.2.3
-
-          flutter:
-            uses-material-design: true
-          EOF
-          
-      - name: Patch AndroidManifest
-        run: |
-          sed -i 's/<application/<uses-permission android:name="android.permission.POST_NOTIFICATIONS"\/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"\/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"\/>\n    <application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
-          
-      - name: Patch Gradle
-        run: |
-          sed -i 's/android {/android {\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' android/app/build.gradle.kts
-          
       - name: Install dependencies
         run: flutter pub get
+        
+      - name: Patch AndroidManifest for VPN & Notifications
+        run: |
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          sed -i 's/<application/<uses-permission android:name="android.permission.POST_NOTIFICATIONS"\/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"\/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"\/>\n    <application android:usesCleartextTraffic="true"/' $MANIFEST
+          
+      - name: Patch Gradle for VPN
+        run: |
+          GRADLE_FILE="android/app/build.gradle.kts"
+          sed -i 's/android {/android {\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' $GRADLE_FILE
         
       - name: Build APK
         run: flutter build apk --release --no-tree-shake-icons
