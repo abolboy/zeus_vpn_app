@@ -683,7 +683,7 @@ jobs:
           }
           EOF
 
-      - name: Patch Gradle, Manifest, and Properties for VPN
+      - name: Patch Gradle and Manifest for VPN
         run: |
           # ۱. تنظیمات Manifest
           MANIFEST="android/app/src/main/AndroidManifest.xml"
@@ -692,14 +692,13 @@ jobs:
           # ۲. تنظیمات Gradle (پکیجینگ و معماری‌ها)
           GRADLE_FILE="android/app/build.gradle.kts"
           
-          # اضافه کردن useLegacyPackaging
+          # اضافه کردن useLegacyPackaging و splits
           sed -i 's/android {/android {\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }\n    splits {\n        abi {\n            enable true\n            reset()\n            include "x86_64", "armeabi-v7a", "arm64-v8a"\n            universalApk true\n        }\n    }/' $GRADLE_FILE
           
-          # اضافه کردن abiFilters به buildTypes.release (برای اطمینان از پشتیبانی NDK)
+          # اضافه کردن abiFilters
           sed -i 's/buildTypes {/buildTypes {\n        release {\n            ndk {\n                abiFilters "x86_64", "armeabi-v7a", "arm64-v8a"\n            }\n        }/' $GRADLE_FILE
           
-          # ۳. تنظیمات gradle.properties
-          echo "android.bundle.enableUncompressedNativeLibs=false" >> android/gradle.properties
+          # حذف gradle.properties (رفع خطای deprecated)
           
       - name: Install dependencies
         run: flutter pub get
