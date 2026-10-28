@@ -27,12 +27,18 @@ jobs:
       - name: Generate Android files
         run: flutter create --platforms=android .
         
+      # 🌟 ترفند اصلی: جایگزینی کلید موقت با کلید ثابت (تا نیازی به حذف نسخه قبلی نباشد)
+      - name: Setup Fixed Keystore
+        run: |
+          mkdir -p ~/.android
+          echo "MIIEqDCCApCgAwIBAgIJAJ..." | base64 -d > ~/.android/debug.keystore
+          
       - name: Overwrite pubspec.yaml
         run: |
           cat << 'EOF' > pubspec.yaml
           name: zeus_vpn
           description: A Cyberpunk VPN app using Zeus Panel.
-          version: 1.0.0+1
+          version: 1.0.0+${{ github.run_number }}
 
           environment:
             sdk: '>=3.0.0 <4.0.0'
@@ -255,7 +261,7 @@ jobs:
                   'https://speed.cloudflare.com/__down?bytes=10000000',
                   options: Options(
                     responseType: ResponseType.bytes,
-                    receiveTimeout: const Duration(seconds: 15), // تایم اوت برای جلوگیری از هنگ کردن
+                    receiveTimeout: const Duration(seconds: 15),
                   ),
                 );
                 stopwatch.stop();
@@ -677,11 +683,9 @@ jobs:
 
       - name: Patch Gradle and Manifest for VPN
         run: |
-          # ۱. تنظیمات Manifest
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           sed -i 's/<application/<application android:usesCleartextTraffic="true"/' $MANIFEST
           
-          # ۲. تنظیمات Gradle (پکیجینگ) - فقط این یک مورد برای اجرای هسته VPN نیاز است
           GRADLE_FILE="android/app/build.gradle.kts"
           sed -i 's/android {/android {\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' $GRADLE_FILE
           
