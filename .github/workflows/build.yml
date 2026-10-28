@@ -33,43 +33,94 @@ jobs:
           mkdir -p ~/.android
           keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           
-      - name: Install dependencies
-        run: flutter pub get
-        
-      - name: Patch Android Files
+      - name: Overwrite pubspec.yaml
         run: |
-          python3 -c '
-          import re
-          manifest_path = "android/app/src/main/AndroidManifest.xml"
-          with open(manifest_path, "r") as f:
+          cat << 'EOF' > pubspec.yaml
+          name: zeus_vpn
+          description: A Cyberpunk VPN app using Zeus Panel with full PattNG features.
+          version: 1.0.0+${{ github.run_number }}
+
+          environment:
+            sdk: '>=3.0.0 <4.0.0'
+
+          dependencies:
+            flutter:
+              sdk: flutter
+            flutter_v2ray_client: ^3.4.1
+            dio: ^5.4.0
+            shared_preferences: ^2.2.3
+
+          flutter:
+            uses-material-design: true
+          EOF
+          
+      - name: Patch Gradle Settings for V2Ray Native Libraries
+        run: |
+          python3 - << 'PYEOF'
+          import os
+          
+          # 1. Patch android/gradle.properties
+          gradle_props = "android/gradle.properties"
+          with open(gradle_props, "a") as f:
+              f.write("\nandroid.bundle.enableUncompressedNativeLibs=false\n")
+
+          # 2. Patch android/app/build.gradle.kts
+          gradle_file = "android/app/build.gradle.kts"
+          with open(gradle_file, "r") as f:
               content = f.read()
 
-          permissions = """    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+          # Insert packagingOptions & abiFilters
+          patch_code = """
+          packaging {
+              jniLibs {
+                  useLegacyPackaging = true
+              }
+          }
+          splits {
+              abi {
+                  isEnable = true
+                  reset()
+                  include("x86_64", "armeabi-v7a", "arm64-v8a")
+                  isUniversalApk = true
+              }
+          }
           """
 
-          if "POST_NOTIFICATIONS" not in content:
-              content = content.replace("<application", permissions + "    <application android:usesCleartextTraffic=\"true\"")
-              
-          with open(manifest_path, "w") as f:
+          if "useLegacyPackaging" not in content:
+              content = content.replace("android {", "android {\n" + patch_code)
+
+          release_ndk = """
+          ndk {
+              abiFilters.addAll(listOf("x86_64", "armeabi-v7a", "arm64-v8a"))
+              debugSymbolLevel = "FULL"
+          }
+          """
+          if "abiFilters" not in content:
+              content = content.replace("buildTypes {", "buildTypes {\n        release {\n" + release_ndk + "\n        }")
+
+          with open(gradle_file, "w") as f:
               f.write(content)
 
-          gradle_path = "android/app/build.gradle.kts"
-          with open(gradle_path, "r") as f:
-              gradle_content = f.read()
+          # 3. Patch AndroidManifest.xml
+          manifest_file = "android/app/src/main/AndroidManifest.xml"
+          with open(manifest_file, "r") as f:
+              manifest_content = f.read()
 
-          if "useLegacyPackaging" not in gradle_content:
-              gradle_content = gradle_content.replace("android {", """android {
-              packaging {
-                  jniLibs {
-                      useLegacyPackaging = true
-                  }
-              }""")
-              
-          with open(gradle_path, "w") as f:
-              f.write(gradle_content)
-          '
+          permissions = """<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+              """
+
+          if "POST_NOTIFICATIONS" not in manifest_content:
+              manifest_content = manifest_content.replace("<application", permissions + "\n    <application android:usesCleartextTraffic=\"true\"")
+
+          with open(manifest_file, "w") as f:
+              f.write(manifest_content)
+          print("Android configurations patched successfully.")
+          PYEOF
+          
+      - name: Install dependencies
+        run: flutter pub get
         
       - name: Build APK
         run: flutter build apk --release --no-tree-shake-icons
