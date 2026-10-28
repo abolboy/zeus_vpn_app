@@ -1,78 +1,58 @@
-name: Build APK
+name: Build ZEUS VPN APK
 
 on:
-  push:
-    branches: [ "main", "master" ]
   workflow_dispatch:
+  push:
+    branches: [main, master]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Java
-        uses: actions/setup-java@v3
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
+          distribution: 'temurin'
           java-version: '17'
-          
-      - name: Set up Flutter
+
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
           cache: true
-          
-      - name: Generate Android if missing
-        run: |
-          if [ ! -d "android" ]; then
-            flutter create --platforms=android .
-          fi
-          
-      - name: Setup Fixed Keystore
+
+      - name: Generate Fixed Keystore
         run: |
           rm -rf ~/.android
           mkdir -p ~/.android
           keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-          
-      - name: Patch Android Files (Safe Python Method)
+
+      - name: Patch Android Files
         run: |
           python3 -c "
-          import os
-          manifest = 'android/app/src/main/AndroidManifest.xml'
-          if os.path.exists(manifest):
-              with open(manifest, 'r') as f: content = f.read()
-              perms = '<uses-permission android:name=\"android.permission.INTERNET\" />\n    <uses-permission android:name=\"android.permission.POST_NOTIFICATIONS\"/>\n    <uses-permission android:name=\"android.permission.FOREGROUND_SERVICE\"/>\n    <uses-permission android:name=\"android.permission.FOREGROUND_SERVICE_SPECIAL_USE\"/>'
-              if 'android.permission.INTERNET' not in content:
-                  content = content.replace('<application', perms + '\n    <application android:extractNativeLibs=\"true\" android:usesCleartextTraffic=\"true\"')
-                  with open(manifest, 'w') as f: f.write(content)
+          manifest_path = 'android/app/src/main/AndroidManifest.xml'
+          with open(manifest_path, 'r') as f: content = f.read()
+          perms = '\n    <uses-permission android:name=\"android.permission.INTERNET\"/>\n    <uses-permission android:name=\"android.permission.POST_NOTIFICATIONS\"/>\n    <uses-permission android:name=\"android.permission.FOREGROUND_SERVICE\"/>\n    <uses-permission android:name=\"android.permission.FOREGROUND_SERVICE_SPECIAL_USE\"/>\n'
+          if 'android.permission.INTERNET' not in content:
+              content = content.replace('<manifest', '<manifest android:extractNativeLibs=\"true\"').replace('<application', perms + '    <application')
+              with open(manifest_path, 'w') as f: f.write(content)
           
-          gradle_kts = 'android/app/build.gradle.kts'
-          gradle_groovy = 'android/app/build.gradle'
-          gradle_file = gradle_kts if os.path.exists(gradle_kts) else gradle_groovy
-          if os.path.exists(gradle_file):
-              with open(gradle_file, 'r') as f: g_content = f.read()
-              if 'useLegacyPackaging' not in g_content:
-                  if 'packaging {' in g_content:
-                      g_content = g_content.replace('packaging {', 'packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n')
-                  else:
-                      g_content = g_content.replace('android {', 'android {\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }\n')
-                  with open(gradle_file, 'w') as f: f.write(g_content)
-                  
-          gradle_props = 'android/gradle.properties'
-          if os.path.exists(gradle_props):
-              with open(gradle_props, 'r') as f: p_content = f.read()
-              if 'enableUncompressedNativeLibs' not in p_content:
-                  with open(gradle_props, 'a') as f: f.write('\nandroid.bundle.enableUncompressedNativeLibs = false\n')
+          gradle_path = 'android/app/build.gradle.kts'
+          with open(gradle_path, 'r') as f: gradle = f.read()
+          if 'useLegacyPackacking' not in gradle and 'useLegacyPackaging' not in gradle:
+              if 'packaging {' in gradle: gradle = gradle.replace('packaging {', 'packaging {\n        jniLibs { useLegacyPackaging = true }')
+              else: gradle = gradle.replace('android {', 'android {\n    packaging { jniLibs { useLegacyPackaging = true } }')
+              with open(gradle_path, 'w') as f: f.write(gradle)
           "
-          
+
       - name: Install dependencies
         run: flutter pub get
-        
+
       - name: Build APK
-        run: flutter build apk --release --no-tree-shake-icons
-        
+        run: flutter build apk --release
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
