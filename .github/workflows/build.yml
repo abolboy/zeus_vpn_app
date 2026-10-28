@@ -25,16 +25,18 @@ jobs:
           cache: true
           
       - name: Generate Android files
-        run: flutter create --platforms=android .
+        run: flutter create --platforms=android --org com.zeus .
         
-      # 🌟 کش کردن کلید برای آپدیت بدون حذف نسخه قبلی
+      # 🌟 سیستم قدرتمند آپدیت بدون حذف (Caching Keystore)
       - name: Cache Android Debug Keystore
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         id: keystore-cache
         with:
           path: ~/.android/debug.keystore
-          key: ${{ runner.os }}-debug-keystore-v1
-          
+          key: ${{ runner.os }}-debug-keystore-v2
+          restore-keys: |
+            ${{ runner.os }}-debug-keystore-
+            
       - name: Generate Keystore if not cached
         if: steps.keystore-cache.outputs.cache-hit != 'true'
         run: |
@@ -96,6 +98,23 @@ jobs:
             }
           }
 
+          // 🌟 کلاس اختصاصی برای جلوگیری از باگ لیست سرورها
+          class ServerNode {
+            final String subTag;
+            final String rawUri;
+            final String displayName;
+            String pingText;
+            Color pingColor;
+
+            ServerNode({
+              required this.subTag,
+              required this.rawUri,
+              required this.displayName,
+              this.pingText = '--',
+              this.pingColor = Colors.grey,
+            });
+          }
+
           class VpnHomePage extends StatefulWidget {
             const VpnHomePage({super.key});
 
@@ -104,12 +123,11 @@ jobs:
           }
 
           class _VpnHomePageState extends State<VpnHomePage> with TickerProviderStateMixin {
-            final TextEditingController _subController = TextEditingController();
             final Dio _dio = Dio();
             
-            List<String> _configs = [];
-            Map<String, int> _latencies = {};
-            String? _selectedConfig;
+            List<String> _subUrls = [];
+            List<ServerNode> _allNodes = [];
+            String? _selectedNodeUri;
             
             bool _isInitialized = false;
             bool _isLoading = false;
@@ -177,7 +195,7 @@ jobs:
                 },
               );
               _initV2Ray();
-              _loadSavedLink();
+              _loadSavedSubs();
             }
 
             Future<void> _initV2Ray() async {
@@ -206,16 +224,20 @@ jobs:
               return '${(bytesPerSecond / (1024 * 1024)).toStringAsFixed(1)} MB/s';
             }
 
-            Future<void> _loadSavedLink() async {
+            Future<void> _loadSavedSubs() async {
               final prefs = await SharedPreferences.getInstance();
-              final savedLink = prefs.getString('subLink');
-              if (savedLink != null && savedLink.isNotEmpty) {
-                setState(() => _subController.text = savedLink);
-                _fetchConfigs();
+              _subUrls = prefs.getStringList('subUrls') ?? [];
+              if (_subUrls.isNotEmpty) {
+                _fetchAllConfigs();
               }
             }
 
-            String _parseConfigName(String uriStr) {
+            Future<void> _saveSubs() async {
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setStringList('subUrls', _subUrls);
+            }
+
+            String _extractName(String uriStr) {
               try {
                 final uri = Uri.parse(uriStr);
                 if (uri.fragment.isNotEmpty) return Uri.decodeComponent(uri.fragment);
@@ -223,7 +245,6 @@ jobs:
               } catch (_) { return 'Unknown Server'; }
             }
 
-            // ⚡ تزریق تنظیمات PattNG
             String _applyPattNGSettings(String configUri) {
               try {
                 final uri = Uri.parse(configUri);
@@ -236,66 +257,91 @@ jobs:
               }
             }
 
-            Future<void> _fetchConfigs() async {
-              if (_subController.text.isEmpty) return;
+            Future<void> _fetchAllConfigs() async {
+              if (_subUrls.isEmpty) {
+                setState(() => _liveLog = '> NO SUBSCRIPTIONS FOUND.');
+                return;
+              }
               
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setString('subLink', _subController.text.trim());
-
               setState(() { 
                 _isLoading = true; 
-                _configs = []; 
-                _latencies = {}; 
-                _liveLog = '> FETCHING ENCRYPTED CONFIG...';
+                _allNodes = []; 
+                _selectedNodeUri = null;
+                _liveLog = '> FETCHING CONFIGS FROM ${_subUrls.length} SOURCES...';
               });
 
-              try {
-                final response = await _dio.get(
-                  _subController.text.trim(),
-                  options: Options(headers: {'User-Agent': 'v2rayNG/1.8.5'}),
-                );
+              List<ServerNode> fetchedNodes = [];
 
-                String body = response.data.toString().trim();
-                try { body = utf8.decode(base64.decode(base64.normalize(body))); } catch (_) {}
+              for (int i = 0; i < _subUrls.length; i++) {
+                String url = _subUrls[i];
+                String subTag = 'SUB-${i + 1}';
+                try {
+                  final response = await _dio.get(
+                    url,
+                    options: Options(headers: {'User-Agent': 'v2rayNG/1.8.5'}),
+                  );
 
-                final links = body.split('\n')
-                    .map((e) => e.trim())
-                    .where((e) => e.startsWith('vless://') || e.startsWith('trojan://') || e.startsWith('vmess://'))
-                    .map((link) => _applyPattNGSettings(link))
-                    .toList();
+                  String body = response.data.toString().trim();
+                  try { body = utf8.decode(base64.decode(base64.normalize(body))); } catch (_) {}
 
-                setState(() {
-                  _configs = links;
-                  if (_configs.isNotEmpty) _selectedConfig = _configs.first;
-                  _liveLog = '> ${links.length} NODES INJECTED WITH PATT-NG PAYLOADS.';
-                });
+                  final links = body.split('\n')
+                      .map((e) => e.trim())
+                      .where((e) => e.startsWith('vless://') || e.startsWith('trojan://') || e.startsWith('vmess://'))
+                      .map((link) => _applyPattNGSettings(link))
+                      .toList();
 
-                _testAllLatencies();
-
-              } catch (e) {
-                setState(() => _liveLog = '> ERROR: SUBSCRIPTION FETCH FAILED.');
-                _showSnackBar('Error fetching servers. Check link.', isError: true);
-              } finally {
-                setState(() => _isLoading = false);
+                  for (String link in links) {
+                    fetchedNodes.add(ServerNode(
+                      subTag: subTag,
+                      rawUri: link,
+                      displayName: '[$subTag] ${_extractName(link)}',
+                    ));
+                  }
+                } catch (e) {
+                  // Skip failed sub
+                }
               }
+
+              setState(() {
+                _allNodes = fetchedNodes;
+                if (_allNodes.isNotEmpty) {
+                  _selectedNodeUri = _allNodes.first.rawUri;
+                }
+                _liveLog = '> ${_allNodes.length} NODES MERGED & SECURED.';
+              });
+
+              _testAllLatencies();
+
+              setState(() => _isLoading = false);
             }
 
             Future<void> _testAllLatencies() async {
-              for (String config in _configs) {
-                _pingSingleServer(config); // اجرای موازی برای جلوگیری از فریز شدن
+              for (var node in _allNodes) {
+                _pingSingleServer(node);
               }
             }
 
-            Future<void> _pingSingleServer(String config) async {
+            Future<void> _pingSingleServer(ServerNode node) async {
               try {
-                final uri = Uri.parse(config);
+                final uri = Uri.parse(node.rawUri);
                 final stopwatch = Stopwatch()..start();
                 final socket = await Socket.connect(uri.host, uri.port, timeout: const Duration(seconds: 3));
                 stopwatch.stop();
                 socket.destroy();
-                if (mounted) setState(() => _latencies[config] = stopwatch.elapsedMilliseconds);
+                if (mounted) {
+                  setState(() {
+                    node.pingText = '${stopwatch.elapsedMilliseconds} ms';
+                    int p = stopwatch.elapsedMilliseconds;
+                    node.pingColor = p < 200 ? neonGreen : (p < 500 ? Colors.orange : neonMagenta);
+                  });
+                }
               } catch (e) {
-                if (mounted) setState(() => _latencies[config] = -1);
+                if (mounted) {
+                  setState(() {
+                    node.pingText = 'TIMEOUT';
+                    node.pingColor = neonMagenta;
+                  });
+                }
               }
             }
 
@@ -332,7 +378,7 @@ jobs:
             Future<void> _toggleConnection() async {
               if (!_isInitialized) { _showSnackBar('Core is initializing...', isError: true); return; }
               if (_isConnected) { await _v2ray.stopV2Ray(); return; }
-              if (_selectedConfig == null) { _showSnackBar('Please select a server first.', isError: true); return; }
+              if (_selectedNodeUri == null) { _showSnackBar('Please select a server first.', isError: true); return; }
 
               setState(() => _liveLog = '> INITIATING SECURE TUNNEL...');
 
@@ -343,7 +389,7 @@ jobs:
                 return; 
               }
 
-              final parser = V2ray.parseFromURL(_selectedConfig!);
+              final parser = V2ray.parseFromURL(_selectedNodeUri!);
               await _v2ray.startV2Ray(
                 remark: parser.remark,
                 config: parser.getFullConfiguration(),
@@ -361,7 +407,152 @@ jobs:
               );
             }
 
-            // 🚀 باز کردن لیست سرورها در BottomSheet
+            // 🚀 مدیریت اشتراک‌ها
+            void _showSubscriptionManager() {
+              TextEditingController newSubController = TextEditingController();
+              
+              showModalBottomSheet(
+                context: context,
+                backgroundColor: Colors.transparent,
+                isScrollControlled: true,
+                builder: (context) {
+                  return StatefulBuilder(
+                    builder: (context, setModalState) {
+                      return Container(
+                        height: MediaQuery.of(context).size.height * 0.7,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0A0A0F),
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                          border: Border(top: BorderSide(color: neonCyan.withOpacity(0.5), width: 2)),
+                        ),
+                        child: Column(
+                          children: [
+                            const SizedBox(height: 10),
+                            Container(width: 50, height: 4, decoration: BoxDecoration(color: neonCyan.withOpacity(0.5), borderRadius: BorderRadius.circular(10))),
+                            const SizedBox(height: 15),
+                            Text('SUBSCRIPTION MANAGER', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: neonCyan, letterSpacing: 2)),
+                            const SizedBox(height: 15),
+                            
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 15),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(0.05),
+                                        border: Border.all(color: neonMagenta.withOpacity(0.3)),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: TextField(
+                                        controller: newSubController,
+                                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                                        decoration: InputDecoration(
+                                          hintText: 'PASTE NEW SUB LINK...',
+                                          hintStyle: TextStyle(color: Colors.white.withOpacity(0.2), fontSize: 11),
+                                          border: InputBorder.none,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  GestureDetector(
+                                    onTap: () {
+                                      if (newSubController.text.isNotEmpty) {
+                                        setState(() => _subUrls.add(newSubController.text.trim()));
+                                        _saveSubs();
+                                        newSubController.clear();
+                                        setModalState(() {});
+                                      }
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: neonGreen.withOpacity(0.1),
+                                        border: Border.all(color: neonGreen.withOpacity(0.5)),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Icon(Icons.add, color: neonGreen, size: 20),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            
+                            const SizedBox(height: 15),
+                            
+                            Expanded(
+                              child: _subUrls.isEmpty 
+                                ? Center(child: Text('NO SUBSCRIPTIONS ADDED', style: TextStyle(color: Colors.white.withOpacity(0.3))))
+                                : ListView.builder(
+                                    padding: const EdgeInsets.symmetric(horizontal: 15),
+                                    itemCount: _subUrls.length,
+                                    itemBuilder: (context, index) {
+                                      return Container(
+                                        margin: const EdgeInsets.only(bottom: 10),
+                                        padding: const EdgeInsets.all(15),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.02),
+                                          borderRadius: BorderRadius.circular(12),
+                                          border: Border.all(color: neonCyan.withOpacity(0.2)),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Icon(Icons.link, color: neonCyan, size: 18),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: Text(
+                                                _subUrls[index],
+                                                style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                            IconButton(
+                                              icon: Icon(Icons.delete, color: neonMagenta, size: 20),
+                                              onPressed: () {
+                                                setState(() => _subUrls.removeAt(index));
+                                                _saveSubs();
+                                                setModalState(() {});
+                                              },
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                            ),
+                            
+                            Padding(
+                              padding: const EdgeInsets.all(15),
+                              child: SizedBox(
+                                width: double.infinity,
+                                height: 50,
+                                child: ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: neonCyan.withOpacity(0.1),
+                                    side: BorderSide(color: neonCyan),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                  onPressed: () {
+                                    Navigator.pop(context);
+                                    _fetchAllConfigs();
+                                  },
+                                  child: Text('SAVE & SYNC ALL', style: TextStyle(color: neonCyan, fontWeight: FontWeight.bold, letterSpacing: 2)),
+                                ),
+                              ),
+                            )
+                          ],
+                        ),
+                      );
+                    }
+                  );
+                }
+              );
+            }
+
+            // 🚀 نمایش لیست سرورها
             void _showServerListModal() {
               showModalBottomSheet(
                 context: context,
@@ -385,26 +576,14 @@ jobs:
                         Expanded(
                           child: ListView.builder(
                             padding: const EdgeInsets.symmetric(horizontal: 15),
-                            itemCount: _configs.length,
+                            itemCount: _allNodes.length,
                             itemBuilder: (context, index) {
-                              final config = _configs[index];
-                              final isSelected = config == _selectedConfig;
-                              final name = _parseConfigName(config);
-                              final ping = _latencies[config];
-
-                              String pingText = '--';
-                              Color pingColor = Colors.grey;
-                              if (ping != null) {
-                                if (ping == -1) { pingText = 'TIMEOUT'; pingColor = neonMagenta; }
-                                else { 
-                                  pingText = '$ping ms'; 
-                                  pingColor = ping < 200 ? neonGreen : (ping < 500 ? Colors.orange : neonMagenta); 
-                                }
-                              }
+                              final node = _allNodes[index];
+                              final isSelected = node.rawUri == _selectedNodeUri;
 
                               return GestureDetector(
                                 onTap: () {
-                                  setState(() => _selectedConfig = config);
+                                  setState(() => _selectedNodeUri = node.rawUri);
                                   Navigator.pop(context);
                                 },
                                 child: AnimatedContainer(
@@ -420,16 +599,16 @@ jobs:
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
                                       Expanded(
-                                        child: Text(name, style: TextStyle(color: isSelected ? Colors.white : Colors.white70, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+                                        child: Text(node.displayName, style: TextStyle(color: isSelected ? Colors.white : Colors.white70, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
                                       ),
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                         decoration: BoxDecoration(
-                                          color: pingColor.withOpacity(0.1),
+                                          color: node.pingColor.withOpacity(0.1),
                                           borderRadius: BorderRadius.circular(4),
-                                          border: Border.all(color: pingColor.withOpacity(0.5)),
+                                          border: Border.all(color: node.pingColor.withOpacity(0.5)),
                                         ),
-                                        child: Text(pingText, style: TextStyle(color: pingColor, fontSize: 10, fontWeight: FontWeight.bold)),
+                                        child: Text(node.pingText, style: TextStyle(color: node.pingColor, fontSize: 10, fontWeight: FontWeight.bold)),
                                       ),
                                     ],
                                   ),
@@ -447,27 +626,22 @@ jobs:
 
             @override
             Widget build(BuildContext context) {
-              String selectedName = _selectedConfig != null ? _parseConfigName(_selectedConfig!) : 'TAP TO SELECT NODE';
-              String selectedPingText = '';
+              String selectedName = 'TAP TO SELECT NODE';
+              String selectedPing = '--';
               Color selectedPingColor = Colors.grey;
-              
-              if (_selectedConfig != null && _latencies.containsKey(_selectedConfig)) {
-                final p = _latencies[_selectedConfig]!;
-                if (p == -1) { selectedPingText = 'TIMEOUT'; selectedPingColor = neonMagenta; }
-                else { 
-                  selectedPingText = '$p ms'; 
-                  selectedPingColor = p < 200 ? neonGreen : (p < 500 ? Colors.orange : neonMagenta); 
-                }
+
+              if (_selectedNodeUri != null) {
+                final node = _allNodes.firstWhere((element) => element.rawUri == _selectedNodeUri, orElse: () => _allNodes.first);
+                selectedName = node.displayName;
+                selectedPing = node.pingText;
+                selectedPingColor = node.pingColor;
               }
 
               return Scaffold(
                 backgroundColor: darkBg,
                 body: Stack(
                   children: [
-                    // افکت پس‌زمینه
-                    Positioned.fill(
-                      child: CustomPaint(painter: CyberGridPainter(neonCyan.withOpacity(0.05))),
-                    ),
+                    Positioned.fill(child: CustomPaint(painter: CyberGridPainter(neonCyan.withOpacity(0.05)))),
                     Positioned(
                       top: -100, left: -100,
                       child: Container(width: 300, height: 300, decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: [BoxShadow(color: neonCyan.withOpacity(0.1), blurRadius: 100, spreadRadius: 50)])),
@@ -480,7 +654,6 @@ jobs:
                     SafeArea(
                       child: Column(
                         children: [
-                          // هدر
                           Padding(
                             padding: const EdgeInsets.only(top: 20, bottom: 10),
                             child: TweenAnimationBuilder<double>(
@@ -504,58 +677,42 @@ jobs:
                             ),
                           ),
                           
-                          // لینک و تنظیمات
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 20),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(10),
-                                    child: BackdropFilter(
-                                      filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white.withOpacity(0.05),
-                                          border: Border.all(color: neonCyan.withOpacity(0.3)),
-                                          borderRadius: BorderRadius.circular(10),
-                                        ),
-                                        child: TextField(
-                                          controller: _subController,
-                                          style: const TextStyle(color: Colors.white, fontSize: 12),
-                                          decoration: InputDecoration(
-                                            hintText: 'ENTER SUB LINK...',
-                                            hintStyle: TextStyle(color: Colors.white.withOpacity(0.2), fontSize: 11),
-                                            border: InputBorder.none,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
+                            child: GestureDetector(
+                              onTap: _showSubscriptionManager,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 15),
+                                decoration: BoxDecoration(
+                                  color: neonCyan.withOpacity(0.05),
+                                  border: Border.all(color: neonCyan.withOpacity(0.3)),
+                                  borderRadius: BorderRadius.circular(10),
                                 ),
-                                const SizedBox(width: 10),
-                                GestureDetector(
-                                  onTap: _isLoading ? null : _fetchConfigs,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: neonCyan.withOpacity(0.1),
-                                      border: Border.all(color: neonCyan.withOpacity(0.5)),
-                                      borderRadius: BorderRadius.circular(10),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(Icons.layers, color: neonCyan, size: 18),
+                                        const SizedBox(width: 10),
+                                        Text('SUBSCRIPTIONS', style: TextStyle(color: neonCyan, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                                      ],
                                     ),
-                                    child: Icon(Icons.sync, color: neonCyan, size: 20),
-                                  ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                      decoration: BoxDecoration(color: neonMagenta.withOpacity(0.2), borderRadius: BorderRadius.circular(10)),
+                                      child: Text('${_subUrls.length} ACTIVE', style: TextStyle(color: neonMagenta, fontSize: 10, fontWeight: FontWeight.bold)),
+                                    ),
+                                  ],
                                 ),
-                              ],
+                              ),
                             ),
                           ),
                           
-                          const SizedBox(height: 20),
+                          const SizedBox(height: 15),
 
-                          // دکمه انتخاب سرور
                           GestureDetector(
-                            onTap: _configs.isEmpty ? () => _showSnackBar('Fetch servers first!', isError: true) : _showServerListModal,
+                            onTap: _allNodes.isEmpty ? () => _showSnackBar('Fetch servers first!', isError: true) : _showServerListModal,
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                               decoration: BoxDecoration(
@@ -572,9 +729,9 @@ jobs:
                                     constraints: const BoxConstraints(maxWidth: 150),
                                     child: Text(selectedName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13), overflow: TextOverflow.ellipsis),
                                   ),
-                                  if (selectedPingText.isNotEmpty) ...[
+                                  if (selectedPing != '--') ...[
                                     const SizedBox(width: 8),
-                                    Text('[$selectedPingText]', style: TextStyle(color: selectedPingColor, fontSize: 11, fontWeight: FontWeight.bold)),
+                                    Text('[$selectedPing]', style: TextStyle(color: selectedPingColor, fontSize: 11, fontWeight: FontWeight.bold)),
                                   ],
                                   const SizedBox(width: 8),
                                   Icon(Icons.keyboard_arrow_down, color: neonMagenta, size: 16),
@@ -585,7 +742,6 @@ jobs:
 
                           const Spacer(),
 
-                          // دکمه پاور با افکت چرخشی
                           GestureDetector(
                             onTap: _toggleConnection,
                             child: ScaleTransition(
@@ -593,7 +749,6 @@ jobs:
                               child: Stack(
                                 alignment: Alignment.center,
                                 children: [
-                                  // هاله چرخان
                                   RotationTransition(
                                     turns: _rotateController,
                                     child: Container(
@@ -602,14 +757,11 @@ jobs:
                                       decoration: BoxDecoration(
                                         shape: BoxShape.circle,
                                         gradient: SweepGradient(
-                                          colors: _isConnected 
-                                              ? [neonGreen, Colors.transparent, neonGreen]
-                                              : [neonCyan, Colors.transparent, neonCyan],
+                                          colors: _isConnected ? [neonGreen, Colors.transparent, neonGreen] : [neonCyan, Colors.transparent, neonCyan],
                                         ),
                                       ),
                                     ),
                                   ),
-                                  // دکمه اصلی
                                   Container(
                                     width: 140,
                                     height: 140,
@@ -635,7 +787,6 @@ jobs:
 
                           const Spacer(),
 
-                          // پنل ضد سانسور PattNG
                           Container(
                             margin: const EdgeInsets.symmetric(horizontal: 20),
                             padding: const EdgeInsets.all(12),
@@ -668,7 +819,6 @@ jobs:
                           
                           const SizedBox(height: 15),
 
-                          // آمار
                           if (_isConnected)
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -687,17 +837,11 @@ jobs:
 
                           const SizedBox(height: 15),
 
-                          // ترمینال زنده
                           Container(
                             width: double.infinity,
                             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                             color: Colors.black.withOpacity(0.5),
-                            child: Text(
-                              _liveLog,
-                              style: TextStyle(color: neonGreen.withOpacity(0.8), fontSize: 10, fontFamily: 'monospace'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                            child: Text(_liveLog, style: TextStyle(color: neonGreen.withOpacity(0.8), fontSize: 10, fontFamily: 'monospace'), maxLines: 1, overflow: TextOverflow.ellipsis),
                           ),
                         ],
                       ),
@@ -757,7 +901,6 @@ jobs:
       - name: Patch AndroidManifest for VPN & Notifications
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
-          # تزریق مجوزها
           sed -i 's/<application/<uses-permission android:name="android.permission.POST_NOTIFICATIONS"\/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"\/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"\/>\n    <application android:usesCleartextTraffic="true"/' $MANIFEST
           
       - name: Patch Gradle for VPN
