@@ -27,13 +27,13 @@ jobs:
       - name: Generate Android files
         run: flutter create --platforms=android --org com.zeus .
         
-      # 🌟 سیستم قدرتمند آپدیت بدون حذف (Caching Keystore)
+      # 🌟 کش کردن کلید برای آپدیت بدون حذف نسخه قبلی
       - name: Cache Android Debug Keystore
         uses: actions/cache@v4
         id: keystore-cache
         with:
           path: ~/.android/debug.keystore
-          key: ${{ runner.os }}-debug-keystore-v3
+          key: ${{ runner.os }}-debug-keystore-v4
           restore-keys: |
             ${{ runner.os }}-debug-keystore-
             
@@ -48,7 +48,7 @@ jobs:
         run: |
           cat << 'EOF' > pubspec.yaml
           name: zeus_vpn
-          description: A Cyberpunk VPN app using Zeus Panel.
+          description: A Cyberpunk VPN app using Zeus Panel with PattNG features.
           version: 1.0.0+${{ github.run_number }}
 
           environment:
@@ -99,7 +99,6 @@ jobs:
             }
           }
 
-          // 🌟 کلاس اختصاصی برای جلوگیری از باگ لیست سرورها
           class ServerNode {
             final String subTag;
             final String rawUri;
@@ -113,6 +112,23 @@ jobs:
               required this.displayName,
               this.pingText = '--',
               this.pingColor = Colors.grey,
+            });
+          }
+
+          // مدل تنظیمات PattNG
+          class PattSettings {
+            String fingerprint;
+            String fragment;
+            String cipherSuites;
+            bool allowInsecure;
+            bool enableIPv6;
+
+            PattSettings({
+              this.fingerprint = 'unsafe',
+              this.fragment = 'tlshello',
+              this.cipherSuites = '',
+              this.allowInsecure = false,
+              this.enableIPv6 = false,
             });
           }
 
@@ -136,7 +152,8 @@ jobs:
             bool _isTestingSpeed = false;
             String _speedTestResult = '';
             
-            String _liveLog = '> SYSTEM BOOTING...';
+            // تنظیمات PattNG
+            PattSettings _pattSettings = PattSettings();
 
             String _uploadSpeed = '0 B/s';
             String _downloadSpeed = '0 B/s';
@@ -182,21 +199,18 @@ jobs:
                       _downloadSpeed = _formatSpeed(status.downloadSpeed);
                       _duration = status.duration;
                       
-                      if (_isConnected) {
-                        _liveLog = '> SECURE TUNNEL ESTABLISHED. PATT-NG ACTIVE.';
-                      } else {
+                      if (!_isConnected) {
                         _speedTestResult = '';
                         _uploadSpeed = '0 B/s';
                         _downloadSpeed = '0 B/s';
                         _duration = '00:00:00';
-                        _liveLog = '> TUNNEL DISCONNECTED.';
                       }
                     });
                   }
                 },
               );
               _initV2Ray();
-              _loadSavedSubs();
+              _loadSavedData();
             }
 
             Future<void> _initV2Ray() async {
@@ -207,7 +221,6 @@ jobs:
               if (mounted) {
                 setState(() {
                   _isInitialized = true;
-                  _liveLog = '> CORE ONLINE. AWAITING COMMAND.';
                 });
               }
             }
@@ -225,9 +238,17 @@ jobs:
               return '${(bytesPerSecond / (1024 * 1024)).toStringAsFixed(1)} MB/s';
             }
 
-            Future<void> _loadSavedSubs() async {
+            Future<void> _loadSavedData() async {
               final prefs = await SharedPreferences.getInstance();
               _subUrls = prefs.getStringList('subUrls') ?? [];
+              
+              // بارگذاری تنظیمات PattNG
+              _pattSettings.fingerprint = prefs.getString('patt_fp') ?? 'unsafe';
+              _pattSettings.fragment = prefs.getString('patt_frag') ?? 'tlshello';
+              _pattSettings.cipherSuites = prefs.getString('patt_cipher') ?? '';
+              _pattSettings.allowInsecure = prefs.getBool('patt_insecure') ?? false;
+              _pattSettings.enableIPv6 = prefs.getBool('patt_ipv6') ?? false;
+
               if (_subUrls.isNotEmpty) {
                 _fetchAllConfigs();
               }
@@ -236,6 +257,15 @@ jobs:
             Future<void> _saveSubs() async {
               final prefs = await SharedPreferences.getInstance();
               await prefs.setStringList('subUrls', _subUrls);
+            }
+
+            Future<void> _savePattSettings() async {
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setString('patt_fp', _pattSettings.fingerprint);
+              await prefs.setString('patt_frag', _pattSettings.fragment);
+              await prefs.setString('patt_cipher', _pattSettings.cipherSuites);
+              await prefs.setBool('patt_insecure', _pattSettings.allowInsecure);
+              await prefs.setBool('patt_ipv6', _pattSettings.enableIPv6);
             }
 
             String _extractName(String uriStr) {
@@ -250,8 +280,21 @@ jobs:
               try {
                 final uri = Uri.parse(configUri);
                 Map<String, String> queryParams = Map.from(uri.queryParameters);
-                queryParams['fp'] = 'unsafe';
-                queryParams['fragment'] = 'tlshello';
+                
+                // اعمال تنظیمات از پنل PattNG
+                queryParams['fp'] = _pattSettings.fingerprint;
+                queryParams['fragment'] = _pattSettings.fragment;
+                
+                if (_pattSettings.cipherSuites.isNotEmpty) {
+                  queryParams['cipherSuites'] = _pattSettings.cipherSuites;
+                }
+                if (_pattSettings.allowInsecure) {
+                  queryParams['allowInsecure'] = '1';
+                }
+                if (_pattSettings.enableIPv6) {
+                  queryParams['enableIPv6'] = '1';
+                }
+                
                 return uri.replace(queryParameters: queryParams).toString();
               } catch (_) {
                 return configUri;
@@ -260,7 +303,6 @@ jobs:
 
             Future<void> _fetchAllConfigs() async {
               if (_subUrls.isEmpty) {
-                setState(() => _liveLog = '> NO SUBSCRIPTIONS FOUND.');
                 return;
               }
               
@@ -268,7 +310,6 @@ jobs:
                 _isLoading = true; 
                 _allNodes = []; 
                 _selectedNodeUri = null;
-                _liveLog = '> FETCHING CONFIGS FROM ${_subUrls.length} SOURCES...';
               });
 
               List<ServerNode> fetchedNodes = [];
@@ -308,7 +349,6 @@ jobs:
                 if (_allNodes.isNotEmpty) {
                   _selectedNodeUri = _allNodes.first.rawUri;
                 }
-                _liveLog = '> ${_allNodes.length} NODES MERGED & SECURED.';
               });
 
               _testAllLatencies();
@@ -364,12 +404,10 @@ jobs:
                 double speedMbps = (bytes * 8) / (seconds * 1024 * 1024);
                 setState(() {
                   _speedTestResult = '${speedMbps.toStringAsFixed(1)} Mbps';
-                  _liveLog = '> BANDWIDTH SCAN: $_speedTestResult';
                 });
               } catch (e) {
                 setState(() {
                   _speedTestResult = 'FAILED';
-                  _liveLog = '> SPEED TEST TIMEOUT.';
                 });
               } finally {
                 setState(() => _isTestingSpeed = false);
@@ -381,11 +419,8 @@ jobs:
               if (_isConnected) { await _v2ray.stopV2Ray(); return; }
               if (_selectedNodeUri == null) { _showSnackBar('Please select a server first.', isError: true); return; }
 
-              setState(() => _liveLog = '> INITIATING SECURE TUNNEL...');
-
               final hasPermission = await _v2ray.requestPermission();
               if (!hasPermission) { 
-                setState(() => _liveLog = '> ERROR: VPN PERMISSION DENIED.');
                 _showSnackBar('VPN permission denied.', isError: true); 
                 return; 
               }
@@ -408,7 +443,163 @@ jobs:
               );
             }
 
-            // 🚀 مدیریت اشتراک‌ها
+            // 🚀 پنل تنظیمات پیشرفته PattNG
+            void _showPattSettingsPanel() {
+              showModalBottomSheet(
+                context: context,
+                backgroundColor: Colors.transparent,
+                isScrollControlled: true,
+                builder: (context) {
+                  return StatefulBuilder(
+                    builder: (context, setModalState) {
+                      return Container(
+                        height: MediaQuery.of(context).size.height * 0.75,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0A0A0F),
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                          border: Border(top: BorderSide(color: neonCyan.withOpacity(0.5), width: 2)),
+                        ),
+                        child: Column(
+                          children: [
+                            const SizedBox(height: 10),
+                            Container(width: 50, height: 4, decoration: BoxDecoration(color: neonCyan.withOpacity(0.5), borderRadius: BorderRadius.circular(10))),
+                            const SizedBox(height: 15),
+                            Text('PATT-NG ADVANCED SETTINGS', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: neonCyan, letterSpacing: 2)),
+                            const SizedBox(height: 20),
+                            
+                            Expanded(
+                              child: ListView(
+                                padding: const EdgeInsets.symmetric(horizontal: 20),
+                                children: [
+                                  // Fingerprint
+                                  _buildSettingsHeader('FINGERPRINT'),
+                                  DropdownButtonFormField<String>(
+                                    value: _pattSettings.fingerprint,
+                                    dropdownColor: const Color(0xFF0A0A0F),
+                                    style: const TextStyle(color: Colors.white),
+                                    decoration: InputDecoration(
+                                      filled: true,
+                                      fillColor: Colors.white.withOpacity(0.05),
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                    ),
+                                    items: ['unsafe', 'chrome', 'firefox', 'safari', 'randomized'].map((val) {
+                                      return DropdownMenuItem(value: val, child: Text(val));
+                                    }).toList(),
+                                    onChanged: (val) {
+                                      if (val != null) {
+                                        setModalState(() => _pattSettings.fingerprint = val);
+                                        _savePattSettings();
+                                      }
+                                    },
+                                  ),
+                                  
+                                  const SizedBox(height: 20),
+                                  
+                                  // Fragment
+                                  _buildSettingsHeader('FRAGMENTATION'),
+                                  DropdownButtonFormField<String>(
+                                    value: _pattSettings.fragment,
+                                    dropdownColor: const Color(0xFF0A0A0F),
+                                    style: const TextStyle(color: Colors.white),
+                                    decoration: InputDecoration(
+                                      filled: true,
+                                      fillColor: Colors.white.withOpacity(0.05),
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                    ),
+                                    items: ['tlshello', 'none'].map((val) {
+                                      return DropdownMenuItem(value: val, child: Text(val));
+                                    }).toList(),
+                                    onChanged: (val) {
+                                      if (val != null) {
+                                        setModalState(() => _pattSettings.fragment = val);
+                                        _savePattSettings();
+                                      }
+                                    },
+                                  ),
+                                  
+                                  const SizedBox(height: 20),
+                                  
+                                  // Cipher Suites
+                                  _buildSettingsHeader('CIPHER SUITES (OPTIONAL)'),
+                                  TextField(
+                                    style: const TextStyle(color: Colors.white),
+                                    decoration: InputDecoration(
+                                      hintText: 'e.g., TLS_AES_128_GCM_SHA256',
+                                      hintStyle: TextStyle(color: Colors.white.withOpacity(0.2)),
+                                      filled: true,
+                                      fillColor: Colors.white.withOpacity(0.05),
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                    ),
+                                    onChanged: (val) {
+                                      _pattSettings.cipherSuites = val;
+                                      _savePattSettings();
+                                    },
+                                  ),
+                                  
+                                  const SizedBox(height: 20),
+                                  
+                                  // Allow Insecure
+                                  SwitchListTile(
+                                    title: Text('ALLOW INSECURE', style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 14)),
+                                    subtitle: Text('Connect to non-encrypted VLESS/Trojan', style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 11)),
+                                    value: _pattSettings.allowInsecure,
+                                    activeColor: neonMagenta,
+                                    onChanged: (val) {
+                                      setModalState(() => _pattSettings.allowInsecure = val);
+                                      _savePattSettings();
+                                    },
+                                  ),
+                                  
+                                  // Enable IPv6
+                                  SwitchListTile(
+                                    title: Text('ENABLE IPv6', style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 14)),
+                                    subtitle: Text('Force IPv6 for outbound connections', style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 11)),
+                                    value: _pattSettings.enableIPv6,
+                                    activeColor: neonCyan,
+                                    onChanged: (val) {
+                                      setModalState(() => _pattSettings.enableIPv6 = val);
+                                      _savePattSettings();
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                            
+                            Padding(
+                              padding: const EdgeInsets.all(20),
+                              child: SizedBox(
+                                width: double.infinity,
+                                height: 50,
+                                child: ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: neonGreen.withOpacity(0.1),
+                                    side: BorderSide(color: neonGreen),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                  onPressed: () {
+                                    Navigator.pop(context);
+                                    _fetchAllConfigs(); // رفرش کانفیگ‌ها با تنظیمات جدید
+                                  },
+                                  child: Text('APPLY & SYNC ALL', style: TextStyle(color: neonGreen, fontWeight: FontWeight.bold, letterSpacing: 2)),
+                                ),
+                              ),
+                            )
+                          ],
+                        ),
+                      );
+                    }
+                  );
+                }
+              );
+            }
+
+            Widget _buildSettingsHeader(String title) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(title, style: TextStyle(color: neonCyan.withOpacity(0.7), fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+              );
+            }
+
             void _showSubscriptionManager() {
               TextEditingController newSubController = TextEditingController();
               
@@ -553,7 +744,6 @@ jobs:
               );
             }
 
-            // 🚀 نمایش لیست سرورها
             void _showServerListModal() {
               showModalBottomSheet(
                 context: context,
@@ -631,7 +821,7 @@ jobs:
               String selectedPing = '--';
               Color selectedPingColor = Colors.grey;
 
-              if (_selectedNodeUri != null) {
+              if (_selectedNodeUri != null && _allNodes.isNotEmpty) {
                 final node = _allNodes.firstWhere((element) => element.rawUri == _selectedNodeUri, orElse: () => _allNodes.first);
                 selectedName = node.displayName;
                 selectedPing = node.pingText;
@@ -678,35 +868,55 @@ jobs:
                             ),
                           ),
                           
+                          // دکمه‌های بالای صفحه
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 20),
-                            child: GestureDetector(
-                              onTap: _showSubscriptionManager,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 15),
-                                decoration: BoxDecoration(
-                                  color: neonCyan.withOpacity(0.05),
-                                  border: Border.all(color: neonCyan.withOpacity(0.3)),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Icon(Icons.layers, color: neonCyan, size: 18),
-                                        const SizedBox(width: 10),
-                                        Text('SUBSCRIPTIONS', style: TextStyle(color: neonCyan, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1)),
-                                      ],
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: GestureDetector(
+                                    onTap: _showSubscriptionManager,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 15),
+                                      decoration: BoxDecoration(
+                                        color: neonCyan.withOpacity(0.05),
+                                        border: Border.all(color: neonCyan.withOpacity(0.3)),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Icon(Icons.layers, color: neonCyan, size: 18),
+                                              const SizedBox(width: 10),
+                                              Text('SUBS', style: TextStyle(color: neonCyan, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                                            ],
+                                          ),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                            decoration: BoxDecoration(color: neonMagenta.withOpacity(0.2), borderRadius: BorderRadius.circular(10)),
+                                            child: Text('${_subUrls.length}', style: TextStyle(color: neonMagenta, fontSize: 10, fontWeight: FontWeight.bold)),
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                      decoration: BoxDecoration(color: neonMagenta.withOpacity(0.2), borderRadius: BorderRadius.circular(10)),
-                                      child: Text('${_subUrls.length} ACTIVE', style: TextStyle(color: neonMagenta, fontSize: 10, fontWeight: FontWeight.bold)),
-                                    ),
-                                  ],
+                                  ),
                                 ),
-                              ),
+                                const SizedBox(width: 10),
+                                GestureDetector(
+                                  onTap: _showPattSettingsPanel,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: neonMagenta.withOpacity(0.05),
+                                      border: Border.all(color: neonMagenta.withOpacity(0.3)),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Icon(Icons.tune, color: neonMagenta, size: 20),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                           
@@ -809,9 +1019,9 @@ jobs:
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                                   children: [
-                                    _buildPattStat('UNSAFE FP', 'ACTIVE', neonMagenta),
-                                    _buildPattStat('TLS FRAGMENT', 'INJECTED', neonCyan),
-                                    _buildPattStat('CIPHER SUITE', 'AUTO', neonGreen),
+                                    _buildPattStat('FP', _pattSettings.fingerprint.toUpperCase(), neonMagenta),
+                                    _buildPattStat('FRAG', _pattSettings.fragment.toUpperCase(), neonCyan),
+                                    _buildPattStat('CIPHER', _pattSettings.cipherSuites.isNotEmpty ? 'CUSTOM' : 'AUTO', neonGreen),
                                   ],
                                 ),
                               ],
@@ -836,14 +1046,7 @@ jobs:
                               ),
                             ),
 
-                          const SizedBox(height: 15),
-
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                            color: Colors.black.withOpacity(0.5),
-                            child: Text(_liveLog, style: TextStyle(color: neonGreen.withOpacity(0.8), fontSize: 10, fontFamily: 'monospace'), maxLines: 1, overflow: TextOverflow.ellipsis),
-                          ),
+                          const SizedBox(height: 30),
                         ],
                       ),
                     ),
