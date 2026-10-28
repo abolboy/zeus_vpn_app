@@ -1,5 +1,5 @@
 name: zeus_vpn
-description: A VPN app using Zeus Panel.
+description: A Cyberpunk VPN app using Zeus Panel with PattNG.
 version: 1.0.0+1
 
 environment:
@@ -8,8 +8,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_v2ray: ^1.0.10   # تغییر به نسخه پایدارتر
+  flutter_v2ray_client: ^3.4.1
   dio: ^5.4.0
+  shared_preferences: ^2.2.3
 
 flutter:
   uses-material-design: true
