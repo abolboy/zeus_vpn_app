@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
-import 'package:flutter_v2ray/flutter_v2ray.dart';
+import 'package:flutter_v2ray_client/flutter_v2ray.dart';
+import 'package:flutter_v2ray_client/model/v2ray_status.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'dart:io';
+import 'dart:ui';
+import 'dart:math';
 
 void main() {
   runApp(const ZeusVpnApp());
@@ -14,14 +19,70 @@ class ZeusVpnApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'ZEUS VPN',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
-        primaryColor: Colors.blueAccent,
-        scaffoldBackgroundColor: const Color(0xFF121212),
+        scaffoldBackgroundColor: const Color(0xFF050505),
       ),
       home: const VpnHomePage(),
     );
   }
+}
+
+class ServerNode {
+  final String subTag;
+  final String rawUri;
+  final String displayName;
+  String pingText;
+  Color pingColor;
+
+  ServerNode({
+    required this.subTag,
+    required this.rawUri,
+    required this.displayName,
+    this.pingText = '--',
+    this.pingColor = Colors.grey,
+  });
+}
+
+class PattSettings {
+  String fingerprint;
+  String fragment;
+  String cipherSuites;
+  bool allowInsecure;
+  bool enableIPv6;
+  bool enableMux;
+  bool enableReality;
+  String realityPublicKey;
+  String realityShortId;
+  String realitySpiderX;
+  String flow;
+  String alpn;
+  String sni;
+  String path;
+  String host;
+  String headerType;
+  String network;
+
+  PattSettings({
+    this.fingerprint = 'unsafe',
+    this.fragment = 'tlshello',
+    this.cipherSuites = '',
+    this.allowInsecure = false,
+    this.enableIPv6 = false,
+    this.enableMux = false,
+    this.enableReality = false,
+    this.realityPublicKey = '',
+    this.realityShortId = '',
+    this.realitySpiderX = '/',
+    this.flow = 'xtls-rprx-vision',
+    this.alpn = 'h2,http/1.1',
+    this.sni = '',
+    this.path = '/',
+    this.host = '',
+    this.headerType = 'none',
+    this.network = 'tcp',
+  });
 }
 
 class VpnHomePage extends StatefulWidget {
@@ -31,137 +92,1097 @@ class VpnHomePage extends StatefulWidget {
   State<VpnHomePage> createState() => _VpnHomePageState();
 }
 
-class _VpnHomePageState extends State<VpnHomePage> {
-  final TextEditingController _subController = TextEditingController();
+class _VpnHomePageState extends State<VpnHomePage> with TickerProviderStateMixin {
   final Dio _dio = Dio();
   
-  List<String> _configs = [];
-  String? _selectedConfig;
+  List<String> _subUrls = [];
+  List<ServerNode> _allNodes = [];
+  String? _selectedNodeUri;
+  
+  bool _isInitialized = false;
   bool _isLoading = false;
   bool _isConnected = false;
-  String _status = 'قطع';
+  bool _isTestingSpeed = false;
+  String _speedTestResult = '';
+  
+  PattSettings _pattSettings = PattSettings();
 
-  late FlutterV2ray _v2ray;
+  String _uploadSpeed = '0 B/s';
+  String _downloadSpeed = '0 B/s';
+  String _duration = '00:00:00';
+  String _status = 'DISCONNECTED';
+
+  final Color neonCyan = const Color(0xFF00F0FF);
+  final Color neonMagenta = const Color(0xFFFF007F);
+  final Color neonGreen = const Color(0xFF00FF88);
+  final Color darkBg = const Color(0xFF050505);
+
+  late V2ray _v2ray;
+  late AnimationController _pulseController;
+  late AnimationController _rotateController;
+  late Animation<double> _pulseAnimation;
 
   @override
   void initState() {
     super.initState();
-    _v2ray = FlutterV2ray(
-      onStatusChanged: (status) {
-        setState(() {
-          _status = status.state;
-          _isConnected = (status.state == 'CONNECTED');
-        });
+    
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
+    
+    _rotateController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    )..repeat();
+
+    _pulseAnimation = Tween<double>(begin: 0.95, end: 1.05).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+
+    _v2ray = V2ray(
+      onStatusChanged: (V2RayStatus status) {
+        if (mounted) {
+          setState(() {
+            _status = status.state;
+            _isConnected = (status.state == 'CONNECTED');
+            
+            _uploadSpeed = _formatSpeed(status.uploadSpeed);
+            _downloadSpeed = _formatSpeed(status.downloadSpeed);
+            _duration = status.duration;
+            
+            if (!_isConnected) {
+              _speedTestResult = '';
+              _uploadSpeed = '0 B/s';
+              _downloadSpeed = '0 B/s';
+              _duration = '00:00:00';
+            }
+          });
+        }
       },
     );
-    _v2ray.initializeV2Ray();
+    _initV2Ray();
+    _loadSavedData();
   }
 
-  Future<void> _fetchConfigs() async {
-    if (_subController.text.isEmpty) return;
-    setState(() { _isLoading = true; _configs = []; });
-
-    try {
-      final response = await _dio.get(
-        _subController.text.trim(),
-        options: Options(headers: {'User-Agent': 'v2rayNG/1.8.5'}),
-      );
-
-      String body = response.data.toString().trim();
-      try {
-        body = utf8.decode(base64.decode(base64.normalize(body)));
-      } catch (_) {}
-
-      final links = body.split('\n')
-          .map((e) => e.trim())
-          .where((e) => e.startsWith('vless://') || e.startsWith('trojan://') || e.startsWith('vmess://'))
-          .toList();
-
+  Future<void> _initV2Ray() async {
+    await _v2ray.initialize(
+      notificationIconResourceType: "mipmap",
+      notificationIconResourceName: "ic_launcher",
+    );
+    if (mounted) {
       setState(() {
-        _configs = links;
-        if (_configs.isNotEmpty) _selectedConfig = _configs.first;
+        _isInitialized = true;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    _rotateController.dispose();
+    super.dispose();
+  }
+
+  String _formatSpeed(int bytesPerSecond) {
+    if (bytesPerSecond < 1024) return '$bytesPerSecond B/s';
+    if (bytesPerSecond < 1024 * 1024) return '${(bytesPerSecond / 1024).toStringAsFixed(1)} KB/s';
+    return '${(bytesPerSecond / (1024 * 1024)).toStringAsFixed(1)} MB/s';
+  }
+
+  Future<void> _loadSavedData() async {
+    final prefs = await SharedPreferences.getInstance();
+    _subUrls = prefs.getStringList('subUrls') ?? [];
+    
+    _pattSettings.fingerprint = prefs.getString('patt_fp') ?? 'unsafe';
+    _pattSettings.fragment = prefs.getString('patt_frag') ?? 'tlshello';
+    _pattSettings.cipherSuites = prefs.getString('patt_cs') ?? '';
+    _pattSettings.allowInsecure = prefs.getBool('patt_insecure') ?? false;
+    _pattSettings.enableIPv6 = prefs.getBool('patt_ipv6') ?? false;
+    _pattSettings.enableMux = prefs.getBool('patt_mux') ?? false;
+    _pattSettings.enableReality = prefs.getBool('patt_reality') ?? false;
+    _pattSettings.realityPublicKey = prefs.getString('patt_pbk') ?? '';
+    _pattSettings.realityShortId = prefs.getString('patt_sid') ?? '';
+    _pattSettings.realitySpiderX = prefs.getString('patt_spx') ?? '/';
+    _pattSettings.flow = prefs.getString('patt_flow') ?? 'xtls-rprx-vision';
+    _pattSettings.alpn = prefs.getString('patt_alpn') ?? 'h2,http/1.1';
+    _pattSettings.sni = prefs.getString('patt_sni') ?? '';
+    _pattSettings.path = prefs.getString('patt_path') ?? '/';
+    _pattSettings.host = prefs.getString('patt_host') ?? '';
+    _pattSettings.headerType = prefs.getString('patt_header') ?? 'none';
+    _pattSettings.network = prefs.getString('patt_network') ?? 'tcp';
+
+    if (_subUrls.isNotEmpty) {
+      _fetchAllConfigs();
+    }
+  }
+
+  Future<void> _saveSubs() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('subUrls', _subUrls);
+  }
+
+  Future<void> _savePattSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('patt_fp', _pattSettings.fingerprint);
+    await prefs.setString('patt_frag', _pattSettings.fragment);
+    await prefs.setString('patt_cs', _pattSettings.cipherSuites);
+    await prefs.setBool('patt_insecure', _pattSettings.allowInsecure);
+    await prefs.setBool('patt_ipv6', _pattSettings.enableIPv6);
+    await prefs.setBool('patt_mux', _pattSettings.enableMux);
+    await prefs.setBool('patt_reality', _pattSettings.enableReality);
+    await prefs.setString('patt_pbk', _pattSettings.realityPublicKey);
+    await prefs.setString('patt_sid', _pattSettings.realityShortId);
+    await prefs.setString('patt_spx', _pattSettings.realitySpiderX);
+    await prefs.setString('patt_flow', _pattSettings.flow);
+    await prefs.setString('patt_alpn', _pattSettings.alpn);
+    await prefs.setString('patt_sni', _pattSettings.sni);
+    await prefs.setString('patt_path', _pattSettings.path);
+    await prefs.setString('patt_host', _pattSettings.host);
+    await prefs.setString('patt_header', _pattSettings.headerType);
+    await prefs.setString('patt_network', _pattSettings.network);
+  }
+
+  String _extractName(String uriStr) {
+    try {
+      final uri = Uri.parse(uriStr);
+      if (uri.fragment.isNotEmpty) return Uri.decodeComponent(uri.fragment);
+      return '${uri.host}:${uri.port}';
+    } catch (_) { return 'Unknown Server'; }
+  }
+
+  String _applyPattNGSettings(String configUri) {
+    try {
+      final uri = Uri.parse(configUri);
+      Map<String, String> queryParams = Map.from(uri.queryParameters);
+      
+      queryParams['fp'] = _pattSettings.fingerprint;
+      
+      if (_pattSettings.fragment != 'none') {
+        queryParams['fragment'] = _pattSettings.fragment;
+      }
+      if (_pattSettings.cipherSuites.isNotEmpty) {
+        queryParams['cs'] = _pattSettings.cipherSuites;
+      }
+      if (_pattSettings.allowInsecure) {
+        queryParams['allowInsecure'] = '1';
+      }
+      if (_pattSettings.enableIPv6) {
+        queryParams['enableIPv6'] = '1';
+      }
+      if (_pattSettings.enableMux) {
+        queryParams['mux'] = '1';
+      }
+      if (_pattSettings.enableReality) {
+        queryParams['security'] = 'reality';
+        queryParams['pbk'] = _pattSettings.realityPublicKey;
+        queryParams['sid'] = _pattSettings.realityShortId;
+        queryParams['spx'] = _pattSettings.realitySpiderX;
+      }
+      if (_pattSettings.flow.isNotEmpty && _pattSettings.flow != 'none') {
+        queryParams['flow'] = _pattSettings.flow;
+      }
+      if (_pattSettings.alpn.isNotEmpty) {
+        queryParams['alpn'] = _pattSettings.alpn;
+      }
+      if (_pattSettings.sni.isNotEmpty) {
+        queryParams['sni'] = _pattSettings.sni;
+      }
+      if (_pattSettings.path.isNotEmpty && _pattSettings.path != '/') {
+        queryParams['path'] = _pattSettings.path;
+      }
+      if (_pattSettings.host.isNotEmpty) {
+        queryParams['host'] = _pattSettings.host;
+      }
+      if (_pattSettings.headerType != 'none') {
+        queryParams['headerType'] = _pattSettings.headerType;
+      }
+      if (_pattSettings.network.isNotEmpty && _pattSettings.network != 'tcp') {
+        queryParams['type'] = _pattSettings.network;
+      }
+      
+      return uri.replace(queryParameters: queryParams).toString();
+    } catch (_) {
+      return configUri;
+    }
+  }
+
+  Future<void> _fetchAllConfigs() async {
+    if (_subUrls.isEmpty) return;
+    
+    String? previousSelection = _selectedNodeUri;
+
+    setState(() { 
+      _isLoading = true; 
+      _allNodes = []; 
+    });
+
+    List<ServerNode> fetchedNodes = [];
+
+    for (int i = 0; i < _subUrls.length; i++) {
+      String url = _subUrls[i];
+      String subTag = 'SUB-${i + 1}';
+      try {
+        final response = await _dio.get(
+          url,
+          options: Options(headers: {'User-Agent': 'v2rayNG/1.8.5'}),
+        );
+
+        String body = response.data.toString().trim();
+        try { body = utf8.decode(base64.decode(base64.normalize(body))); } catch (_) {}
+
+        final links = body.split('\n')
+            .map((e) => e.trim())
+            .where((e) => e.startsWith('vless://') || e.startsWith('trojan://') || e.startsWith('vmess://'))
+            .map((link) => _applyPattNGSettings(link))
+            .toList();
+
+        for (String link in links) {
+          fetchedNodes.add(ServerNode(
+            subTag: subTag,
+            rawUri: link,
+            displayName: '[$subTag] ${_extractName(link)}',
+          ));
+        }
+      } catch (e) {
+        // Skip failed sub
+      }
+    }
+
+    setState(() {
+      _allNodes = fetchedNodes;
+      
+      if (previousSelection != null && _allNodes.any((n) => n.rawUri == previousSelection)) {
+        _selectedNodeUri = previousSelection;
+      } else if (_allNodes.isNotEmpty) {
+        _selectedNodeUri = _allNodes.first.rawUri;
+      } else {
+        _selectedNodeUri = null;
+      }
+    });
+
+    _testAllLatencies();
+
+    setState(() => _isLoading = false);
+  }
+
+  Future<void> _testAllLatencies() async {
+    for (var node in _allNodes) {
+      _pingSingleServer(node);
+    }
+  }
+
+  Future<void> _pingSingleServer(ServerNode node) async {
+    try {
+      final uri = Uri.parse(node.rawUri);
+      final stopwatch = Stopwatch()..start();
+      final socket = await Socket.connect(uri.host, uri.port, timeout: const Duration(seconds: 3));
+      stopwatch.stop();
+      socket.destroy();
+      if (mounted) {
+        setState(() {
+          node.pingText = '${stopwatch.elapsedMilliseconds} ms';
+          int p = stopwatch.elapsedMilliseconds;
+          node.pingColor = p < 200 ? neonGreen : (p < 500 ? Colors.orange : neonMagenta);
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          node.pingText = 'TIMEOUT';
+          node.pingColor = neonMagenta;
+        });
+      }
+    }
+  }
+
+  Future<void> _runSpeedTest() async {
+    setState(() { _isTestingSpeed = true; _speedTestResult = 'TESTING...'; });
+    try {
+      final stopwatch = Stopwatch()..start();
+      final response = await _dio.get(
+        'https://speed.cloudflare.com/__down?bytes=10000000',
+        options: Options(
+          responseType: ResponseType.bytes,
+          receiveTimeout: const Duration(seconds: 15),
+        ),
+      );
+      stopwatch.stop();
+      double seconds = stopwatch.elapsedMilliseconds / 1000.0;
+      if (seconds == 0) seconds = 0.1;
+      double bytes = response.data.length.toDouble();
+      double speedMbps = (bytes * 8) / (seconds * 1024 * 1024);
+      setState(() {
+        _speedTestResult = '${speedMbps.toStringAsFixed(1)} Mbps';
       });
     } catch (e) {
-      _showSnackBar('خطا در دریافت لینک‌ها: $e');
+      setState(() {
+        _speedTestResult = 'FAILED';
+      });
     } finally {
-      setState(() => _isLoading = false);
+      setState(() => _isTestingSpeed = false);
     }
   }
 
   Future<void> _toggleConnection() async {
+    if (!_isInitialized) { _showSnackBar('Core is initializing...', isError: true); return; }
     if (_isConnected) { await _v2ray.stopV2Ray(); return; }
-    if (_selectedConfig == null) { _showSnackBar('لطفاً ابتدا لینک اشتراک را دریافت کنید.'); return; }
+    if (_selectedNodeUri == null) { _showSnackBar('Please select a server first.', isError: true); return; }
 
     final hasPermission = await _v2ray.requestPermission();
-    if (!hasPermission) { _showSnackBar('دسترسی VPN داده نشد.'); return; }
+    if (!hasPermission) { 
+      _showSnackBar('VPN permission denied.', isError: true); 
+      return; 
+    }
 
-    final parser = FlutterV2ray.parseFromURL(_selectedConfig!);
+    final parser = V2ray.parseFromURL(_selectedNodeUri!);
     await _v2ray.startV2Ray(
-      remark: 'ZEUS Server',
+      remark: parser.remark,
       config: parser.getFullConfiguration(),
       proxyOnly: false,
     );
   }
 
-  void _showSnackBar(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  void _showSnackBar(String msg, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg, style: const TextStyle(color: Colors.white)),
+        backgroundColor: isError ? neonMagenta : neonGreen,
+        behavior: SnackBarBehavior.floating,
+      )
+    );
+  }
+
+  void _showPattSettingsPanel() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.85,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0A0A0F),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                border: Border(top: BorderSide(color: neonCyan.withOpacity(0.5), width: 2)),
+              ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  Container(width: 50, height: 4, decoration: BoxDecoration(color: neonCyan.withOpacity(0.5), borderRadius: BorderRadius.circular(10))),
+                  const SizedBox(height: 15),
+                  Text('PATT-NG FULL SETTINGS', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: neonCyan, letterSpacing: 2)),
+                  const SizedBox(height: 20),
+                  
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      children: [
+                        _buildSectionHeader('TLS / ANTI-CENSORSHIP'),
+                        _buildDropdown('FINGERPRINT', ['unsafe', 'chrome', 'firefox', 'safari', 'randomized', 'randomizednoalpn'], _pattSettings.fingerprint, (val) {
+                          setModalState(() => _pattSettings.fingerprint = val);
+                          _savePattSettings();
+                        }),
+                        _buildDropdown('FRAGMENTATION', ['tlshello', 'none', 'tlshello-0-len'], _pattSettings.fragment, (val) {
+                          setModalState(() => _pattSettings.fragment = val);
+                          _savePattSettings();
+                        }),
+                        _buildTextField('CIPHER SUITES', 'e.g., real_firefox_cipherSuites', _pattSettings.cipherSuites, (val) {
+                          _pattSettings.cipherSuites = val;
+                          _savePattSettings();
+                        }),
+                        _buildSwitch('ALLOW INSECURE', 'Non-encrypted VLESS/Trojan', _pattSettings.allowInsecure, (val) {
+                          setModalState(() => _pattSettings.allowInsecure = val);
+                          _savePattSettings();
+                        }),
+                        _buildSwitch('ENABLE IPv6', 'Force IPv6 outbound', _pattSettings.enableIPv6, (val) {
+                          setModalState(() => _pattSettings.enableIPv6 = val);
+                          _savePattSettings();
+                        }),
+                        _buildSwitch('ENABLE MUX', 'Multiplexing', _pattSettings.enableMux, (val) {
+                          setModalState(() => _pattSettings.enableMux = val);
+                          _savePattSettings();
+                        }),
+
+                        const SizedBox(height: 20),
+                        _buildSectionHeader('REALITY'),
+                        _buildSwitch('ENABLE REALITY', 'Use Reality security', _pattSettings.enableReality, (val) {
+                          setModalState(() => _pattSettings.enableReality = val);
+                          _savePattSettings();
+                        }),
+                        if (_pattSettings.enableReality) ...[
+                          _buildTextField('PUBLIC KEY (pbk)', '', _pattSettings.realityPublicKey, (val) {
+                            _pattSettings.realityPublicKey = val;
+                            _savePattSettings();
+                          }),
+                          _buildTextField('SHORT ID (sid)', '', _pattSettings.realityShortId, (val) {
+                            _pattSettings.realityShortId = val;
+                            _savePattSettings();
+                          }),
+                          _buildTextField('SPIDER X (spx)', '/', _pattSettings.realitySpiderX, (val) {
+                            _pattSettings.realitySpiderX = val;
+                            _savePattSettings();
+                          }),
+                        ],
+
+                        const SizedBox(height: 20),
+                        _buildSectionHeader('XTLS / ALPN'),
+                        _buildDropdown('FLOW', ['xtls-rprx-vision', 'none'], _pattSettings.flow, (val) {
+                          setModalState(() => _pattSettings.flow = val);
+                          _savePattSettings();
+                        }),
+                        _buildDropdown('ALPN', ['h2,http/1.1', 'h2', 'http/1.1', 'h3', ''], _pattSettings.alpn, (val) {
+                          setModalState(() => _pattSettings.alpn = val);
+                          _savePattSettings();
+                        }),
+
+                        const SizedBox(height: 20),
+                        _buildSectionHeader('TRANSPORT'),
+                        _buildDropdown('NETWORK', ['tcp', 'ws', 'grpc', 'http', 'kcp', 'quic', 'httpupgrade', 'splithttp'], _pattSettings.network, (val) {
+                          setModalState(() => _pattSettings.network = val);
+                          _savePattSettings();
+                        }),
+                        _buildTextField('SNI', 'server name indication', _pattSettings.sni, (val) {
+                          _pattSettings.sni = val;
+                          _savePattSettings();
+                        }),
+                        _buildTextField('PATH', '/', _pattSettings.path, (val) {
+                          _pattSettings.path = val;
+                          _savePattSettings();
+                        }),
+                        _buildTextField('HOST', '', _pattSettings.host, (val) {
+                          _pattSettings.host = val;
+                          _savePattSettings();
+                        }),
+                        _buildDropdown('HEADER TYPE', ['none', 'srtp', 'utp', 'wechat-video', 'dtls', 'wireguard'], _pattSettings.headerType, (val) {
+                          setModalState(() => _pattSettings.headerType = val);
+                          _savePattSettings();
+                        }),
+                      ],
+                    ),
+                  ),
+                  
+                  Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: neonGreen.withOpacity(0.1),
+                          side: const BorderSide(color: Color(0xFF00FF88)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _fetchAllConfigs();
+                        },
+                        child: const Text('APPLY & SYNC ALL', style: TextStyle(color: Color(0xFF00FF88), fontWeight: FontWeight.bold, letterSpacing: 2)),
+                      ),
+                    ),
+                  )
+                ],
+              ),
+            );
+          }
+        );
+      }
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 15, bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: TextStyle(color: neonCyan, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+          const Divider(color: Colors.white12, height: 15),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDropdown(String label, List<String> items, String currentValue, Function(String) onChanged) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 15),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 10, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 5),
+          DropdownButtonFormField<String>(
+            value: items.contains(currentValue) ? currentValue : items.first,
+            dropdownColor: const Color(0xFF0A0A0F),
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: Colors.white.withOpacity(0.05),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+            items: items.map((val) => DropdownMenuItem(value: val, child: Text(val))).toList(),
+            onChanged: (val) { if (val != null) onChanged(val); },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTextField(String label, String hint, String currentValue, Function(String) onChanged) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 15),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 10, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 5),
+          TextFormField(
+            initialValue: currentValue,
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+            decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: TextStyle(color: Colors.white.withOpacity(0.2), fontSize: 12),
+              filled: true,
+              fillColor: Colors.white.withOpacity(0.05),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+            onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSwitch(String title, String subtitle, bool value, Function(bool) onChanged) {
+    return SwitchListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(title, style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13)),
+      subtitle: Text(subtitle, style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 10)),
+      value: value,
+      activeColor: neonCyan,
+      onChanged: onChanged,
+    );
+  }
+
+  void _showSubscriptionManager() {
+    TextEditingController newSubController = TextEditingController();
+    
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.7,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0A0A0F),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                border: Border(top: BorderSide(color: neonCyan.withOpacity(0.5), width: 2)),
+              ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  Container(width: 50, height: 4, decoration: BoxDecoration(color: neonCyan.withOpacity(0.5), borderRadius: BorderRadius.circular(10))),
+                  const SizedBox(height: 15),
+                  Text('SUBSCRIPTION MANAGER', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: neonCyan, letterSpacing: 2)),
+                  const SizedBox(height: 15),
+                  
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 15),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.05),
+                              border: Border.all(color: neonMagenta.withOpacity(0.3)),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: TextField(
+                              controller: newSubController,
+                              style: const TextStyle(color: Colors.white, fontSize: 12),
+                              decoration: InputDecoration(
+                                hintText: 'PASTE NEW SUB LINK...',
+                                hintStyle: TextStyle(color: Colors.white.withOpacity(0.2), fontSize: 11),
+                                border: InputBorder.none,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        GestureDetector(
+                          onTap: () {
+                            if (newSubController.text.isNotEmpty) {
+                              setState(() => _subUrls.add(newSubController.text.trim()));
+                              _saveSubs();
+                              newSubController.clear();
+                              setModalState(() {});
+                            }
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: neonGreen.withOpacity(0.1),
+                              border: Border.all(color: neonGreen.withOpacity(0.5)),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(Icons.add, color: Color(0xFF00FF88), size: 20),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 15),
+                  
+                  Expanded(
+                    child: _subUrls.isEmpty 
+                      ? Center(child: Text('NO SUBSCRIPTIONS ADDED', style: TextStyle(color: Colors.white.withOpacity(0.3))))
+                      : ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 15),
+                          itemCount: _subUrls.length,
+                          itemBuilder: (context, index) {
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              padding: const EdgeInsets.all(15),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.02),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: neonCyan.withOpacity(0.2)),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.link, color: neonCyan, size: 18),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      _subUrls[index],
+                                      style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: Icon(Icons.delete, color: neonMagenta, size: 20),
+                                    onPressed: () {
+                                      setState(() => _subUrls.removeAt(index));
+                                      _saveSubs();
+                                      setModalState(() {});
+                                    },
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                  ),
+                  
+                  Padding(
+                    padding: const EdgeInsets.all(15),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: neonCyan.withOpacity(0.1),
+                          side: const BorderSide(color: Color(0xFF00F0FF)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _fetchAllConfigs();
+                        },
+                        child: const Text('SAVE & SYNC ALL', style: TextStyle(color: Color(0xFF00F0FF), fontWeight: FontWeight.bold, letterSpacing: 2)),
+                      ),
+                    ),
+                  )
+                ],
+              ),
+            );
+          }
+        );
+      }
+    );
+  }
+
+  void _showServerListModal() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.6,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0A0A0F),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                border: Border(top: BorderSide(color: neonCyan.withOpacity(0.5), width: 2)),
+              ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  Container(width: 50, height: 4, decoration: BoxDecoration(color: neonCyan.withOpacity(0.5), borderRadius: BorderRadius.circular(10))),
+                  const SizedBox(height: 15),
+                  Text('NODE SELECTION', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: neonCyan, letterSpacing: 2)),
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 15),
+                      itemCount: _allNodes.length,
+                      itemBuilder: (context, index) {
+                        final node = _allNodes[index];
+                        final isSelected = node.rawUri == _selectedNodeUri;
+
+                        return GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _selectedNodeUri = node.rawUri;
+                            });
+                            setModalState(() {});
+                            Navigator.pop(context);
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            margin: const EdgeInsets.only(bottom: 10),
+                            padding: const EdgeInsets.all(15),
+                            decoration: BoxDecoration(
+                              color: isSelected ? neonCyan.withOpacity(0.15) : Colors.white.withOpacity(0.03),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: isSelected ? neonCyan : Colors.transparent),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    node.displayName, 
+                                    style: TextStyle(
+                                      color: isSelected ? Colors.white : Colors.white70, 
+                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: node.pingColor.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: node.pingColor.withOpacity(0.5)),
+                                  ),
+                                  child: Text(node.pingText, style: TextStyle(color: node.pingColor, fontSize: 10, fontWeight: FontWeight.bold)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+        );
+      }
+    ).then((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    String selectedName = 'TAP TO SELECT NODE';
+    String selectedPing = '--';
+    Color selectedPingColor = Colors.grey;
+
+    if (_selectedNodeUri != null && _allNodes.isNotEmpty) {
+      final node = _allNodes.firstWhere(
+        (element) => element.rawUri == _selectedNodeUri, 
+        orElse: () => _allNodes.first,
+      );
+      selectedName = node.displayName;
+      selectedPing = node.pingText;
+      selectedPingColor = node.pingColor;
+    }
+
     return Scaffold(
-      appBar: AppBar(title: const Text('ZEUS VPN'), centerTitle: true),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: _subController,
-              decoration: const InputDecoration(
-                labelText: 'لینک اشتراک (Sub Link)',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.link),
-              ),
-            ),
-            const SizedBox(height: 12),
-            ElevatedButton.icon(
-              onPressed: _isLoading ? null : _fetchConfigs,
-              icon: const Icon(Icons.download),
-              label: Text(_isLoading ? 'در حال دریافت...' : 'دریافت سرورها'),
-            ),
-            const SizedBox(height: 24),
-            if (_configs.isNotEmpty)
-              DropdownButtonFormField<String>(
-                value: _selectedConfig,
-                decoration: const InputDecoration(labelText: 'انتخاب سرور', border: OutlineInputBorder()),
-                items: _configs.map((config) {
-                  final name = config.split('#').last;
-                  return DropdownMenuItem(
-                    value: config,
-                    child: Text(name.length > 30 ? name.substring(0, 30) : name, overflow: TextOverflow.ellipsis),
-                  );
-                }).toList(),
-                onChanged: (val) => setState(() => _selectedConfig = val),
-              ),
-            const Spacer(),
-            Text('وضعیت: $_status', textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _isConnected ? Colors.green : Colors.red)),
-            const SizedBox(height: 16),
-            SizedBox(
-              height: 60,
-              child: ElevatedButton(
-                onPressed: _toggleConnection,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _isConnected ? Colors.red : Colors.green,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+      backgroundColor: darkBg,
+      body: Stack(
+        children: [
+          Positioned.fill(child: CustomPaint(painter: CyberGridPainter(neonCyan.withOpacity(0.05)))),
+          Positioned(
+            top: -100, left: -100,
+            child: Container(width: 300, height: 300, decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: [BoxShadow(color: neonCyan.withOpacity(0.1), blurRadius: 100, spreadRadius: 50)])),
+          ),
+          Positioned(
+            bottom: -100, right: -100,
+            child: Container(width: 300, height: 300, decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: [BoxShadow(color: neonMagenta.withOpacity(0.1), blurRadius: 100, spreadRadius: 50)])),
+          ),
+          
+          SafeArea(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 20, bottom: 10),
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween(begin: -1, end: 1),
+                    duration: const Duration(milliseconds: 200),
+                    builder: (context, value, child) {
+                      return Transform.translate(
+                        offset: Offset(sin(value * pi) * 2, 0),
+                        child: Text(
+                          'ZEUS VPN',
+                          style: TextStyle(
+                            fontSize: 32,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 8,
+                            color: Colors.white,
+                            shadows: [Shadow(color: neonCyan, blurRadius: 10), Shadow(color: neonMagenta, blurRadius: 20)],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 ),
-                child: Text(_isConnected ? 'قطع اتصال' : 'اتصال', style: const TextStyle(fontSize: 20, color: Colors.white)),
-              ),
+                
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: _showSubscriptionManager,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 15),
+                            decoration: BoxDecoration(
+                              color: neonCyan.withOpacity(0.05),
+                              border: Border.all(color: neonCyan.withOpacity(0.3)),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(Icons.layers, color: neonCyan, size: 18),
+                                    const SizedBox(width: 10),
+                                    Text('SUBS', style: TextStyle(color: neonCyan, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                                  ],
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(color: neonMagenta.withOpacity(0.2), borderRadius: BorderRadius.circular(10)),
+                                  child: Text('${_subUrls.length}', style: TextStyle(color: neonMagenta, fontSize: 10, fontWeight: FontWeight.bold)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      GestureDetector(
+                        onTap: _showPattSettingsPanel,
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: neonMagenta.withOpacity(0.05),
+                            border: Border.all(color: neonMagenta.withOpacity(0.3)),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(Icons.tune, color: neonMagenta, size: 20),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                const SizedBox(height: 15),
+
+                GestureDetector(
+                  onTap: _allNodes.isEmpty ? () => _showSnackBar('Fetch servers first!', isError: true) : _showServerListModal,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(30),
+                      border: Border.all(color: neonMagenta.withOpacity(0.5)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.dns, color: neonMagenta, size: 16),
+                        const SizedBox(width: 10),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 150),
+                          child: Text(selectedName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13), overflow: TextOverflow.ellipsis),
+                        ),
+                        if (selectedPing != '--') ...[
+                          const SizedBox(width: 8),
+                          Text('[$selectedPing]', style: TextStyle(color: selectedPingColor, fontSize: 11, fontWeight: FontWeight.bold)),
+                        ],
+                        const SizedBox(width: 8),
+                        Icon(Icons.keyboard_arrow_down, color: neonMagenta, size: 16),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const Spacer(),
+
+                GestureDetector(
+                  onTap: _toggleConnection,
+                  child: ScaleTransition(
+                    scale: _isConnected ? _pulseAnimation : const AlwaysStoppedAnimation(1.0),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        RotationTransition(
+                          turns: _rotateController,
+                          child: Container(
+                            width: 160,
+                            height: 160,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: SweepGradient(
+                                colors: _isConnected ? [neonGreen, Colors.transparent, neonGreen] : [neonCyan, Colors.transparent, neonCyan],
+                              ),
+                            ),
+                          ),
+                        ),
+                        Container(
+                          width: 140,
+                          height: 140,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: darkBg,
+                            border: Border.all(color: _isConnected ? neonGreen : neonCyan, width: 2),
+                            boxShadow: [BoxShadow(color: (_isConnected ? neonGreen : neonCyan).withOpacity(0.3), blurRadius: 20, spreadRadius: 2)],
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.power_settings_new, size: 45, color: _isConnected ? neonGreen : neonCyan),
+                              const SizedBox(height: 5),
+                              Text(_isConnected ? _duration : 'CONNECT', style: TextStyle(color: _isConnected ? neonGreen : neonCyan, fontSize: 12, letterSpacing: 1)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const Spacer(),
+
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.02),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: neonCyan.withOpacity(0.2)),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('PATT-NG STATUS', style: TextStyle(color: neonCyan, fontSize: 10, fontWeight: FontWeight.bold)),
+                          Icon(Icons.security, color: neonGreen, size: 14),
+                        ],
+                      ),
+                      const Divider(color: Colors.white12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _buildPattStat('FP', _pattSettings.fingerprint.toUpperCase(), neonMagenta),
+                          _buildPattStat('FRAG', _pattSettings.fragment.toUpperCase(), neonCyan),
+                          _buildPattStat('CS', _pattSettings.cipherSuites.isNotEmpty ? 'CUSTOM' : 'AUTO', neonGreen),
+                          _buildPattStat('NET', _pattSettings.network.toUpperCase(), Colors.orange),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                
+                const SizedBox(height: 15),
+
+                if (_isConnected)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _buildStat('UP', _uploadSpeed, Icons.arrow_upward, neonMagenta),
+                        _buildStat('DOWN', _downloadSpeed, Icons.arrow_downward, neonCyan),
+                        GestureDetector(
+                          onTap: _isTestingSpeed ? null : _runSpeedTest,
+                          child: _buildStat('SPEED', _isTestingSpeed ? '...' : (_speedTestResult.isNotEmpty ? _speedTestResult : 'TEST'), Icons.speed, neonGreen),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                const SizedBox(height: 30),
+              ],
             ),
-            const SizedBox(height: 32),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
+
+  Widget _buildPattStat(String title, String value, Color color) {
+    return Column(
+      children: [
+        Text(value, style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 2),
+        Text(title, style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 8)),
+      ],
+    );
+  }
+
+  Widget _buildStat(String title, String value, IconData icon, Color color) {
+    return Column(
+      children: [
+        Icon(icon, color: color, size: 16),
+        const SizedBox(height: 4),
+        Text(value, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
+}
+
+class CyberGridPainter extends CustomPainter {
+  final Color gridColor;
+  CyberGridPainter(this.gridColor);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = gridColor..strokeWidth = 1.0;
+    final double horizon = size.height * 0.4;
+    final double centerX = size.width / 2;
+
+    for (double i = 1; i <= 15; i++) {
+      final double y = horizon + (size.height - horizon) * (i / 15) * (i / 15);
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+
+    for (double i = -15; i <= 15; i++) {
+      final double x = centerX + (size.width / 10) * i;
+      canvas.drawLine(Offset(centerX, horizon), Offset(x, size.height), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
