@@ -5,6 +5,9 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -35,3 +38,10 @@ jobs:
         with:
           name: zeus-vpn-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+      - name: Publish direct APK to Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          REL=$(curl -s -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/abolboy/zeus_vpn_app/releases -d "{\"tag_name\":\"build-${{ github.run_number }}\",\"name\":\"ZEUS VPN Build ${{ github.run_number }}\"}")
+          ID=$(echo "$REL" | jq -r .id)
+          curl -s -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Content-Type: application/vnd.android.package-archive" --data-binary @build/app/outputs/flutter-apk/app-release.apk "https://uploads.github.com/repos/abolboy/zeus_vpn_app/releases/$ID/assets?name=ZEUS-VPN.apk"
