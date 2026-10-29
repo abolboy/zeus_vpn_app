@@ -17,6 +17,17 @@ Uint8List _fromHex(String hex) {
 }
 
 void main() {
+  group('WARP interface addresses', () {
+    test('does not duplicate an existing IPv4 prefix', () {
+      expect(normalizeWarpInterfaceAddress('172.16.0.2/32', 32), '172.16.0.2/32');
+    });
+
+    test('adds missing IPv4 and IPv6 prefixes', () {
+      expect(normalizeWarpInterfaceAddress('172.16.0.2', 32), '172.16.0.2/32');
+      expect(normalizeWarpInterfaceAddress('2606:4700:110:abcd::1', 128), '2606:4700:110:abcd::1/128');
+    });
+  });
+
   group('WARP key derivation', () {
     test('X25519 matches the RFC 7748 Alice public-key vector', () {
       final alicePrivate = _fromHex(
