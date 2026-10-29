@@ -131,13 +131,32 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   Future<void> _boot() async {
     final p = await SharedPreferences.getInstance();
-    _subs = p.getStringList('subs') ?? [];
-    _selUri = p.getString('sel');
+    final legacySubs = p.getStringList('subs') ?? [];
+    final legacySelection = p.getString('sel');
     _warpOn = p.getBool('warp_on') ?? false;
 
-    // Migrate the WARP configuration (which contains a WireGuard private key)
-    // out of plaintext SharedPreferences into Android Keystore-backed storage.
+    // Subscription URLs can contain bearer credentials, selected node URIs
+    // contain server credentials, and WARP config contains a private key.
+    // Migrate these values to Android Keystore-backed encrypted storage.
     try {
+      final storedSubs = await secureStorage.read(key: 'subscriptions_json');
+      if (storedSubs != null) {
+        _subs = List<String>.from(jsonDecode(storedSubs) as List);
+      } else {
+        _subs = legacySubs;
+        if (_subs.isNotEmpty) {
+          await secureStorage.write(key: 'subscriptions_json', value: jsonEncode(_subs));
+        }
+      }
+      await p.remove('subs');
+
+      final storedSelection = await secureStorage.read(key: 'selected_node_uri');
+      _selUri = storedSelection ?? legacySelection;
+      if (storedSelection == null && legacySelection != null && legacySelection.isNotEmpty) {
+        await secureStorage.write(key: 'selected_node_uri', value: legacySelection);
+      }
+      await p.remove('sel');
+
       final storedWarp = await secureStorage.read(key: 'warp_json');
       if (storedWarp != null) {
         _warpJson = storedWarp;
@@ -146,14 +165,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         _warpJson = legacyWarp;
         if (legacyWarp != null && legacyWarp.isNotEmpty) {
           await secureStorage.write(key: 'warp_json', value: legacyWarp);
-          await p.remove('warp_json');
         }
       }
+      await p.remove('warp_json');
     } catch (_) {
-      // Preserve existing local configuration if secure storage is temporarily
-      // unavailable; do not delete the legacy value on a failed migration.
+      // Do not erase legacy values when migration cannot complete.
+      _subs = legacySubs;
+      _selUri = legacySelection;
       _warpJson = p.getString('warp_json');
-      _snack('Secure storage unavailable; WARP key migration needs attention.', err: true);
+      _snack('Secure storage unavailable; private settings migration needs attention.', err: true);
     }
     if (_warpJson != null && _warpJson!.isEmpty) _warpJson = null;
     _loadPatt(p);
@@ -234,16 +254,43 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   Future<void> _saveWarp() async {
-    final p = await SharedPreferences.getInstance();
-    await p.setBool('warp_on', _warpOn);
-    final value = _warpJson ?? '';
-    if (value.isEmpty) {
-      await secureStorage.delete(key: 'warp_json');
-    } else {
-      await secureStorage.write(key: 'warp_json', value: value);
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setBool('warp_on', _warpOn);
+      final value = _warpJson ?? '';
+      if (value.isEmpty) {
+        await secureStorage.delete(key: 'warp_json');
+      } else {
+        await secureStorage.write(key: 'warp_json', value: value);
+      }
+      // Remove any legacy plaintext copy only after secure storage succeeds.
+      await p.remove('warp_json');
+    } catch (_) {
+      _snack('Could not securely save WARP settings.', err: true);
     }
-    // Remove any legacy plaintext copy only after secure storage succeeds.
-    await p.remove('warp_json');
+  }
+
+  Future<void> _saveSubscriptions() async {
+    try {
+      await secureStorage.write(
+        key: 'subscriptions_json',
+        value: jsonEncode(_subs),
+      );
+      final p = await SharedPreferences.getInstance();
+      await p.remove('subs');
+    } catch (_) {
+      _snack('Could not securely save subscription URLs.', err: true);
+    }
+  }
+
+  Future<void> _saveSelection(String uri) async {
+    try {
+      await secureStorage.write(key: 'selected_node_uri', value: uri);
+      final p = await SharedPreferences.getInstance();
+      await p.remove('sel');
+    } catch (_) {
+      _snack('Could not securely save the selected server.', err: true);
+    }
   }
 
   String _fmt(int bps) {
@@ -410,8 +457,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     for (var i = 0; i < subscriptions.length; i++) {
       final tag = 'SUB-${i + 1}';
       try {
+        final subscriptionUri = Uri.tryParse(subscriptions[i]);
+        if (subscriptionUri == null ||
+            subscriptionUri.scheme != 'https' ||
+            subscriptionUri.host.isEmpty) {
+          failedSubscriptions++;
+          continue;
+        }
         final response = await _dio.get(
-          subscriptions[i],
+          subscriptionUri.toString(),
           options: Options(
             headers: {'User-Agent': 'v2rayNG/1.8.5'},
             responseType: ResponseType.plain,
@@ -719,7 +773,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           final sel = n.baseUri == _selUri;
           return GestureDetector(onTap: () {
             setState(() => _selUri = n.baseUri);
-            SharedPreferences.getInstance().then((p) => p.setString('sel', n.baseUri));
+            _saveSelection(n.baseUri);
             setMs(() {});
             Navigator.pop(ctx);
           }, child: Container(margin: const EdgeInsets.only(bottom: 8), padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: sel ? cyan.withValues(alpha: 0.12) : Colors.white.withValues(alpha: 0.03), borderRadius: BorderRadius.circular(12), border: Border.all(color: sel ? cyan : Colors.white.withValues(alpha: 0.06))), child: Row(children: [
@@ -753,7 +807,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           IconButton(icon: const Icon(Icons.add_circle, color: green, size: 26), onPressed: () {
             final v = ctl.text.trim();
             final su = Uri.tryParse(v);
-            if (su == null || !(su.scheme == 'http' || su.scheme == 'https') || su.host.isEmpty) {
+            if (su == null || su.scheme != 'https' || su.host.isEmpty) {
               _snack('Invalid URL!', err: true);
               return;
             }
@@ -762,7 +816,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               return;
             }
             setState(() => _subs.add(v));
-            SharedPreferences.getInstance().then((p) => p.setStringList('subs', _subs));
+            _saveSubscriptions();
             ctl.clear();
             setMs(() {});
           }),
