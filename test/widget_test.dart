@@ -39,4 +39,35 @@ void main() {
     expect(hasKey(config, 'verifyPeerCertByName'), isTrue);
   });
 
+  test('PATT defaults preserve imported flow and ALPN while removing TLS bypass', () {
+    const link = 'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+        '?security=tls&flow=xtls-rprx-vision&alpn=h2&allowInsecure=1#preserve-test';
+    final effective = Uri.parse(applyPattQuery(link, Patt()));
+
+    expect(effective.queryParameters['flow'], 'xtls-rprx-vision');
+    expect(effective.queryParameters['alpn'], 'h2');
+    expect(effective.queryParameters.containsKey('allowInsecure'), isFalse);
+  });
+
+  test('explicit none overrides remove inherited flow and ALPN', () {
+    const link = 'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+        '?security=tls&flow=xtls-rprx-vision&alpn=h2#remove-test';
+    final patt = Patt()
+      ..flow = 'none'
+      ..alpn = 'none';
+    final effective = Uri.parse(applyPattQuery(link, patt));
+
+    expect(effective.queryParameters.containsKey('flow'), isFalse);
+    expect(effective.queryParameters.containsKey('alpn'), isFalse);
+  });
+
+  test('flow is not injected into VLESS without TLS or REALITY', () {
+    const link = 'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+        '?security=none#no-flow-test';
+    final patt = Patt()..flow = 'xtls-rprx-vision';
+    final effective = Uri.parse(applyPattQuery(link, patt));
+
+    expect(effective.queryParameters.containsKey('flow'), isFalse);
+  });
+
 }
