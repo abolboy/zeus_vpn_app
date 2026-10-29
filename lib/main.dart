@@ -478,10 +478,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           options: Options(
             headers: {'User-Agent': 'v2rayNG/1.8.5'},
             responseType: ResponseType.stream,
+            // Do not let the HTTP adapter follow a redirect to a cleartext URL.
+            // Subscription credentials may be embedded in the URL itself.
+            followRedirects: false,
           ),
         );
         final responseBody = response.data;
         if (responseBody == null) {
+          failedSubscriptions++;
+          continue;
+        }
+        // Redirects are intentionally not followed. This rejects HTTPS-to-HTTP
+        // downgrade redirects before the client requests the destination.
+        final statusCode = response.statusCode;
+        if (statusCode == null || statusCode < 200 || statusCode >= 300) {
+          await responseBody.stream.drain<void>();
           failedSubscriptions++;
           continue;
         }
