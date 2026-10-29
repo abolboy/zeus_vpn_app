@@ -86,8 +86,8 @@ class Patt {
   String pbk = '';
   String sid = '';
   String spx = '/';
-  String flow = 'none';
-  String alpn = '';
+  String flow = 'preserve';
+  String alpn = 'preserve';
   String sni = '';
   String path = '/';
   String host = '';
@@ -242,8 +242,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _patt.pbk = p.getString('p_pbk') ?? '';
     _patt.sid = p.getString('p_sid') ?? '';
     _patt.spx = p.getString('p_spx') ?? '/';
-    _patt.flow = p.getString('p_flow') ?? 'none';
-    _patt.alpn = p.getString('p_alpn') ?? '';
+    _patt.flow = p.getString('p_flow') ?? 'preserve';
+    _patt.alpn = p.getString('p_alpn') ?? 'preserve';
     _patt.sni = p.getString('p_sni') ?? '';
     _patt.path = p.getString('p_path') ?? '/';
     _patt.host = p.getString('p_host') ?? '';
@@ -396,12 +396,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       }
       final netNow = _patt.network != 'tcp' ? _patt.network : (q['type'] ?? 'tcp');
       final secNow = q['security'] ?? 'none';
-      if (u.scheme == 'vless' && netNow == 'tcp' && (secNow == 'tls' || secNow == 'reality') && _patt.flow.isNotEmpty && _patt.flow != 'none') {
-        q['flow'] = _patt.flow;
-      } else if (netNow != 'tcp') {
+      if (u.scheme == 'vless' && netNow == 'tcp' && (secNow == 'tls' || secNow == 'reality')) {
+        if (_patt.flow == 'xtls-rprx-vision') {
+          q['flow'] = _patt.flow;
+        } else if (_patt.flow == 'none') {
+          q.remove('flow');
+        }
+      } else {
+        // Flow is only valid for VLESS over TCP with TLS or REALITY.
         q.remove('flow');
       }
-      if (_patt.alpn.isNotEmpty) q['alpn'] = _patt.alpn;
+      if (_patt.alpn == 'none') {
+        q.remove('alpn');
+      } else if (_patt.alpn.isNotEmpty && _patt.alpn != 'preserve') {
+        q['alpn'] = _patt.alpn;
+      }
       if (_patt.sni.isNotEmpty) q['sni'] = _patt.sni;
       if (_patt.path.isNotEmpty && _patt.path != '/') q['path'] = _patt.path;
       if (_patt.host.isNotEmpty) q['host'] = _patt.host;
@@ -1008,11 +1017,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               _savePatt();
             }),
           ],
-          _dd('FLOW', ['xtls-rprx-vision', 'none'], _patt.flow, (v) {
+          _dd('FLOW', ['preserve', 'xtls-rprx-vision', 'none'], _patt.flow, (v) {
             setMs(() => _patt.flow = v);
             _savePatt();
           }),
-          _dd('ALPN', ['h2,http/1.1', 'h2', 'http/1.1', ''], _patt.alpn, (v) {
+          _dd('ALPN', ['preserve', 'h2,http/1.1', 'h2', 'http/1.1', 'none'], _patt.alpn, (v) {
             setMs(() => _patt.alpn = v);
             _savePatt();
           }),
