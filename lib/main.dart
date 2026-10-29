@@ -274,7 +274,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       final q = Map<String, String>.from(u.queryParameters);
       q['fp'] = _patt.fp;
       if (_patt.cs.isNotEmpty) q['cs'] = _patt.cs;
-      if (_patt.insecure) q['allowInsecure'] = '1';
+      if (_patt.insecure) {
+        q['allowInsecure'] = '1';
+      } else {
+        // Do not preserve an insecure override embedded in the original share link.
+        q.remove('allowInsecure');
+      }
       if (_patt.reality) {
         q['security'] = 'reality';
         q['pbk'] = _patt.pbk;
@@ -348,58 +353,100 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   Future<void> _syncAll() async {
+    if (!mounted || _loading) return;
+
     if (_subs.isEmpty) {
       setState(() {
         _nodes = [];
         _selUri = null;
+        _loading = false;
       });
       _refreshNodes?.call();
       return;
     }
-    final prev = _selUri;
+
+    // Work from a stable snapshot while the user can still edit subscriptions.
+    final subscriptions = List<String>.from(_subs);
+    final previousSelection = _selUri;
     setState(() {
       _loading = true;
       _nodes = [];
     });
-    final got = <ServerNode>[];
-    for (int i = 0; i < _subs.length; i++) {
+
+    final foundNodes = <ServerNode>[];
+    var failedSubscriptions = 0;
+
+    for (var i = 0; i < subscriptions.length; i++) {
       final tag = 'SUB-${i + 1}';
       try {
-        final res = await _dio.get(_subs[i], options: Options(headers: {'User-Agent': 'v2rayNG/1.8.5'}, responseType: ResponseType.plain));
-        String body = res.data.toString().trim();
-        final compact = body.replaceAll(RegExp(r'\s'), '');
+        final response = await _dio.get(
+          subscriptions[i],
+          options: Options(
+            headers: {'User-Agent': 'v2rayNG/1.8.5'},
+            responseType: ResponseType.plain,
+          ),
+        );
+
+        var body = response.data.toString().trim();
+        final compact = body.replaceAll(RegExp(r'\\s'), '');
         try {
           body = utf8.decode(base64.decode(base64.normalize(compact)));
         } catch (_) {
           try {
             body = utf8.decode(base64Url.decode(base64Url.normalize(compact)));
-          } catch (_) {}
-        }
-        for (final raw in body.split('\n').map((e) => e.trim())) {
-          if (raw.startsWith('vless://') || raw.startsWith('trojan://') || raw.startsWith('vmess://')) {
-            final link = raw.startsWith('vmess://') ? raw : _injectQuery(raw);
-            got.add(ServerNode(subTag: tag, rawUri: link, baseUri: raw, displayName: '[$tag] ${_name(raw)}'));
+          } catch (_) {
+            // A plain-text subscription is valid too; parse it below.
           }
         }
-      } catch (_) {}
+
+        for (final raw in body.split('\\n').map((line) => line.trim())) {
+          if (raw.startsWith('vless://') ||
+              raw.startsWith('trojan://') ||
+              raw.startsWith('vmess://')) {
+            final link = raw.startsWith('vmess://') ? raw : _injectQuery(raw);
+            foundNodes.add(ServerNode(
+              subTag: tag,
+              rawUri: link,
+              baseUri: raw,
+              displayName: '[$tag] ${_name(raw)}',
+            ));
+          }
+        }
+      } catch (_) {
+        failedSubscriptions++;
+      }
     }
+
     if (!mounted) return;
     setState(() {
-      _nodes = got;
-      if (prev != null && _nodes.any((n) => n.baseUri == prev)) {
-        _selUri = prev;
+      _nodes = foundNodes;
+      if (previousSelection != null &&
+          _nodes.any((node) => node.baseUri == previousSelection)) {
+        _selUri = previousSelection;
       } else if (_nodes.isNotEmpty) {
         _selUri = _nodes.first.baseUri;
       } else {
         _selUri = null;
       }
+      _loading = false;
     });
     _refreshNodes?.call();
-    _pingAll();
-    setState(() => _loading = false);
-    _refreshNodes?.call();
-  }
 
+    if (foundNodes.isNotEmpty) {
+      _pingAll();
+    }
+
+    if (failedSubscriptions == subscriptions.length) {
+      _snack('Unable to load subscriptions. Check the URLs and network.', err: true);
+    } else if (failedSubscriptions > 0) {
+      _snack(
+        'Loaded nodes, but $failedSubscriptions subscription(s) failed.',
+        err: true,
+      );
+    } else if (foundNodes.isEmpty) {
+      _snack('No supported nodes found in the subscriptions.', err: true);
+    }
+  }
   Future<void> _pingAll() async {
     final c = _delayMode == 1 ? 4 : 20;
     final q = List<ServerNode>.from(_nodes);
@@ -462,22 +509,31 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   Future<void> _speedTest() async {
+    if (!mounted || _testing) return;
     setState(() {
       _testing = true;
       _speed = '...';
     });
     try {
       final sw = Stopwatch()..start();
-      final res = await _dio.get('https://speed.cloudflare.com/__down?bytes=10000000', options: Options(responseType: ResponseType.bytes, receiveTimeout: const Duration(seconds: 30)));
+      final res = await _dio.get(
+        'https://speed.cloudflare.com/__down?bytes=10000000',
+        options: Options(
+          responseType: ResponseType.bytes,
+          receiveTimeout: const Duration(seconds: 30),
+        ),
+      );
       sw.stop();
-      double sec = sw.elapsedMilliseconds / 1000.0;
-      if (sec == 0) sec = 0.1;
-      final mbps = (res.data.length.toDouble() * 8) / (sec * 1048576);
+      if (!mounted) return;
+      final seconds = (sw.elapsedMilliseconds / 1000.0).clamp(0.1, double.infinity);
+      final mbps = (res.data.length.toDouble() * 8) / (seconds * 1048576);
       setState(() => _speed = '${mbps.toStringAsFixed(1)} Mbps');
     } catch (_) {
+      if (!mounted) return;
       setState(() => _speed = 'FAILED');
+    } finally {
+      if (mounted) setState(() => _testing = false);
     }
-    setState(() => _testing = false);
   }
 
   Future<void> _toggle() async {
@@ -526,6 +582,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _timeCtl.dispose();
     _pulseCtl.dispose();
     _ringCtl.dispose();
+    _dio.close(force: true);
     super.dispose();
   }
 
