@@ -22,8 +22,8 @@ A Flutter/Android VPN client prototype using `flutter_v2ray_client`, subscriptio
 
 - Subscription URLs must use HTTPS. A feed may contain access credentials; avoid sharing them publicly.
 - Subscription URLs, selected server URI, and WARP configuration are migrated to Android Keystore-backed encrypted storage. If secure storage is unavailable during migration, the app retains legacy local values and reports a warning rather than deleting them.
-- `ci/keystore.b64` was removed from the current audit branch and ignored for future commits. The public repository history may still contain the old file; removing it from the latest tree does not revoke it or remove it from old clones.
-- Do not treat a debug APK as a release build. Do not publish a new signing identity until existing installation upgrade compatibility has been assessed.
+- `ci/keystore.b64` was removed from the current audit branch and ignored for future commits. The old workflow used that public keystore (or generated a default Android debug keystore) to sign release APKs, including published Build 67 and Build 68. Treat that signing identity as compromised. The key remains in Git history and old clones unless history is rewritten, and published APKs remain available until explicitly retired. Removing the file from the latest tree does not revoke the key.
+- Do not treat a debug APK as a release build. Do not publish a new signing identity until existing installation upgrade compatibility has been assessed. Rotating the signing key can prevent in-place updates of installed copies; decide whether to preserve compatibility or distribute a separately identified clean install.
 
 ## Build and verify
 
