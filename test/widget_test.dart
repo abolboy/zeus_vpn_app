@@ -61,6 +61,23 @@ void main() {
     expect(effective.queryParameters.containsKey('alpn'), isFalse);
   });
 
+  test('network preserve keeps an imported transport', () {
+    const link = 'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+        '?security=tls&type=ws&path=%2Fsocket#network-preserve';
+    final effective = Uri.parse(applyPattQuery(link, Patt()));
+
+    expect(effective.queryParameters['type'], 'ws');
+  });
+
+  test('explicit TCP selection overrides an imported WebSocket transport', () {
+    const link = 'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+        '?security=tls&type=ws&path=%2Fsocket#network-override';
+    final patt = Patt()..network = 'tcp';
+    final effective = Uri.parse(applyPattQuery(link, patt));
+
+    expect(effective.queryParameters['type'], 'tcp');
+  });
+
   test('flow is not injected into VLESS without TLS or REALITY', () {
     const link = 'vless://11111111-1111-4111-8111-111111111111@example.com:443'
         '?security=none#no-flow-test';

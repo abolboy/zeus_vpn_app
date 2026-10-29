@@ -92,7 +92,7 @@ class Patt {
   String path = '/';
   String host = '';
   String headerType = 'none';
-  String network = 'tcp';
+  String network = 'preserve';
 }
 
 /// Applies optional PATT-NG overrides without silently replacing fields
@@ -114,7 +114,7 @@ String applyPattQuery(String uri, Patt patt) {
       q['sid'] = patt.sid;
       q['spx'] = patt.spx;
     }
-    final netNow = patt.network != 'tcp' ? patt.network : (q['type'] ?? 'tcp');
+    final netNow = patt.network != 'preserve' ? patt.network : (q['type'] ?? 'tcp');
     final secNow = q['security'] ?? 'none';
     if (u.scheme == 'vless' && netNow == 'tcp' && (secNow == 'tls' || secNow == 'reality')) {
       if (patt.flow == 'xtls-rprx-vision') {
@@ -135,7 +135,7 @@ String applyPattQuery(String uri, Patt patt) {
     if (patt.path.isNotEmpty && patt.path != '/') q['path'] = patt.path;
     if (patt.host.isNotEmpty) q['host'] = patt.host;
     if (patt.headerType != 'none') q['headerType'] = patt.headerType;
-    if (patt.network.isNotEmpty && patt.network != 'tcp') q['type'] = patt.network;
+    if (patt.network.isNotEmpty && patt.network != 'preserve') q['type'] = patt.network;
     return u.replace(queryParameters: q).toString();
   } catch (_) {
     return uri;
@@ -300,7 +300,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _patt.path = p.getString('p_path') ?? '/';
     _patt.host = p.getString('p_host') ?? '';
     _patt.headerType = p.getString('p_ht') ?? 'none';
-    _patt.network = p.getString('p_net') ?? 'tcp';
+    final savedNetwork = p.getString('p_net');
+    final networkSettingsVersion = p.getBool('p_net_v2') ?? false;
+    // Older builds displayed TCP as the default but treated it as "preserve".
+    // Migrate that legacy value once so imported WS/gRPC links keep their transport.
+    _patt.network = savedNetwork == null
+        ? 'preserve'
+        : (savedNetwork == 'tcp' && !networkSettingsVersion ? 'preserve' : savedNetwork);
   }
 
   Future<void> _savePatt() async {
@@ -333,6 +339,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     await p.setString('p_host', _patt.host);
     await p.setString('p_ht', _patt.headerType);
     await p.setString('p_net', _patt.network);
+    await p.setBool('p_net_v2', true);
   }
 
   Future<void> _saveWarp() async {
@@ -1034,7 +1041,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             setMs(() => _patt.alpn = v);
             _savePatt();
           }),
-          _dd('NETWORK', ['tcp', 'ws', 'grpc', 'http', 'kcp', 'quic', 'httpupgrade', 'splithttp'], _patt.network, (v) {
+          _dd('NETWORK', ['preserve', 'tcp', 'ws', 'grpc', 'http', 'kcp', 'quic', 'httpupgrade', 'splithttp'], _patt.network, (v) {
             setMs(() => _patt.network = v);
             _savePatt();
           }),
