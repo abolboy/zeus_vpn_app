@@ -738,23 +738,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  Widget _box(Widget child, {Color color = cyan, double radius = 14, EdgeInsets padding = const EdgeInsets.all(14)}) {
-    return AnimatedBuilder(animation: _ringCtl, builder: (context, _) {
-      final t = _ringCtl.value * 2 * pi;
-      final a = 0.35 + 0.25 * sin(t);
-      return Container(
-        padding: padding,
-        decoration: BoxDecoration(
-          color: glass.withValues(alpha: 0.85),
-          borderRadius: BorderRadius.circular(radius),
-          border: Border.all(color: color.withValues(alpha: a)),
-          boxShadow: [BoxShadow(color: color.withValues(alpha: 0.15), blurRadius: 18)],
-        ),
-        child: child,
-      );
-    });
-  }
-
   Widget _pill(IconData ic, String label, Color c, VoidCallback on) {
     return GestureDetector(onTap: on, child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1137,7 +1120,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           Expanded(child: _neonPanel(_stat('SPEED', _testing ? '...' : (_speed.isEmpty ? 'TEST' : _speed), Icons.speed_rounded, green), accent: green, onTap: _testing ? null : _speedTest)),
         ]),
         const SizedBox(height: 20),
-        _screenHeader('ACTIVE ROUTE', 'Selected server', cyan, meta: _nodes.length.toString() + ' NODES'),
+        _screenHeader('ACTIVE ROUTE', 'Selected server', cyan, meta: '${_nodes.length} NODES'),
         _neonPanel(Row(children: [
           const Icon(Icons.dns_rounded, color: cyan, size: 25),
           const SizedBox(width: 12),
@@ -1151,12 +1134,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         const SizedBox(height: 20),
         _screenHeader('QUICK ACCESS', 'Cyber control deck', magenta),
         _quickAction(Icons.hub_rounded, 'Node control center', 'Search, latency and server selection', cyan, () => setState(() => _activeTab = 1)),
-        _quickAction(Icons.rss_feed_rounded, 'Subscription manager', _subs.length.toString() + ' secure feed(s) configured', magenta, () => setState(() => _activeTab = 2)),
+        _quickAction(Icons.rss_feed_rounded, 'Subscription manager', '${_subs.length} secure feed(s) configured', magenta, () => setState(() => _activeTab = 2)),
         _quickAction(Icons.memory_rounded, 'PATT-NG / WARP lab', 'Fingerprint, DNS and tunnel parameters', green, () => setState(() => _activeTab = 3)),
         Wrap(spacing: 7, runSpacing: 7, children: [
-          _pill(Icons.fingerprint_rounded, 'FP: ' + _patt.fp.toUpperCase(), magenta, _openPatt),
-          _pill(Icons.alt_route_rounded, 'NET: ' + _patt.network.toUpperCase(), cyan, _openPatt),
-          _pill(Icons.cloud_outlined, 'WARP: ' + (_warpOn ? 'ON' : 'OFF'), green, _openPatt),
+          _pill(Icons.fingerprint_rounded, 'FP: ${_patt.fp.toUpperCase()}', magenta, _openPatt),
+          _pill(Icons.alt_route_rounded, 'NET: ${_patt.network.toUpperCase()}', cyan, _openPatt),
+          _pill(Icons.cloud_outlined, 'WARP: ${_warpOn ? 'ON' : 'OFF'}', green, _openPatt),
         ]),
       ]),
     );
@@ -1168,7 +1151,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _screenHeader('NETWORK INTELLIGENCE', 'Node control center', cyan, meta: _nodes.length.toString() + ' FOUND'),
+        _screenHeader('NETWORK INTELLIGENCE', 'Node control center', cyan, meta: '${_nodes.length} FOUND'),
+        _quickAction(Icons.manage_search_rounded, 'Open full node center', 'Search, filter and sort imported nodes', magenta, _openNodes),
         _quickAction(Icons.sync_rounded, 'Sync nodes', _loading ? 'Sync in progress' : 'Refresh secure feeds', cyan, _loading ? () {} : _syncAll),
         _quickAction(Icons.network_ping_rounded, 'Probe latency', 'Check node response', green, _pingAll),
         _neonPanel(Row(children: [
@@ -1198,7 +1182,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(node.displayName, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: selected ? green : Colors.white, fontWeight: FontWeight.w800, fontSize: 11)),
                 const SizedBox(height: 4),
-                Text(node.subTag + ' • ' + (_hostPort(node.baseUri)?.key ?? 'unknown host'), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white.withValues(alpha: 0.42), fontSize: 9)),
+                Text('${node.subTag} • ${_hostPort(node.baseUri)?.key ?? 'unknown host'}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white.withValues(alpha: 0.42), fontSize: 9)),
               ])),
               const SizedBox(width: 7),
               Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
@@ -1208,7 +1192,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ]), accent: tint, onTap: () {
               setState(() => _selUri = node.baseUri);
               _saveSelection(node.baseUri);
-              _snack('Selected ' + node.displayName);
+              _snack('Selected ${node.displayName}');
             }));
           }),
       ]),
@@ -1221,7 +1205,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _screenHeader('FEED CONTROL', 'Subscriptions', magenta, meta: _subs.length.toString() + ' FEEDS'),
+        _screenHeader('FEED CONTROL', 'Subscriptions', magenta, meta: '${_subs.length} FEEDS'),
         _neonPanel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Text('SECURE IMPORT PIPELINE', style: TextStyle(color: magenta, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.4)),
           const SizedBox(height: 8),
@@ -1250,7 +1234,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             const Icon(Icons.rss_feed_rounded, color: magenta, size: 22),
             const SizedBox(width: 11),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('FEED ' + (entry.key + 1).toString(), style: const TextStyle(color: cyan, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+              Text('FEED ${entry.key + 1}', style: const TextStyle(color: cyan, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
               const SizedBox(height: 5),
               Text(entry.value, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white.withValues(alpha: 0.72), fontSize: 10)),
             ])),
@@ -1274,8 +1258,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _screenHeader('ENGINE ROOM', 'PATT-NG & WARP', green, meta: 'ADVANCED'),
         _neonPanel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            const Icon(Icons.memory_rounded, color: green, size: 28),
+          const Row(children: [
+            Icon(Icons.memory_rounded, color: green, size: 28),
             const SizedBox(width: 12),
             const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('PATT-NG CORE SETTINGS', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900)),
@@ -1311,9 +1295,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         _neonPanel(Column(children: [
           _diagnosticRow('VPN CORE', _ready ? 'INITIALIZED' : 'STARTING / ERROR', _ready ? green : amber),
           const Divider(color: Color(0x22FFFFFF), height: 22),
-          _diagnosticRow('SERVER INVENTORY', _nodes.length.toString() + ' NODE(S)', cyan),
+          _diagnosticRow('SERVER INVENTORY', '${_nodes.length} NODE(S)', cyan),
           const Divider(color: Color(0x22FFFFFF), height: 22),
-          _diagnosticRow('SUBSCRIPTION FEEDS', _subs.length.toString() + ' CONFIGURED', magenta),
+          _diagnosticRow('SUBSCRIPTION FEEDS', '${_subs.length} CONFIGURED', magenta),
           const Divider(color: Color(0x22FFFFFF), height: 22),
           _diagnosticRow('TUNNEL STATE', _connected ? 'CONNECTED' : (_connecting ? 'CONNECTING' : 'DISCONNECTED'), _connected ? green : (_connecting ? amber : cyan)),
         ]), accent: amber),
