@@ -40,20 +40,20 @@ Uint8List x25519(Uint8List kIn, Uint8List uIn) {
     }
     swap = b;
     final A = (x2 + z2) % _p255;
-    final AA = A.modPow(BigInt.two, _p255);
+    final aa = A.modPow(BigInt.two, _p255);
     final B = (x2 - z2) % _p255;
-    final BB = B.modPow(BigInt.two, _p255);
-    final E = (AA - BB) % _p255;
+    final bb = B.modPow(BigInt.two, _p255);
+    final E = (aa - bb) % _p255;
     final C = (x3 + z3) % _p255;
     final D = (x3 - z3) % _p255;
-    final DA = (D * A) % _p255;
-    final CB = (C * B) % _p255;
-    x3 = (DA + CB) % _p255;
+    final da = (D * A) % _p255;
+    final cb = (C * B) % _p255;
+    x3 = (da + cb) % _p255;
     x3 = x3.modPow(BigInt.two, _p255);
-    z3 = (DA - CB) % _p255;
+    z3 = (da - cb) % _p255;
     z3 = (x1 * z3.modPow(BigInt.two, _p255)) % _p255;
-    x2 = (AA * BB) % _p255;
-    z2 = (E * ((AA + _a24 * E) % _p255)) % _p255;
+    x2 = (aa * bb) % _p255;
+    z2 = (E * ((aa + _a24 * E) % _p255)) % _p255;
   }
   if (swap == 1) {
     BigInt tx = x2; x2 = x3; x3 = tx;
