@@ -309,7 +309,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     try {
       final json = jsonDecode(config) as Map<String, dynamic>;
       final outs = json['outbounds'] as List?;
-      if (outs == null || outs.isEmpty) return config;
+      if (outs == null || outs.isEmpty) {
+        throw const FormatException('Core configuration has no outbounds.');
+      }
       final main = outs[0] as Map<String, dynamic>;
       json['log'] = {'loglevel': _patt.logLevel};
       if (_patt.dnsMode == 'doh') {
@@ -348,7 +350,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       json['outbounds'] = outs;
       return jsonEncode(json);
     } catch (_) {
-      return config;
+      // Invalid WARP or core configuration must fail visibly, not silently
+      // connect with an unmodified configuration.
+      rethrow;
     }
   }
 
@@ -551,6 +555,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       if (_connected) {
         await _v2ray.stopV2Ray();
       } else {
+        if (_warpOn && (_warpJson == null || _warpJson!.isEmpty)) {
+          _snack('Register the WARP device before connecting.', err: true);
+          return;
+        }
         final idx = _nodes.indexWhere((n) => n.baseUri == _selUri);
         if (idx < 0) {
           _snack(_loading ? 'Syncing nodes, wait...' : 'First select a node.', err: true);
@@ -747,7 +755,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           _syncAll();
         }, child: const Text('SAVE & SYNC', style: TextStyle(color: CYAN, fontWeight: FontWeight.bold, letterSpacing: 2))))),
       ]));
-    }));
+    })).whenComplete(ctl.dispose);
   }
 
   void _openPatt() {
