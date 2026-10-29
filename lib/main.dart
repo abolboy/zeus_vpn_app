@@ -388,7 +388,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         );
 
         var body = response.data.toString().trim();
-        final compact = body.replaceAll(RegExp(r'\\s'), '');
+        final compact = body.replaceAll(RegExp(r'\s'), '');
         try {
           body = utf8.decode(base64.decode(base64.normalize(compact)));
         } catch (_) {
@@ -399,7 +399,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           }
         }
 
-        for (final raw in body.split('\\n').map((line) => line.trim())) {
+        for (final raw in body.split('\n').map((line) => line.trim())) {
           if (raw.startsWith('vless://') ||
               raw.startsWith('trojan://') ||
               raw.startsWith('vmess://')) {
