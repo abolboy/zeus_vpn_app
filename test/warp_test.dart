@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import '../lib/warp.dart';
+import 'package:zeus_vpn/warp.dart';
 
 String _toHex(List<int> bytes) =>
     bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
