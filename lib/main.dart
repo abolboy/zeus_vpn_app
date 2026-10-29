@@ -1346,7 +1346,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       backgroundColor: background,
       body: Stack(children: [
         Positioned.fill(child: AnimatedBuilder(animation: _timeCtl, builder: (ctx, _) => CustomPaint(painter: _CyberP(_timeCtl.value)))),
-        Positioned.fill(child: IgnorePointer(child: AnimatedBuilder(animation: _timeCtl, builder: (ctx, _) => CustomPaint(painter: _ScanP(_timeCtl.value)))),
+        Positioned.fill(child: IgnorePointer(child: AnimatedBuilder(animation: _timeCtl, builder: (ctx, _) => CustomPaint(painter: _ScanP(_timeCtl.value))))),
         SafeArea(child: Column(children: [
           Padding(padding: const EdgeInsets.fromLTRB(20, 12, 20, 9), child: Row(children: [
             Container(width: 42, height: 42, decoration: BoxDecoration(color: cyan.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(13), border: Border.all(color: cyan.withValues(alpha: 0.5)), boxShadow: [BoxShadow(color: cyan.withValues(alpha: 0.1), blurRadius: 18)]), child: const Icon(Icons.bolt_rounded, color: cyan, size: 26)),
