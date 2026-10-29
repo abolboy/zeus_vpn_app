@@ -306,56 +306,50 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   String _injectCore(String config) {
-    try {
-      final json = jsonDecode(config) as Map<String, dynamic>;
-      final outs = json['outbounds'] as List?;
-      if (outs == null || outs.isEmpty) {
-        throw const FormatException('Core configuration has no outbounds.');
-      }
-      final main = outs[0] as Map<String, dynamic>;
-      json['log'] = {'loglevel': _patt.logLevel};
-      if (_patt.dnsMode == 'doh') {
-        json['dns'] = {'servers': ['https+local://1.1.1.1/dns-query', 'https+local://8.8.8.8/dns-query']};
-      } else if (_patt.dnsMode == 'custom' && _patt.customDns.isNotEmpty) {
-        json['dns'] = {'servers': _patt.customDns.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList()};
-      }
-      if (_warpOn && _warpJson != null && _warpJson!.isNotEmpty) {
-        final w = jsonDecode(_warpJson!) as Map<String, dynamic>;
-        final newOuts = <dynamic>[w];
-        if (_patt.bypassLan) {
-          newOuts.add({'tag': 'direct', 'protocol': 'freedom'});
-          json['routing'] = {'domainStrategy': 'AsIs', 'rules': [{'type': 'field', 'ip': ['geoip:private'], 'outboundTag': 'direct'}]};
-        }
-        json['outbounds'] = newOuts;
-        return jsonEncode(json);
-      }
-      if (_patt.mux) main['mux'] = {'enabled': true, 'concurrency': int.tryParse(_patt.muxConc) ?? 8};
-      if (_patt.frag != 'none' || _patt.noise) {
-        final fs = <String, dynamic>{};
-        if (_patt.frag != 'none') {
-          fs['fragment'] = {'packets': _patt.frag.startsWith('tlshello') ? 'tlshello' : _patt.frag, 'length': _patt.fragLen, 'interval': _patt.fragInt};
-        }
-        if (_patt.noise) fs['noises'] = [{'type': _patt.noiseType, 'packet': _patt.noisePacket, 'delay': _patt.noiseDelay}];
-        final stream = (main['streamSettings'] as Map<String, dynamic>?) ?? <String, dynamic>{};
-        final sock = (stream['sockopt'] as Map<String, dynamic>?) ?? <String, dynamic>{};
-        sock['dialerProxy'] = 'zeus-frag';
-        stream['sockopt'] = sock;
-        main['streamSettings'] = stream;
-        outs.add({'tag': 'zeus-frag', 'protocol': 'freedom', 'settings': fs});
-      }
+    final json = jsonDecode(config) as Map<String, dynamic>;
+    final outs = json['outbounds'] as List?;
+    if (outs == null || outs.isEmpty) {
+      throw const FormatException('Core configuration has no outbounds.');
+    }
+    final main = outs[0] as Map<String, dynamic>;
+    json['log'] = {'loglevel': _patt.logLevel};
+    if (_patt.dnsMode == 'doh') {
+      json['dns'] = {'servers': ['https+local://1.1.1.1/dns-query', 'https+local://8.8.8.8/dns-query']};
+    } else if (_patt.dnsMode == 'custom' && _patt.customDns.isNotEmpty) {
+      json['dns'] = {'servers': _patt.customDns.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList()};
+    }
+    if (_warpOn && _warpJson != null && _warpJson!.isNotEmpty) {
+      final w = jsonDecode(_warpJson!) as Map<String, dynamic>;
+      final newOuts = <dynamic>[w];
       if (_patt.bypassLan) {
-        outs.add({'tag': 'direct', 'protocol': 'freedom'});
+        newOuts.add({'tag': 'direct', 'protocol': 'freedom'});
         json['routing'] = {'domainStrategy': 'AsIs', 'rules': [{'type': 'field', 'ip': ['geoip:private'], 'outboundTag': 'direct'}]};
       }
-      json['outbounds'] = outs;
+      json['outbounds'] = newOuts;
       return jsonEncode(json);
-    } catch (_) {
-      // Invalid WARP or core configuration must fail visibly, not silently
-      // connect with an unmodified configuration.
-      rethrow;
     }
-  }
+    if (_patt.mux) main['mux'] = {'enabled': true, 'concurrency': int.tryParse(_patt.muxConc) ?? 8};
+    if (_patt.frag != 'none' || _patt.noise) {
+      final fs = <String, dynamic>{};
+      if (_patt.frag != 'none') {
+        fs['fragment'] = {'packets': _patt.frag.startsWith('tlshello') ? 'tlshello' : _patt.frag, 'length': _patt.fragLen, 'interval': _patt.fragInt};
+      }
+      if (_patt.noise) fs['noises'] = [{'type': _patt.noiseType, 'packet': _patt.noisePacket, 'delay': _patt.noiseDelay}];
+      final stream = (main['streamSettings'] as Map<String, dynamic>?) ?? <String, dynamic>{};
+      final sock = (stream['sockopt'] as Map<String, dynamic>?) ?? <String, dynamic>{};
+      sock['dialerProxy'] = 'zeus-frag';
+      stream['sockopt'] = sock;
+      main['streamSettings'] = stream;
+      outs.add({'tag': 'zeus-frag', 'protocol': 'freedom', 'settings': fs});
+    }
+    if (_patt.bypassLan) {
+      outs.add({'tag': 'direct', 'protocol': 'freedom'});
+      json['routing'] = {'domainStrategy': 'AsIs', 'rules': [{'type': 'field', 'ip': ['geoip:private'], 'outboundTag': 'direct'}]};
+    }
+    json['outbounds'] = outs;
+    return jsonEncode(json);
 
+  }
   Future<void> _syncAll() async {
     if (!mounted || _loading) return;
 
