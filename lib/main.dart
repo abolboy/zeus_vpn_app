@@ -46,7 +46,8 @@ class ServerNode {
 class Patt {
   String fp = 'unsafe';
   String cs = '';
-  bool insecure = false;
+  String pcs = '';
+  String vcn = '';
   String frag = 'tlshello';
   String fragLen = '100-200';
   String fragInt = '10-20';
@@ -198,9 +199,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   void _loadPatt(SharedPreferences p) {
-    _patt.fp = p.getString('p_fp') ?? 'unsafe';
+    final savedFingerprint = p.getString('p_fp') ?? 'chrome';
+    _patt.fp = const ['chrome', 'firefox', 'safari', 'randomized', 'randomizednoalpn'].contains(savedFingerprint) ? savedFingerprint : 'chrome';
     _patt.cs = p.getString('p_cs') ?? '';
-    _patt.insecure = p.getBool('p_ins') ?? false;
+    _patt.pcs = p.getString('p_pcs') ?? '';
+    _patt.vcn = p.getString('p_vcn') ?? '';
     _patt.frag = p.getString('p_frag') ?? 'tlshello';
     _patt.fragLen = p.getString('p_fl') ?? '100-200';
     _patt.fragInt = p.getString('p_fi') ?? '10-20';
@@ -231,7 +234,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final p = await SharedPreferences.getInstance();
     await p.setString('p_fp', _patt.fp);
     await p.setString('p_cs', _patt.cs);
-    await p.setBool('p_ins', _patt.insecure);
+    await p.setString('p_pcs', _patt.pcs);
+    await p.setString('p_vcn', _patt.vcn);
     await p.setString('p_frag', _patt.frag);
     await p.setString('p_fl', _patt.fragLen);
     await p.setString('p_fi', _patt.fragInt);
@@ -358,12 +362,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       final q = Map<String, String>.from(u.queryParameters);
       q['fp'] = _patt.fp;
       if (_patt.cs.isNotEmpty) q['cs'] = _patt.cs;
-      if (_patt.insecure) {
-        q['allowInsecure'] = '1';
-      } else {
-        // Do not preserve an insecure override embedded in the original share link.
-        q.remove('allowInsecure');
-      }
+      if (_patt.pcs.isNotEmpty) q['pcs'] = _patt.pcs;
+      if (_patt.vcn.isNotEmpty) q['vcn'] = _patt.vcn;
+      // flutter_v2ray_client 3.5.0 removed allowInsecure; never carry an
+      // obsolete TLS-verification bypass into the effective share URI.
+      q.remove('allowInsecure');
       if (_patt.reality) {
         q['security'] = 'reality';
         q['pbk'] = _patt.pbk;
@@ -875,7 +878,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             }
             setMs(() {});
           }, child: const Text('REGISTER WARP DEVICE', style: TextStyle(color: cyan, fontWeight: FontWeight.bold, letterSpacing: 1))))),
-          _dd('FINGERPRINT', ['unsafe', 'chrome', 'firefox', 'safari', 'randomized', 'randomizednoalpn'], _patt.fp, (v) {
+          _dd('FINGERPRINT', ['chrome', 'firefox', 'safari', 'randomized', 'randomizednoalpn'], _patt.fp, (v) {
             setMs(() => _patt.fp = v);
             _savePatt();
           }),
@@ -883,8 +886,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             _patt.cs = v;
             _savePatt();
           }),
-          _sw('ALLOW INSECURE', _patt.insecure, (v) {
-            setMs(() => _patt.insecure = v);
+          _tf('CERTIFICATE SHA-256 PIN (PCS)', _patt.pcs, (v) {
+            _patt.pcs = v;
+            _savePatt();
+          }),
+          _tf('VERIFY CERTIFICATE NAME (VCN)', _patt.vcn, (v) {
+            _patt.vcn = v;
             _savePatt();
           }),
           _dd('FRAGMENT', ['tlshello', 'none'], _patt.frag, (v) {
