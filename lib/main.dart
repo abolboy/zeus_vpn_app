@@ -1260,8 +1260,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         _neonPanel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Row(children: [
             Icon(Icons.memory_rounded, color: green, size: 28),
-            const SizedBox(width: 12),
-            const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('PATT-NG CORE SETTINGS', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900)),
               SizedBox(height: 5),
               Text('Fingerprint, transport, DNS and packet options', style: TextStyle(color: Color(0xFF9DA6B8), fontSize: 10)),
