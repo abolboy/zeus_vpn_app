@@ -1209,7 +1209,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               setState(() => _selUri = node.baseUri);
               _saveSelection(node.baseUri);
               _snack('Selected ' + node.displayName);
-            })));
+            }));
           }),
       ]),
     );
