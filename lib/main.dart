@@ -155,6 +155,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     maxRedirects: 5,
   ));
   List<String> _subs = [];
+  List<String> _directUris = [];
   List<ServerNode> _nodes = [];
   String? _selUri;
   final Patt _patt = Patt();
@@ -231,6 +232,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       }
       await p.remove('subs');
 
+      final storedDirectUris = await secureStorage.read(key: 'direct_server_uris');
+      if (storedDirectUris != null) {
+        _directUris = List<String>.from(jsonDecode(storedDirectUris) as List);
+      } else {
+        _directUris = [];
+      }
+
       final storedSelection = await secureStorage.read(key: 'selected_node_uri');
       _selUri = storedSelection ?? legacySelection;
       if (storedSelection == null && legacySelection != null && legacySelection.isNotEmpty) {
@@ -268,7 +276,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     if (!mounted) return;
     setState(() => _ready = coreOk);
     if (!coreOk) _snack('Core failed to initialize.', err: true);
-    if (_subs.isNotEmpty) _syncAll();
+    if (_subs.isNotEmpty || _directUris.isNotEmpty) _syncAll();
   }
 
   void _loadPatt(SharedPreferences p) {
@@ -356,6 +364,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       await p.remove('warp_json');
     } catch (_) {
       _snack('Could not securely save WARP settings.', err: true);
+    }
+  }
+
+  Future<void> _saveDirectUris() async {
+    try {
+      await secureStorage.write(key: 'direct_server_uris', value: jsonEncode(_directUris));
+    } catch (_) {
+      _snack('Could not securely save direct server links.', err: true);
     }
   }
 
@@ -487,7 +503,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     if (!mounted) return;
     final syncEpoch = ++_syncEpoch;
 
-    if (_subs.isEmpty) {
+    if (_subs.isEmpty && _directUris.isEmpty) {
       setState(() {
         _nodes = [];
         _selUri = null;
@@ -506,6 +522,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
     final foundNodes = <ServerNode>[];
     final seenNodeUris = <String>{};
+    for (var i = 0; i < _directUris.length; i++) {
+      final raw = _directUris[i];
+      if (!seenNodeUris.add(raw)) continue;
+      foundNodes.add(ServerNode(subTag: 'DIRECT', rawUri: raw.startsWith('vmess://') ? raw : _injectQuery(raw), baseUri: raw, displayName: '[DIRECT] ${_name(raw)}'));
+    }
     var failedSubscriptions = 0;
 
     for (var i = 0; i < subscriptions.length; i++) {
@@ -593,7 +614,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
     // A transient outage must not erase a previously working server list.
     // Only replace the inventory after at least one feed completed successfully.
-    if (failedSubscriptions == subscriptions.length) {
+    if (subscriptions.isNotEmpty && failedSubscriptions == subscriptions.length && _directUris.isEmpty) {
       setState(() => _loading = false);
       _refreshNodes?.call();
       _snack('Unable to load subscriptions. Keeping the previous server list.', err: true);
@@ -818,7 +839,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     String tag = 'ALL';
     int sort = 0;
     showModalBottomSheet(context: context, backgroundColor: Colors.transparent, isScrollControlled: true, builder: (ctx) => StatefulBuilder(builder: (ctx, setMs) {
-      _refreshNodes = () => setMs(() {});
+      _refreshNodes = () { if (ctx.mounted) setMs(() {}); };
       var vis = _nodes.where((n) => (tag == 'ALL' || n.subTag == tag) && (q.isEmpty || n.displayName.toLowerCase().contains(q.toLowerCase()))).toList();
       if (sort == 1) vis.sort((a, b) => _ms(a).compareTo(_ms(b)));
       if (sort == 2) vis.sort((a, b) => a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
@@ -884,31 +905,29 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           const SizedBox(width: 8),
           IconButton(icon: const Icon(Icons.add_circle, color: green, size: 26), onPressed: () {
             final v = ctl.text.trim();
-            final su = Uri.tryParse(v);
-            if (su == null || su.scheme != 'https' || su.host.isEmpty) {
-              _snack('Use a valid HTTPS subscription URL.', err: true);
-              return;
+            final parsed = Uri.tryParse(v);
+            if (parsed == null) { _snack('Enter an HTTPS subscription URL or VLESS/Trojan/VMess link.', err: true); return; }
+            final scheme = parsed.scheme.toLowerCase();
+            final isDirect = const ['vless', 'trojan', 'vmess'].contains(scheme);
+            if (isDirect && scheme != 'vmess' && parsed.host.isEmpty) { _snack('The server link is incomplete or invalid.', err: true); return; }
+            if (!isDirect && (scheme != 'https' || parsed.host.isEmpty)) { _snack('Only HTTPS subscriptions or VLESS/Trojan/VMess links are supported.', err: true); return; }
+            if (isDirect) {
+              if (_directUris.contains(v)) { _snack('This server link is already added.', err: true); return; }
+              setState(() => _directUris.add(v));
+              _saveDirectUris();
+            } else {
+              if (_subs.contains(v)) { _snack('This subscription is already added.', err: true); return; }
+              setState(() => _subs.add(v));
+              _saveSubscriptions();
             }
-            if (_subs.contains(v)) {
-              _snack('Duplicate sub!', err: true);
-              return;
-            }
-            setState(() => _subs.add(v));
-            _saveSubscriptions();
             ctl.clear();
             setMs(() {});
           }),
         ])),
-        Expanded(child: _subs.isEmpty ? Center(child: Text('EMPTY', style: TextStyle(color: Colors.white.withValues(alpha: 0.3)))) : ListView.builder(padding: const EdgeInsets.all(16), itemCount: _subs.length, itemBuilder: (ctx, i) => Container(margin: const EdgeInsets.only(bottom: 8), padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.03), borderRadius: BorderRadius.circular(10), border: Border.all(color: cyan.withValues(alpha: 0.2))), child: Row(children: [
-          Text('S${i + 1}', style: const TextStyle(color: magenta, fontSize: 10, fontWeight: FontWeight.bold)),
-          const SizedBox(width: 8),
-          Expanded(child: Text(_subs[i], style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis)),
-          IconButton(icon: const Icon(Icons.delete_outline, color: magenta, size: 20), onPressed: () {
-            setState(() => _subs.removeAt(i));
-            _saveSubscriptions();
-            setMs(() {});
-          }),
-        ])))),
+        Expanded(child: (_subs.isEmpty && _directUris.isEmpty) ? Center(child: Text('EMPTY', style: TextStyle(color: Colors.white.withValues(alpha: 0.3)))) : ListView(padding: const EdgeInsets.all(16), children: [
+          ..._subs.asMap().entries.map((entry) { final i = entry.key; final value = entry.value; return Container(margin: const EdgeInsets.only(bottom: 8), padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.03), borderRadius: BorderRadius.circular(10), border: Border.all(color: cyan.withValues(alpha: 0.2))), child: Row(children: [Text('SUB ${i + 1}', style: const TextStyle(color: magenta, fontSize: 10, fontWeight: FontWeight.bold)), const SizedBox(width: 8), Expanded(child: Text(value, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis)), IconButton(icon: const Icon(Icons.delete_outline, color: magenta, size: 20), onPressed: () { setState(() => _subs.removeAt(i)); _saveSubscriptions(); setMs(() {}); })])); }),
+          ..._directUris.asMap().entries.map((entry) { final i = entry.key; final value = entry.value; return Container(margin: const EdgeInsets.only(bottom: 8), padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.03), borderRadius: BorderRadius.circular(10), border: Border.all(color: green.withValues(alpha: 0.25))), child: Row(children: [Text('NODE ${i + 1}', style: const TextStyle(color: green, fontSize: 10, fontWeight: FontWeight.bold)), const SizedBox(width: 8), Expanded(child: Text(_name(value), style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis)), IconButton(icon: const Icon(Icons.delete_outline, color: magenta, size: 20), onPressed: () { setState(() => _directUris.removeAt(i)); _saveDirectUris(); setMs(() {}); })])); }),
+        ])),
         Padding(padding: const EdgeInsets.all(16), child: SizedBox(width: double.infinity, height: 48, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: cyan.withValues(alpha: 0.1), side: const BorderSide(color: cyan)), onPressed: () {
           Navigator.pop(ctx);
           _syncAll();
