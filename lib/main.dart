@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_v2ray_client/flutter_v2ray.dart';
 import 'dart:convert';
 import 'dart:io';
@@ -13,6 +14,9 @@ const Color green = Color(0xFF00FF88);
 const Color amber = Color(0xFFFFB800);
 const Color background = Color(0xFF030308);
 const Color glass = Color(0xFF0A0A14);
+const FlutterSecureStorage secureStorage = FlutterSecureStorage(
+  aOptions: AndroidOptions(encryptedSharedPreferences: true),
+);
 
 void main() => runApp(const ZeusApp());
 
@@ -130,7 +134,27 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _subs = p.getStringList('subs') ?? [];
     _selUri = p.getString('sel');
     _warpOn = p.getBool('warp_on') ?? false;
-    _warpJson = p.getString('warp_json');
+
+    // Migrate the WARP configuration (which contains a WireGuard private key)
+    // out of plaintext SharedPreferences into Android Keystore-backed storage.
+    try {
+      final storedWarp = await secureStorage.read(key: 'warp_json');
+      if (storedWarp != null) {
+        _warpJson = storedWarp;
+      } else {
+        final legacyWarp = p.getString('warp_json');
+        _warpJson = legacyWarp;
+        if (legacyWarp != null && legacyWarp.isNotEmpty) {
+          await secureStorage.write(key: 'warp_json', value: legacyWarp);
+          await p.remove('warp_json');
+        }
+      }
+    } catch (_) {
+      // Preserve existing local configuration if secure storage is temporarily
+      // unavailable; do not delete the legacy value on a failed migration.
+      _warpJson = p.getString('warp_json');
+      _snack('Secure storage unavailable; WARP key migration needs attention.', err: true);
+    }
     if (_warpJson != null && _warpJson!.isEmpty) _warpJson = null;
     _loadPatt(p);
     var coreOk = true;
@@ -212,7 +236,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   Future<void> _saveWarp() async {
     final p = await SharedPreferences.getInstance();
     await p.setBool('warp_on', _warpOn);
-    await p.setString('warp_json', _warpJson ?? '');
+    final value = _warpJson ?? '';
+    if (value.isEmpty) {
+      await secureStorage.delete(key: 'warp_json');
+    } else {
+      await secureStorage.write(key: 'warp_json', value: value);
+    }
+    // Remove any legacy plaintext copy only after secure storage succeeds.
+    await p.remove('warp_json');
   }
 
   String _fmt(int bps) {
