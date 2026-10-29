@@ -80,7 +80,12 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
-  final Dio _dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 8), receiveTimeout: const Duration(seconds: 20)));
+  final Dio _dio = Dio(BaseOptions(
+    connectTimeout: const Duration(seconds: 8),
+    receiveTimeout: const Duration(seconds: 20),
+    maxRedirects: 5,
+    maxResponseContentLength: 10 * 1024 * 1024,
+  ));
   List<String> _subs = [];
   List<ServerNode> _nodes = [];
   String? _selUri;
@@ -452,6 +457,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     });
 
     final foundNodes = <ServerNode>[];
+    final seenNodeUris = <String>{};
     var failedSubscriptions = 0;
 
     for (var i = 0; i < subscriptions.length; i++) {
@@ -471,6 +477,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             responseType: ResponseType.plain,
           ),
         );
+        if (response.realUri.scheme != 'https') {
+          failedSubscriptions++;
+          continue;
+        }
 
         var body = response.data.toString().trim();
         final compact = body.replaceAll(RegExp(r'\s'), '');
@@ -489,6 +499,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               raw.startsWith('trojan://') ||
               raw.startsWith('vmess://')) {
             final link = raw.startsWith('vmess://') ? raw : _injectQuery(raw);
+            if (!seenNodeUris.add(raw)) continue;
             foundNodes.add(ServerNode(
               subTag: tag,
               rawUri: link,
@@ -808,7 +819,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             final v = ctl.text.trim();
             final su = Uri.tryParse(v);
             if (su == null || su.scheme != 'https' || su.host.isEmpty) {
-              _snack('Invalid URL!', err: true);
+              _snack('Use a valid HTTPS subscription URL.', err: true);
               return;
             }
             if (_subs.contains(v)) {
