@@ -7,12 +7,12 @@ import 'dart:io';
 import 'dart:math';
 import 'warp.dart';
 
-const Color CYAN = Color(0xFF00F0FF);
-const Color MAGENTA = Color(0xFFFF007F);
-const Color GREEN = Color(0xFF00FF88);
-const Color AMBER = Color(0xFFFFB800);
-const Color BG = Color(0xFF030308);
-const Color GLASS = Color(0xFF0A0A14);
+const Color cyan = Color(0xFF00F0FF);
+const Color magenta = Color(0xFFFF007F);
+const Color green = Color(0xFF00FF88);
+const Color amber = Color(0xFFFFB800);
+const Color background = Color(0xFF030308);
+const Color glass = Color(0xFF0A0A14);
 
 void main() => runApp(const ZeusApp());
 
@@ -23,7 +23,7 @@ class ZeusApp extends StatelessWidget {
     return MaterialApp(
       title: 'ZEUS VPN',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(brightness: Brightness.dark, scaffoldBackgroundColor: BG),
+      theme: ThemeData(brightness: Brightness.dark, scaffoldBackgroundColor: background),
       home: const HomePage(),
     );
   }
@@ -80,7 +80,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   List<String> _subs = [];
   List<ServerNode> _nodes = [];
   String? _selUri;
-  Patt _patt = Patt();
+  final Patt _patt = Patt();
   bool _ready = false;
   bool _loading = false;
   int _syncEpoch = 0;
@@ -112,12 +112,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _v2ray = V2ray(onStatusChanged: (V2RayStatus s) {
       if (mounted) {
         setState(() {
-          final st = (s.state ?? '').toString().toUpperCase();
+          final st = s.state.toString().toUpperCase();
           _connected = st == 'CONNECTED';
           _connecting = st == 'CONNECTING' || st == 'CONNECT';
           _up = _fmt(s.uploadSpeed);
           _down = _fmt(s.downloadSpeed);
-          _dur = _connected ? (s.duration ?? '00:00:00') : '00:00:00';
+          _dur = _connected ? s.duration : '00:00:00';
           if (!_connected && !_connecting) _speed = '';
         });
       }
@@ -467,7 +467,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         if (mounted) {
           setState(() {
             n.pingText = '$ms ms';
-            n.pingColor = ms < 200 ? GREEN : (ms < 500 ? AMBER : MAGENTA);
+            n.pingColor = ms < 200 ? green : (ms < 500 ? amber : magenta);
           });
           _refreshNodes?.call();
         }
@@ -475,7 +475,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         if (mounted) {
           setState(() {
             n.pingText = 'TIMEOUT';
-            n.pingColor = MAGENTA;
+            n.pingColor = magenta;
           });
           _refreshNodes?.call();
         }
@@ -493,7 +493,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         setState(() {
           final p = sw.elapsedMilliseconds;
           n.pingText = '$p ms';
-          n.pingColor = p < 200 ? GREEN : (p < 500 ? AMBER : MAGENTA);
+          n.pingColor = p < 200 ? green : (p < 500 ? amber : magenta);
         });
         _refreshNodes?.call();
       }
@@ -501,7 +501,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       if (mounted) {
         setState(() {
           n.pingText = 'TIMEOUT';
-          n.pingColor = MAGENTA;
+          n.pingColor = magenta;
         });
         _refreshNodes?.call();
       }
@@ -525,7 +525,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       );
       sw.stop();
       if (!mounted) return;
-      final seconds = (sw.elapsedMilliseconds / 1000.0).clamp(0.1, double.infinity);
+      final seconds = (sw.elapsedMilliseconds / 1000.0).clamp(0.1, double.infinity).toDouble();
       final mbps = (res.data.length.toDouble() * 8) / (seconds * 1048576);
       setState(() => _speed = '${mbps.toStringAsFixed(1)} Mbps');
     } catch (_) {
@@ -578,7 +578,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   void _snack(String m, {bool err = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m, style: const TextStyle(color: Colors.white)), backgroundColor: err ? MAGENTA : GREEN, behavior: SnackBarBehavior.floating));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m, style: const TextStyle(color: Colors.white)), backgroundColor: err ? magenta : green, behavior: SnackBarBehavior.floating));
   }
 
   @override
@@ -590,14 +590,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  Widget _box(Widget child, {Color color = CYAN, double radius = 14, EdgeInsets padding = const EdgeInsets.all(14)}) {
+  Widget _box(Widget child, {Color color = cyan, double radius = 14, EdgeInsets padding = const EdgeInsets.all(14)}) {
     return AnimatedBuilder(animation: _ringCtl, builder: (context, _) {
       final t = _ringCtl.value * 2 * pi;
       final a = 0.35 + 0.25 * sin(t);
       return Container(
         padding: padding,
         decoration: BoxDecoration(
-          color: GLASS.withValues(alpha: 0.85),
+          color: glass.withValues(alpha: 0.85),
           borderRadius: BorderRadius.circular(radius),
           border: Border.all(color: color.withValues(alpha: a)),
           boxShadow: [BoxShadow(color: color.withValues(alpha: 0.15), blurRadius: 18)],
@@ -624,8 +624,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10, fontWeight: FontWeight.bold)),
       DropdownButtonFormField<String>(
         key: ValueKey('dd_$label'),
-        value: items.contains(cur) ? cur : items.first,
-        dropdownColor: GLASS,
+        initialValue: items.contains(cur) ? cur : items.first,
+        dropdownColor: glass,
         style: const TextStyle(color: Colors.white, fontSize: 13),
         decoration: InputDecoration(filled: true, fillColor: Colors.white.withValues(alpha: 0.04), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))),
         items: items.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
@@ -660,28 +660,28 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       if (sort == 1) vis.sort((a, b) => _ms(a).compareTo(_ms(b)));
       if (sort == 2) vis.sort((a, b) => a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
       final tags = <String>['ALL', ..._nodes.map((e) => e.subTag).toSet()];
-      return Container(height: MediaQuery.of(ctx).size.height * 0.9, decoration: BoxDecoration(color: GLASS, borderRadius: const BorderRadius.vertical(top: Radius.circular(22)), border: Border(top: BorderSide(color: CYAN.withValues(alpha: 0.6), width: 2))), child: Column(children: [
+      return Container(height: MediaQuery.of(ctx).size.height * 0.9, decoration: BoxDecoration(color: glass, borderRadius: const BorderRadius.vertical(top: Radius.circular(22)), border: Border(top: BorderSide(color: cyan.withValues(alpha: 0.6), width: 2))), child: Column(children: [
         const SizedBox(height: 12),
-        Container(width: 54, height: 4, decoration: BoxDecoration(color: CYAN.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(8))),
+        Container(width: 54, height: 4, decoration: BoxDecoration(color: cyan.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(8))),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Row(children: [
-          const Icon(Icons.dns, color: CYAN, size: 18),
+          const Icon(Icons.dns, color: cyan, size: 18),
           const SizedBox(width: 8),
-          const Text('NODE CENTER', style: TextStyle(color: CYAN, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 3)),
+          const Text('NODE CENTER', style: TextStyle(color: cyan, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 3)),
           const SizedBox(width: 8),
           Text('${vis.length}/${_nodes.length}', style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 10)),
         ])),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Wrap(spacing: 8, runSpacing: 8, children: [
-          _pill(Icons.refresh, 'SYNC', CYAN, _syncAll),
-          _pill(Icons.network_ping, 'PING ALL', GREEN, _pingAll),
-          _pill(Icons.sort, sort == 0 ? 'SORT: AUTO' : (sort == 1 ? 'SORT: PING' : 'SORT: NAME'), AMBER, () => setMs(() => sort = (sort + 1) % 3)),
-          _pill(Icons.timer_outlined, _delayMode == 0 ? 'DELAY: TCP' : 'DELAY: REAL', MAGENTA, () => setMs(() => _delayMode = _delayMode == 0 ? 1 : 0)),
+          _pill(Icons.refresh, 'SYNC', cyan, _syncAll),
+          _pill(Icons.network_ping, 'PING ALL', green, _pingAll),
+          _pill(Icons.sort, sort == 0 ? 'SORT: AUTO' : (sort == 1 ? 'SORT: PING' : 'SORT: NAME'), amber, () => setMs(() => sort = (sort + 1) % 3)),
+          _pill(Icons.timer_outlined, _delayMode == 0 ? 'DELAY: TCP' : 'DELAY: REAL', magenta, () => setMs(() => _delayMode = _delayMode == 0 ? 1 : 0)),
         ])),
         const SizedBox(height: 10),
-        Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: TextField(style: const TextStyle(color: Colors.white, fontSize: 13), onChanged: (v) => setMs(() => q = v), decoration: InputDecoration(hintText: 'SEARCH NODE...', hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.25), fontSize: 12), prefixIcon: const Icon(Icons.search, color: CYAN, size: 18), filled: true, fillColor: Colors.white.withValues(alpha: 0.04), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))))),
+        Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: TextField(style: const TextStyle(color: Colors.white, fontSize: 13), onChanged: (v) => setMs(() => q = v), decoration: InputDecoration(hintText: 'SEARCH NODE...', hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.25), fontSize: 12), prefixIcon: const Icon(Icons.search, color: cyan, size: 18), filled: true, fillColor: Colors.white.withValues(alpha: 0.04), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))))),
         const SizedBox(height: 10),
         SizedBox(height: 34, child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16), children: tags.map((t) {
           final on = tag == t;
-          return Padding(padding: const EdgeInsets.only(right: 8), child: GestureDetector(onTap: () => setMs(() => tag = t), child: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7), decoration: BoxDecoration(color: on ? CYAN.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.03), borderRadius: BorderRadius.circular(20), border: Border.all(color: on ? CYAN : Colors.white.withValues(alpha: 0.1))), child: Text(t, style: TextStyle(color: on ? CYAN : Colors.white.withValues(alpha: 0.6), fontSize: 11, fontWeight: FontWeight.bold)))));
+          return Padding(padding: const EdgeInsets.only(right: 8), child: GestureDetector(onTap: () => setMs(() => tag = t), child: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7), decoration: BoxDecoration(color: on ? cyan.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.03), borderRadius: BorderRadius.circular(20), border: Border.all(color: on ? cyan : Colors.white.withValues(alpha: 0.1))), child: Text(t, style: TextStyle(color: on ? cyan : Colors.white.withValues(alpha: 0.6), fontSize: 11, fontWeight: FontWeight.bold)))));
         }).toList())),
         Expanded(child: vis.isEmpty ? Center(child: Text('NO NODES', style: TextStyle(color: Colors.white.withValues(alpha: 0.3)))) : ListView.builder(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), itemCount: vis.length, itemBuilder: (ctx, i) {
           final n = vis[i];
@@ -691,15 +691,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             SharedPreferences.getInstance().then((p) => p.setString('sel', n.baseUri));
             setMs(() {});
             Navigator.pop(ctx);
-          }, child: Container(margin: const EdgeInsets.only(bottom: 8), padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: sel ? CYAN.withValues(alpha: 0.12) : Colors.white.withValues(alpha: 0.03), borderRadius: BorderRadius.circular(12), border: Border.all(color: sel ? CYAN : Colors.white.withValues(alpha: 0.06))), child: Row(children: [
-            Icon(n.rawUri.startsWith('vless://') ? Icons.bolt_rounded : (n.rawUri.startsWith('trojan://') ? Icons.shield_rounded : Icons.memory_rounded), color: n.rawUri.startsWith('vless://') ? CYAN : (n.rawUri.startsWith('trojan://') ? MAGENTA : AMBER), size: 18),
+          }, child: Container(margin: const EdgeInsets.only(bottom: 8), padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: sel ? cyan.withValues(alpha: 0.12) : Colors.white.withValues(alpha: 0.03), borderRadius: BorderRadius.circular(12), border: Border.all(color: sel ? cyan : Colors.white.withValues(alpha: 0.06))), child: Row(children: [
+            Icon(n.rawUri.startsWith('vless://') ? Icons.bolt_rounded : (n.rawUri.startsWith('trojan://') ? Icons.shield_rounded : Icons.memory_rounded), color: n.rawUri.startsWith('vless://') ? cyan : (n.rawUri.startsWith('trojan://') ? magenta : amber), size: 18),
             const SizedBox(width: 10),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(n.displayName, style: TextStyle(color: sel ? Colors.white : Colors.white70, fontSize: 13, fontWeight: sel ? FontWeight.bold : FontWeight.normal), maxLines: 1, overflow: TextOverflow.ellipsis),
               Text(n.subTag, style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 9, fontWeight: FontWeight.bold)),
             ])),
             Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: n.pingColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6), border: Border.all(color: n.pingColor.withValues(alpha: 0.5))), child: Text(n.pingText, style: TextStyle(color: n.pingColor, fontSize: 10, fontWeight: FontWeight.bold))),
-            if (sel) ...[const SizedBox(width: 8), const Icon(Icons.check_circle, color: GREEN, size: 18)],
+            if (sel) ...[const SizedBox(width: 8), const Icon(Icons.check_circle, color: green, size: 18)],
           ])));
         })),
       ]));
@@ -712,14 +712,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   void _openSubs() {
     final ctl = TextEditingController();
     showModalBottomSheet(context: context, backgroundColor: Colors.transparent, isScrollControlled: true, builder: (ctx) => StatefulBuilder(builder: (ctx, setMs) {
-      return Container(height: MediaQuery.of(ctx).size.height * 0.65, decoration: BoxDecoration(color: GLASS, borderRadius: const BorderRadius.vertical(top: Radius.circular(22)), border: Border(top: BorderSide(color: MAGENTA.withValues(alpha: 0.6), width: 2))), child: Column(children: [
+      return Container(height: MediaQuery.of(ctx).size.height * 0.65, decoration: BoxDecoration(color: glass, borderRadius: const BorderRadius.vertical(top: Radius.circular(22)), border: Border(top: BorderSide(color: magenta.withValues(alpha: 0.6), width: 2))), child: Column(children: [
         const SizedBox(height: 12),
-        Container(width: 54, height: 4, decoration: BoxDecoration(color: MAGENTA.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(8))),
-        const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text('SUBSCRIPTIONS', style: TextStyle(color: MAGENTA, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 3))),
+        Container(width: 54, height: 4, decoration: BoxDecoration(color: magenta.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(8))),
+        const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text('SUBSCRIPTIONS', style: TextStyle(color: magenta, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 3))),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Row(children: [
           Expanded(child: TextField(controller: ctl, style: const TextStyle(color: Colors.white, fontSize: 12), decoration: InputDecoration(hintText: 'https://...', hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.2), fontSize: 11), filled: true, fillColor: Colors.white.withValues(alpha: 0.04), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))))),
           const SizedBox(width: 8),
-          IconButton(icon: const Icon(Icons.add_circle, color: GREEN, size: 26), onPressed: () {
+          IconButton(icon: const Icon(Icons.add_circle, color: green, size: 26), onPressed: () {
             final v = ctl.text.trim();
             final su = Uri.tryParse(v);
             if (su == null || !(su.scheme == 'http' || su.scheme == 'https') || su.host.isEmpty) {
@@ -736,37 +736,37 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             setMs(() {});
           }),
         ])),
-        Expanded(child: _subs.isEmpty ? Center(child: Text('EMPTY', style: TextStyle(color: Colors.white.withValues(alpha: 0.3)))) : ListView.builder(padding: const EdgeInsets.all(16), itemCount: _subs.length, itemBuilder: (ctx, i) => Container(margin: const EdgeInsets.only(bottom: 8), padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.03), borderRadius: BorderRadius.circular(10), border: Border.all(color: CYAN.withValues(alpha: 0.2))), child: Row(children: [
-          Text('S${i + 1}', style: const TextStyle(color: MAGENTA, fontSize: 10, fontWeight: FontWeight.bold)),
+        Expanded(child: _subs.isEmpty ? Center(child: Text('EMPTY', style: TextStyle(color: Colors.white.withValues(alpha: 0.3)))) : ListView.builder(padding: const EdgeInsets.all(16), itemCount: _subs.length, itemBuilder: (ctx, i) => Container(margin: const EdgeInsets.only(bottom: 8), padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.03), borderRadius: BorderRadius.circular(10), border: Border.all(color: cyan.withValues(alpha: 0.2))), child: Row(children: [
+          Text('S${i + 1}', style: const TextStyle(color: magenta, fontSize: 10, fontWeight: FontWeight.bold)),
           const SizedBox(width: 8),
           Expanded(child: Text(_subs[i], style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis)),
-          IconButton(icon: const Icon(Icons.delete_outline, color: MAGENTA, size: 20), onPressed: () {
+          IconButton(icon: const Icon(Icons.delete_outline, color: magenta, size: 20), onPressed: () {
             setState(() => _subs.removeAt(i));
             SharedPreferences.getInstance().then((p) => p.setStringList('subs', _subs));
             setMs(() {});
           }),
         ])))),
-        Padding(padding: const EdgeInsets.all(16), child: SizedBox(width: double.infinity, height: 48, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: CYAN.withValues(alpha: 0.1), side: const BorderSide(color: CYAN)), onPressed: () {
+        Padding(padding: const EdgeInsets.all(16), child: SizedBox(width: double.infinity, height: 48, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: cyan.withValues(alpha: 0.1), side: const BorderSide(color: cyan)), onPressed: () {
           Navigator.pop(ctx);
           _syncAll();
-        }, child: const Text('SAVE & SYNC', style: TextStyle(color: CYAN, fontWeight: FontWeight.bold, letterSpacing: 2))))),
+        }, child: const Text('SAVE & SYNC', style: TextStyle(color: cyan, fontWeight: FontWeight.bold, letterSpacing: 2))))),
       ]));
     })).whenComplete(ctl.dispose);
   }
 
   void _openPatt() {
     showModalBottomSheet(context: context, backgroundColor: Colors.transparent, isScrollControlled: true, builder: (ctx) => StatefulBuilder(builder: (ctx, setMs) {
-      return Container(height: MediaQuery.of(ctx).size.height * 0.85, decoration: BoxDecoration(color: GLASS, borderRadius: const BorderRadius.vertical(top: Radius.circular(22)), border: Border(top: BorderSide(color: GREEN.withValues(alpha: 0.6), width: 2))), child: Column(children: [
+      return Container(height: MediaQuery.of(ctx).size.height * 0.85, decoration: BoxDecoration(color: glass, borderRadius: const BorderRadius.vertical(top: Radius.circular(22)), border: Border(top: BorderSide(color: green.withValues(alpha: 0.6), width: 2))), child: Column(children: [
         const SizedBox(height: 12),
-        Container(width: 54, height: 4, decoration: BoxDecoration(color: GREEN.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(8))),
-        const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text('PATT-NG CORE', style: TextStyle(color: GREEN, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 3))),
+        Container(width: 54, height: 4, decoration: BoxDecoration(color: green.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(8))),
+        const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text('PATT-NG CORE', style: TextStyle(color: green, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 3))),
         Expanded(child: ListView(padding: const EdgeInsets.symmetric(horizontal: 20), children: [
           _sw('WARP (Cloudflare WireGuard)', _warpOn, (v) {
             setMs(() => _warpOn = v);
             _saveWarp();
           }),
-          if (_warpJson != null) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text('WARP device: REGISTERED', style: TextStyle(color: GREEN, fontSize: 10, fontWeight: FontWeight.bold))),
-          if (_warpOn && _warpJson == null) Padding(padding: const EdgeInsets.only(bottom: 14), child: SizedBox(width: double.infinity, height: 44, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: CYAN.withValues(alpha: 0.1), side: const BorderSide(color: CYAN)), onPressed: () async {
+          if (_warpJson != null) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text('WARP device: REGISTERED', style: TextStyle(color: green, fontSize: 10, fontWeight: FontWeight.bold))),
+          if (_warpOn && _warpJson == null) Padding(padding: const EdgeInsets.only(bottom: 14), child: SizedBox(width: double.infinity, height: 44, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: cyan.withValues(alpha: 0.1), side: const BorderSide(color: cyan)), onPressed: () async {
             _snack('Registering WARP device...');
             final kp = genWarpKeys();
             final out = await registerWarp(kp);
@@ -778,7 +778,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               _snack('WARP registered!');
             }
             setMs(() {});
-          }, child: const Text('REGISTER WARP DEVICE', style: TextStyle(color: CYAN, fontWeight: FontWeight.bold, letterSpacing: 1))))),
+          }, child: const Text('REGISTER WARP DEVICE', style: TextStyle(color: cyan, fontWeight: FontWeight.bold, letterSpacing: 1))))),
           _dd('FINGERPRINT', ['unsafe', 'chrome', 'firefox', 'safari', 'randomized', 'randomizednoalpn'], _patt.fp, (v) {
             setMs(() => _patt.fp = v);
             _savePatt();
@@ -890,10 +890,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             _savePatt();
           }),
         ])),
-        Padding(padding: const EdgeInsets.all(16), child: SizedBox(width: double.infinity, height: 48, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: GREEN.withValues(alpha: 0.1), side: const BorderSide(color: GREEN)), onPressed: () {
+        Padding(padding: const EdgeInsets.all(16), child: SizedBox(width: double.infinity, height: 48, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: green.withValues(alpha: 0.1), side: const BorderSide(color: green)), onPressed: () {
           Navigator.pop(ctx);
           _syncAll();
-        }, child: const Text('APPLY & SYNC', style: TextStyle(color: GREEN, fontWeight: FontWeight.bold, letterSpacing: 2))))),
+        }, child: const Text('APPLY & SYNC', style: TextStyle(color: green, fontWeight: FontWeight.bold, letterSpacing: 2))))),
       ]));
     }));
   }
@@ -913,7 +913,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
 
     return Scaffold(
-      backgroundColor: BG,
+      backgroundColor: background,
       body: Stack(children: [
         Positioned.fill(child: AnimatedBuilder(animation: _timeCtl, builder: (ctx, _) => CustomPaint(painter: _CyberP(_timeCtl.value)))),
         Positioned.fill(child: IgnorePointer(child: AnimatedBuilder(animation: _timeCtl, builder: (ctx, _) => CustomPaint(painter: _ScanP(_timeCtl.value))))),
@@ -922,9 +922,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           AnimatedBuilder(animation: _timeCtl, builder: (ctx, _) {
             final g = sin(_timeCtl.value * 2 * pi * 2);
             return Stack(children: [
-              if (g > 0.92) Transform.translate(offset: const Offset(2, 0), child: const Text('ZEUS VPN', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900, letterSpacing: 8, color: MAGENTA))),
-              if (g < -0.92) Transform.translate(offset: const Offset(-2, 0), child: const Text('ZEUS VPN', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900, letterSpacing: 8, color: CYAN))),
-              Text('ZEUS VPN', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900, letterSpacing: 8, color: Colors.white, shadows: [Shadow(color: CYAN.withValues(alpha: 0.8), blurRadius: 12), Shadow(color: MAGENTA.withValues(alpha: 0.6), blurRadius: 22)])),
+              if (g > 0.92) Transform.translate(offset: const Offset(2, 0), child: const Text('ZEUS VPN', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900, letterSpacing: 8, color: magenta))),
+              if (g < -0.92) Transform.translate(offset: const Offset(-2, 0), child: const Text('ZEUS VPN', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900, letterSpacing: 8, color: cyan))),
+              Text('ZEUS VPN', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900, letterSpacing: 8, color: Colors.white, shadows: [Shadow(color: cyan.withValues(alpha: 0.8), blurRadius: 12), Shadow(color: magenta.withValues(alpha: 0.6), blurRadius: 22)])),
             ]);
           }),
           const SizedBox(height: 6),
@@ -932,18 +932,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           const SizedBox(height: 18),
           Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: Row(children: [
             Expanded(child: GestureDetector(onTap: _openSubs, child: _box(Row(children: [
-              const Icon(Icons.layers, color: MAGENTA, size: 18),
+              const Icon(Icons.layers, color: magenta, size: 18),
               const SizedBox(width: 8),
-              const Text('SUBS', style: TextStyle(color: MAGENTA, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 2)),
+              const Text('SUBS', style: TextStyle(color: magenta, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 2)),
               const Spacer(),
-              Text('${_subs.length}', style: const TextStyle(color: MAGENTA, fontSize: 11, fontWeight: FontWeight.bold)),
-            ]), color: MAGENTA, padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14)))),
+              Text('${_subs.length}', style: const TextStyle(color: magenta, fontSize: 11, fontWeight: FontWeight.bold)),
+            ]), color: magenta, padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14)))),
             const SizedBox(width: 10),
-            GestureDetector(onTap: _openPatt, child: _box(const Icon(Icons.tune, color: GREEN, size: 20), color: GREEN, padding: const EdgeInsets.all(12))),
+            GestureDetector(onTap: _openPatt, child: _box(const Icon(Icons.tune, color: green, size: 20), color: green, padding: const EdgeInsets.all(12))),
           ])),
           const SizedBox(height: 12),
           GestureDetector(onTap: _nodes.isEmpty ? () => _snack('Sync subs first!', err: true) : _openNodes, child: _box(Row(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.dns, color: CYAN, size: 16),
+            const Icon(Icons.dns, color: cyan, size: 16),
             const SizedBox(width: 8),
             ConstrainedBox(constraints: const BoxConstraints(maxWidth: 160), child: Text(selName, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
             if (selPing != '--') ...[
@@ -951,30 +951,30 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               Text(selPing, style: TextStyle(color: selPingC, fontSize: 10, fontWeight: FontWeight.bold)),
             ],
             const SizedBox(width: 6),
-            const Icon(Icons.expand_more, color: CYAN, size: 16),
-          ]), color: CYAN, radius: 30, padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10))),
+            const Icon(Icons.expand_more, color: cyan, size: 16),
+          ]), color: cyan, radius: 30, padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10))),
           const Spacer(),
           GestureDetector(onTap: _toggle, child: ScaleTransition(scale: _connected ? _pulseAnim : const AlwaysStoppedAnimation(1.0), child: Stack(alignment: Alignment.center, children: [
-            RotationTransition(turns: _ringCtl, child: Container(width: 170, height: 170, decoration: BoxDecoration(shape: BoxShape.circle, gradient: SweepGradient(colors: _connected ? [GREEN, Colors.transparent, GREEN] : [CYAN, Colors.transparent, CYAN])))),
-            Container(width: 148, height: 148, decoration: BoxDecoration(shape: BoxShape.circle, color: BG, border: Border.all(color: _connected ? GREEN : (_connecting ? AMBER : CYAN), width: 2), boxShadow: [BoxShadow(color: (_connected ? GREEN : CYAN).withValues(alpha: 0.35), blurRadius: 26, spreadRadius: 3)]), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(_connecting ? Icons.hourglass_top : Icons.power_settings_new, size: 44, color: _connected ? GREEN : (_connecting ? AMBER : CYAN)),
+            RotationTransition(turns: _ringCtl, child: Container(width: 170, height: 170, decoration: BoxDecoration(shape: BoxShape.circle, gradient: SweepGradient(colors: _connected ? [green, Colors.transparent, green] : [cyan, Colors.transparent, cyan])))),
+            Container(width: 148, height: 148, decoration: BoxDecoration(shape: BoxShape.circle, color: background, border: Border.all(color: _connected ? green : (_connecting ? amber : cyan), width: 2), boxShadow: [BoxShadow(color: (_connected ? green : cyan).withValues(alpha: 0.35), blurRadius: 26, spreadRadius: 3)]), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(_connecting ? Icons.hourglass_top : Icons.power_settings_new, size: 44, color: _connected ? green : (_connecting ? amber : cyan)),
               const SizedBox(height: 6),
-              Text(_connected ? _dur : (_connecting ? 'WAIT...' : 'CONNECT'), style: TextStyle(color: _connected ? GREEN : (_connecting ? AMBER : CYAN), fontSize: 12, letterSpacing: 2, fontWeight: FontWeight.bold)),
+              Text(_connected ? _dur : (_connecting ? 'WAIT...' : 'CONNECT'), style: TextStyle(color: _connected ? green : (_connecting ? amber : cyan), fontSize: 12, letterSpacing: 2, fontWeight: FontWeight.bold)),
             ])),
           ]))),
           const Spacer(),
           if (_connected) Padding(padding: const EdgeInsets.symmetric(horizontal: 24), child: _box(Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-            _stat('UP', _up, Icons.arrow_upward, MAGENTA),
-            _stat('DOWN', _down, Icons.arrow_downward, CYAN),
-            GestureDetector(onTap: _testing ? null : _speedTest, child: _stat('SPEED', _testing ? '...' : (_speed.isEmpty ? 'TEST' : _speed), Icons.speed, GREEN)),
-          ]), color: AMBER)),
+            _stat('UP', _up, Icons.arrow_upward, magenta),
+            _stat('DOWN', _down, Icons.arrow_downward, cyan),
+            GestureDetector(onTap: _testing ? null : _speedTest, child: _stat('SPEED', _testing ? '...' : (_speed.isEmpty ? 'TEST' : _speed), Icons.speed, green)),
+          ]), color: amber)),
           const SizedBox(height: 14),
           Padding(padding: const EdgeInsets.symmetric(horizontal: 24), child: _box(Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-            _chip('FP', _patt.fp.toUpperCase(), MAGENTA),
-            _chip('FRAG', _patt.frag.toUpperCase(), CYAN),
-            _chip('WARP', _warpOn ? 'ON' : 'OFF', GREEN),
-            _chip('NET', _patt.network.toUpperCase(), AMBER),
-          ]), color: CYAN, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10))),
+            _chip('FP', _patt.fp.toUpperCase(), magenta),
+            _chip('FRAG', _patt.frag.toUpperCase(), cyan),
+            _chip('WARP', _warpOn ? 'ON' : 'OFF', green),
+            _chip('NET', _patt.network.toUpperCase(), amber),
+          ]), color: cyan, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10))),
           const SizedBox(height: 24),
         ])),
       ]),
@@ -999,7 +999,7 @@ class _CyberP extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final grid = Paint()
-      ..color = CYAN.withValues(alpha: 0.06)
+      ..color = cyan.withValues(alpha: 0.06)
       ..strokeWidth = 1;
     final horizon = size.height * 0.42;
     final shift = (t * 6) % 1;
@@ -1016,7 +1016,7 @@ class _CyberP extends CustomPainter {
       final x = rnd.nextDouble() * size.width;
       final y = rnd.nextDouble() * horizon * 0.9;
       final tw = 0.5 + 0.5 * sin(t * 2 * pi + i);
-      final star = Paint()..color = MAGENTA.withValues(alpha: 0.15 + 0.3 * tw);
+      final star = Paint()..color = magenta.withValues(alpha: 0.15 + 0.3 * tw);
       canvas.drawCircle(Offset(x, y), 1.2 * tw, star);
     }
   }
@@ -1031,8 +1031,8 @@ class _ScanP extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final y = t * size.height;
-    canvas.drawRect(Rect.fromLTWH(0, y - 30, size.width, 30), Paint()..color = CYAN.withValues(alpha: 0.05));
-    canvas.drawRect(Rect.fromLTWH(0, y, size.width, 2), Paint()..color = CYAN.withValues(alpha: 0.25));
+    canvas.drawRect(Rect.fromLTWH(0, y - 30, size.width, 30), Paint()..color = cyan.withValues(alpha: 0.05));
+    canvas.drawRect(Rect.fromLTWH(0, y, size.width, 2), Paint()..color = cyan.withValues(alpha: 0.25));
   }
 
   @override
