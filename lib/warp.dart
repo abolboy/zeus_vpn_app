@@ -80,12 +80,12 @@ WarpKeys genWarpKeys() {
 }
 
 Future<Map<String, dynamic>?> registerWarp(WarpKeys kp) async {
+  final dio = Dio(BaseOptions(
+    connectTimeout: const Duration(seconds: 10),
+    receiveTimeout: const Duration(seconds: 15),
+    headers: {'User-Agent': 'okhttp/3.12.1', 'Content-Type': 'application/json'},
+  ));
   try {
-    final dio = Dio(BaseOptions(
-      connectTimeout: const Duration(seconds: 10),
-      receiveTimeout: const Duration(seconds: 15),
-      headers: {'User-Agent': 'okhttp/3.12.1', 'Content-Type': 'application/json'},
-    ));
     final res = await dio.post('https://api.cloudflareclient.com/v0a2158/reg', data: {
       'key': kp.pub,
       'install_id': '',
@@ -139,5 +139,7 @@ Future<Map<String, dynamic>?> registerWarp(WarpKeys kp) async {
     };
   } catch (_) {
     return null;
+  } finally {
+    dio.close(force: true);
   }
 }
