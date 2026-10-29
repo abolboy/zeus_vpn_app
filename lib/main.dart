@@ -477,7 +477,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final previousSelection = _selUri;
     setState(() {
       _loading = true;
-      _nodes = [];
     });
 
     final foundNodes = <ServerNode>[];
@@ -566,6 +565,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
 
     if (!mounted || syncEpoch != _syncEpoch) return;
+
+    // A transient outage must not erase a previously working server list.
+    // Only replace the inventory after at least one feed completed successfully.
+    if (failedSubscriptions == subscriptions.length) {
+      setState(() => _loading = false);
+      _refreshNodes?.call();
+      _snack('Unable to load subscriptions. Keeping the previous server list.', err: true);
+      return;
+    }
+
     setState(() {
       _nodes = foundNodes;
       if (previousSelection != null &&
@@ -584,9 +593,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       _pingAll();
     }
 
-    if (failedSubscriptions == subscriptions.length) {
-      _snack('Unable to load subscriptions. Check the URLs and network.', err: true);
-    } else if (failedSubscriptions > 0) {
+    if (failedSubscriptions > 0) {
       _snack(
         'Loaded nodes, but $failedSubscriptions subscription(s) failed.',
         err: true,
