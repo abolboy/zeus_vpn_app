@@ -83,6 +83,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   Patt _patt = Patt();
   bool _ready = false;
   bool _loading = false;
+  int _syncEpoch = 0;
   bool _connected = false;
   bool _connecting = false;
   bool _busy = false;
@@ -351,7 +352,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   }
   Future<void> _syncAll() async {
-    if (!mounted || _loading) return;
+    if (!mounted) return;
+    final syncEpoch = ++_syncEpoch;
 
     if (_subs.isEmpty) {
       setState(() {
@@ -415,7 +417,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       }
     }
 
-    if (!mounted) return;
+    if (!mounted || syncEpoch != _syncEpoch) return;
     setState(() {
       _nodes = foundNodes;
       if (previousSelection != null &&
