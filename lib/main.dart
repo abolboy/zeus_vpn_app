@@ -69,7 +69,7 @@ class Patt {
   String cs = '';
   String pcs = '';
   String vcn = '';
-  String frag = 'tlshello';
+  String frag = 'none';
   String fragLen = '100-200';
   String fragInt = '10-20';
   bool noise = false;
@@ -86,8 +86,8 @@ class Patt {
   String pbk = '';
   String sid = '';
   String spx = '/';
-  String flow = 'xtls-rprx-vision';
-  String alpn = 'h2,http/1.1';
+  String flow = 'none';
+  String alpn = '';
   String sni = '';
   String path = '/';
   String host = '';
@@ -225,7 +225,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _patt.cs = p.getString('p_cs') ?? '';
     _patt.pcs = p.getString('p_pcs') ?? '';
     _patt.vcn = p.getString('p_vcn') ?? '';
-    _patt.frag = p.getString('p_frag') ?? 'tlshello';
+    _patt.frag = p.getString('p_frag') ?? 'none';
     _patt.fragLen = p.getString('p_fl') ?? '100-200';
     _patt.fragInt = p.getString('p_fi') ?? '10-20';
     _patt.noise = p.getBool('p_noise') ?? false;
@@ -242,8 +242,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _patt.pbk = p.getString('p_pbk') ?? '';
     _patt.sid = p.getString('p_sid') ?? '';
     _patt.spx = p.getString('p_spx') ?? '/';
-    _patt.flow = p.getString('p_flow') ?? 'xtls-rprx-vision';
-    _patt.alpn = p.getString('p_alpn') ?? 'h2,http/1.1';
+    _patt.flow = p.getString('p_flow') ?? 'none';
+    _patt.alpn = p.getString('p_alpn') ?? '';
     _patt.sni = p.getString('p_sni') ?? '';
     _patt.path = p.getString('p_path') ?? '/';
     _patt.host = p.getString('p_host') ?? '';
