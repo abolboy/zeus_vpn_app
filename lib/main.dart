@@ -28,7 +28,27 @@ class ZeusApp extends StatelessWidget {
     return MaterialApp(
       title: 'ZEUS VPN',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(brightness: Brightness.dark, scaffoldBackgroundColor: background),
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: background,
+        colorScheme: const ColorScheme.dark(primary: cyan, secondary: magenta, surface: glass),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: const Color(0xFF080C16),
+          labelStyle: const TextStyle(color: cyan, fontSize: 11),
+          hintStyle: const TextStyle(color: Color(0xFF657084), fontSize: 11),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: cyan.withValues(alpha: 0.22))),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: cyan, width: 1.3)),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(style: ElevatedButton.styleFrom(
+          backgroundColor: cyan.withValues(alpha: 0.1),
+          foregroundColor: cyan,
+          side: BorderSide(color: cyan.withValues(alpha: 0.5)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          textStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1),
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
+        )),
+      ),
       home: const HomePage(),
     );
   }
@@ -94,6 +114,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   bool _ready = false;
   bool _loading = false;
   int _syncEpoch = 0;
+  int _activeTab = 0;
   bool _connected = false;
   bool _connecting = false;
   bool _busy = false;
@@ -1030,6 +1051,284 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }));
   }
 
+
+  Widget _screenHeader(String eyebrow, String title, Color accent, {String? meta}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14, top: 7),
+      child: Row(children: [
+        Container(width: 3, height: 34, decoration: BoxDecoration(color: accent, borderRadius: BorderRadius.circular(4), boxShadow: [BoxShadow(color: accent.withValues(alpha: 0.5), blurRadius: 10)])),
+        const SizedBox(width: 11),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(eyebrow.toUpperCase(), style: TextStyle(color: accent, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 2)),
+          const SizedBox(height: 3),
+          Text(title, style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w800)),
+        ])),
+        if (meta != null) Text(meta, style: TextStyle(color: Colors.white.withValues(alpha: 0.42), fontSize: 9)),
+      ]),
+    );
+  }
+
+  Widget _neonPanel(Widget child, {Color accent = cyan, VoidCallback? onTap}) {
+    final card = Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: const Color(0xE6090D18),
+        borderRadius: BorderRadius.circular(17),
+        border: Border.all(color: accent.withValues(alpha: 0.3)),
+        boxShadow: [BoxShadow(color: accent.withValues(alpha: 0.055), blurRadius: 18)],
+      ),
+      child: child,
+    );
+    return onTap == null ? card : Material(color: Colors.transparent, child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(17), child: card));
+  }
+
+  Widget _quickAction(IconData icon, String title, String subtitle, Color accent, VoidCallback onTap) => Padding(
+    padding: const EdgeInsets.only(bottom: 9),
+    child: _neonPanel(Row(children: [
+      Container(width: 42, height: 42, decoration: BoxDecoration(color: accent.withValues(alpha: 0.09), borderRadius: BorderRadius.circular(12), border: Border.all(color: accent.withValues(alpha: 0.3))), child: Icon(icon, color: accent)),
+      const SizedBox(width: 12),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 4),
+        Text(subtitle, style: TextStyle(color: Colors.white.withValues(alpha: 0.48), fontSize: 10)),
+      ])),
+      Icon(Icons.chevron_right_rounded, color: accent),
+    ]), accent: accent, onTap: onTap),
+  );
+
+  Widget _dashboard(String name, String ping, Color pingColor) {
+    final accent = _connected ? green : (_connecting ? amber : cyan);
+    return SingleChildScrollView(
+      key: const ValueKey('dash'),
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _neonPanel(Column(children: [
+          Row(children: [
+            Container(width: 7, height: 7, decoration: BoxDecoration(color: accent, shape: BoxShape.circle, boxShadow: [BoxShadow(color: accent.withValues(alpha: 0.8), blurRadius: 8)])),
+            const SizedBox(width: 8),
+            Expanded(child: Text(_connected ? 'SECURE TUNNEL ACTIVE' : (_connecting ? 'ESTABLISHING TUNNEL' : 'SYSTEM STANDBY'), style: TextStyle(color: accent, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.4))),
+            Text(_ready ? 'CORE READY' : 'BOOTING', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 8)),
+          ]),
+          const SizedBox(height: 20),
+          GestureDetector(onTap: _toggle, child: ScaleTransition(
+            scale: _connected ? _pulseAnim : const AlwaysStoppedAnimation(1.0),
+            child: SizedBox(width: 198, height: 198, child: Stack(alignment: Alignment.center, children: [
+              RotationTransition(turns: _ringCtl, child: Container(width: 190, height: 190, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: accent.withValues(alpha: 0.35)), gradient: SweepGradient(colors: [accent.withValues(alpha: 0.0), accent, magenta, accent.withValues(alpha: 0.0)])))),
+              Container(width: 166, height: 166, decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xFF050811), border: Border.all(color: accent, width: 1.6), boxShadow: [BoxShadow(color: accent.withValues(alpha: 0.2), blurRadius: 26, spreadRadius: 3)]), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Icon(_connected ? Icons.shield_rounded : (_connecting ? Icons.hourglass_top_rounded : Icons.power_settings_new_rounded), color: accent, size: 42),
+                const SizedBox(height: 9),
+                Text(_connected ? 'CONNECTED' : (_connecting ? 'CONNECTING' : 'INITIATE'), style: TextStyle(color: accent, fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 1.8)),
+                const SizedBox(height: 5),
+                Text(_connected ? _dur : 'SECURE LINK', style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 9)),
+              ])),
+            ])),
+          )),
+          const SizedBox(height: 14),
+          Text('TAP THE CORE TO CONTROL THE TUNNEL', style: TextStyle(color: Colors.white.withValues(alpha: 0.42), fontSize: 9, letterSpacing: 1.2)),
+        ]), accent: accent),
+        const SizedBox(height: 11),
+        Row(children: [
+          Expanded(child: _neonPanel(_stat('UPLOAD', _up, Icons.north_east_rounded, magenta), accent: magenta)),
+          const SizedBox(width: 8),
+          Expanded(child: _neonPanel(_stat('DOWNLOAD', _down, Icons.south_west_rounded, cyan), accent: cyan)),
+          const SizedBox(width: 8),
+          Expanded(child: _neonPanel(_stat('SPEED', _testing ? '...' : (_speed.isEmpty ? 'TEST' : _speed), Icons.speed_rounded, green), accent: green, onTap: _testing ? null : _speedTest)),
+        ]),
+        const SizedBox(height: 20),
+        _screenHeader('ACTIVE ROUTE', 'Selected server', cyan, meta: _nodes.length.toString() + ' NODES'),
+        _neonPanel(Row(children: [
+          const Icon(Icons.dns_rounded, color: cyan, size: 25),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12)),
+            const SizedBox(height: 5),
+            Text(_selUri == null ? 'No server selected — add a feed' : 'Tap to open node control center', style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 10)),
+          ])),
+          if (ping != '--') Text(ping, style: TextStyle(color: pingColor, fontWeight: FontWeight.w900, fontSize: 10)),
+        ]), accent: cyan, onTap: () => setState(() => _activeTab = 1)),
+        const SizedBox(height: 20),
+        _screenHeader('QUICK ACCESS', 'Cyber control deck', magenta),
+        _quickAction(Icons.hub_rounded, 'Node control center', 'Search, latency and server selection', cyan, () => setState(() => _activeTab = 1)),
+        _quickAction(Icons.rss_feed_rounded, 'Subscription manager', _subs.length.toString() + ' secure feed(s) configured', magenta, () => setState(() => _activeTab = 2)),
+        _quickAction(Icons.memory_rounded, 'PATT-NG / WARP lab', 'Fingerprint, DNS and tunnel parameters', green, () => setState(() => _activeTab = 3)),
+        Wrap(spacing: 7, runSpacing: 7, children: [
+          _pill(Icons.fingerprint_rounded, 'FP: ' + _patt.fp.toUpperCase(), magenta, _openPatt),
+          _pill(Icons.alt_route_rounded, 'NET: ' + _patt.network.toUpperCase(), cyan, _openPatt),
+          _pill(Icons.cloud_outlined, 'WARP: ' + (_warpOn ? 'ON' : 'OFF'), green, _openPatt),
+        ]),
+      ]),
+    );
+  }
+
+  Widget _networkScreen() {
+    return SingleChildScrollView(
+      key: const ValueKey('nodes'),
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _screenHeader('NETWORK INTELLIGENCE', 'Node control center', cyan, meta: _nodes.length.toString() + ' FOUND'),
+        _quickAction(Icons.sync_rounded, 'Sync nodes', _loading ? 'Sync in progress' : 'Refresh secure feeds', cyan, _loading ? () {} : _syncAll),
+        _quickAction(Icons.network_ping_rounded, 'Probe latency', 'Check node response', green, _pingAll),
+        _neonPanel(Row(children: [
+          const Icon(Icons.timer_outlined, color: magenta),
+          const SizedBox(width: 9),
+          Expanded(child: Text(_delayMode == 0 ? 'TCP handshake latency mode' : 'Core-based latency mode', style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 10))),
+          TextButton(onPressed: () => setState(() => _delayMode = _delayMode == 0 ? 1 : 0), child: Text(_delayMode == 0 ? 'TCP' : 'REAL', style: const TextStyle(color: magenta))),
+        ]), accent: magenta),
+        const SizedBox(height: 14),
+        if (_nodes.isEmpty)
+          _neonPanel(Column(children: [
+            const Icon(Icons.radar_rounded, color: amber, size: 38),
+            const SizedBox(height: 10),
+            const Text('NO NODES DETECTED', style: TextStyle(color: amber, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+            const SizedBox(height: 8),
+            Text(_subs.isEmpty ? 'Add an HTTPS subscription to populate this list.' : 'Sync subscriptions and verify the feed URLs.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 11)),
+            const SizedBox(height: 12),
+            ElevatedButton(onPressed: () => setState(() => _activeTab = 2), child: const Text('MANAGE FEEDS')),
+          ]), accent: amber)
+        else
+          ..._nodes.map((node) {
+            final selected = node.baseUri == _selUri;
+            final tint = selected ? green : cyan;
+            return Padding(padding: const EdgeInsets.only(bottom: 9), child: _neonPanel(Row(children: [
+              Icon(selected ? Icons.check_circle_rounded : Icons.dns_rounded, color: tint, size: 23),
+              const SizedBox(width: 10),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(node.displayName, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: selected ? green : Colors.white, fontWeight: FontWeight.w800, fontSize: 11)),
+                const SizedBox(height: 4),
+                Text(node.subTag + ' • ' + (_hostPort(node.baseUri)?.key ?? 'unknown host'), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white.withValues(alpha: 0.42), fontSize: 9)),
+              ])),
+              const SizedBox(width: 7),
+              Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                Text(node.pingText, style: TextStyle(color: node.pingColor, fontSize: 10, fontWeight: FontWeight.w900)),
+                Text(selected ? 'SELECTED' : 'SELECT', style: TextStyle(color: tint, fontSize: 8)),
+              ]),
+            ]), accent: tint, onTap: () {
+              setState(() => _selUri = node.baseUri);
+              _saveSelection(node.baseUri);
+              _snack('Selected ' + node.displayName);
+            })));
+          }),
+      ]),
+    );
+  }
+
+  Widget _feedsScreen() {
+    return SingleChildScrollView(
+      key: const ValueKey('feeds'),
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _screenHeader('FEED CONTROL', 'Subscriptions', magenta, meta: _subs.length.toString() + ' FEEDS'),
+        _neonPanel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('SECURE IMPORT PIPELINE', style: TextStyle(color: magenta, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.4)),
+          const SizedBox(height: 8),
+          Text('Feeds must use HTTPS. Subscription links may contain access credentials, so treat them like passwords.', style: TextStyle(color: Colors.white.withValues(alpha: 0.58), fontSize: 11, height: 1.5)),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(child: ElevatedButton.icon(onPressed: _openSubs, icon: const Icon(Icons.add_link_rounded), label: const Text('MANAGE FEEDS'))),
+            const SizedBox(width: 8),
+            Expanded(child: OutlinedButton.icon(onPressed: _loading ? null : _syncAll, icon: const Icon(Icons.sync_rounded), label: const Text('SYNC NOW'), style: OutlinedButton.styleFrom(foregroundColor: cyan, side: BorderSide(color: cyan.withValues(alpha: 0.5))))),
+          ]),
+        ]), accent: magenta),
+        const SizedBox(height: 18),
+        _screenHeader('CONFIGURED SOURCES', 'Feed inventory', cyan),
+        if (_subs.isEmpty)
+          _neonPanel(Column(children: [
+            const Icon(Icons.rss_feed_rounded, color: amber, size: 34),
+            const SizedBox(height: 9),
+            const Text('NO FEEDS CONFIGURED', style: TextStyle(color: amber, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 8),
+            const Text('Add a trusted subscription URL to import server profiles.', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF9DA6B8), fontSize: 11)),
+            const SizedBox(height: 12),
+            ElevatedButton(onPressed: _openSubs, child: const Text('ADD FIRST FEED')),
+          ]), accent: amber)
+        else
+          ..._subs.asMap().entries.map((entry) => Padding(padding: const EdgeInsets.only(bottom: 9), child: _neonPanel(Row(children: [
+            const Icon(Icons.rss_feed_rounded, color: magenta, size: 22),
+            const SizedBox(width: 11),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('FEED ' + (entry.key + 1).toString(), style: const TextStyle(color: cyan, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+              const SizedBox(height: 5),
+              Text(entry.value, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white.withValues(alpha: 0.72), fontSize: 10)),
+            ])),
+            Icon(Icons.lock_outline_rounded, color: green.withValues(alpha: 0.8), size: 17),
+          ]), accent: cyan))),
+        const SizedBox(height: 10),
+        _neonPanel(Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Icon(Icons.security_rounded, color: amber, size: 20),
+          const SizedBox(width: 10),
+          Expanded(child: Text('Only import feeds you trust. Avoid exposing subscription URLs in screenshots or logs.', style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 10, height: 1.5))),
+        ]), accent: amber),
+      ]),
+    );
+  }
+
+  Widget _toolsScreen() {
+    return SingleChildScrollView(
+      key: const ValueKey('tools'),
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _screenHeader('ENGINE ROOM', 'PATT-NG & WARP', green, meta: 'ADVANCED'),
+        _neonPanel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Icon(Icons.memory_rounded, color: green, size: 28),
+            const SizedBox(width: 12),
+            const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('PATT-NG CORE SETTINGS', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900)),
+              SizedBox(height: 5),
+              Text('Fingerprint, transport, DNS and packet options', style: TextStyle(color: Color(0xFF9DA6B8), fontSize: 10)),
+            ])),
+          ]),
+          const SizedBox(height: 13),
+          Wrap(spacing: 7, runSpacing: 7, children: [
+            _chip('FP', _patt.fp.toUpperCase(), magenta),
+            _chip('NET', _patt.network.toUpperCase(), cyan),
+            _chip('FRAG', _patt.frag.toUpperCase(), amber),
+            _chip('DNS', _patt.dnsMode.toUpperCase(), green),
+          ]),
+          const SizedBox(height: 13),
+          SizedBox(width: double.infinity, child: ElevatedButton.icon(onPressed: _openPatt, icon: const Icon(Icons.settings_ethernet_rounded), label: const Text('OPEN ADVANCED LAB'))),
+        ]), accent: green),
+        const SizedBox(height: 10),
+        _neonPanel(Row(children: [
+          const Icon(Icons.cloud_sync_rounded, color: cyan, size: 27),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('CLOUDFLARE WARP', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 4),
+            Text(_warpJson != null ? 'Registration data is present' : 'No WARP registration detected', style: TextStyle(color: Colors.white.withValues(alpha: 0.48), fontSize: 10)),
+          ])),
+          Text(_warpOn ? 'ENABLED' : 'DISABLED', style: TextStyle(color: _warpOn ? green : amber, fontSize: 8, fontWeight: FontWeight.w900)),
+        ]), accent: cyan),
+        const SizedBox(height: 10),
+        _quickAction(Icons.tune_rounded, 'Edit engine parameters', 'Open the full PATT-NG configuration', green, _openPatt),
+        _quickAction(Icons.dns_rounded, 'Server inventory', 'Review nodes and latency', cyan, () => setState(() => _activeTab = 1)),
+        _screenHeader('DEVICE STATUS', 'Diagnostics', amber),
+        _neonPanel(Column(children: [
+          _diagnosticRow('VPN CORE', _ready ? 'INITIALIZED' : 'STARTING / ERROR', _ready ? green : amber),
+          const Divider(color: Color(0x22FFFFFF), height: 22),
+          _diagnosticRow('SERVER INVENTORY', _nodes.length.toString() + ' NODE(S)', cyan),
+          const Divider(color: Color(0x22FFFFFF), height: 22),
+          _diagnosticRow('SUBSCRIPTION FEEDS', _subs.length.toString() + ' CONFIGURED', magenta),
+          const Divider(color: Color(0x22FFFFFF), height: 22),
+          _diagnosticRow('TUNNEL STATE', _connected ? 'CONNECTED' : (_connecting ? 'CONNECTING' : 'DISCONNECTED'), _connected ? green : (_connecting ? amber : cyan)),
+        ]), accent: amber),
+        const SizedBox(height: 14),
+        Text('ZEUS VPN • CYBERPUNK INTERFACE • VERIFICATION REQUIRED', textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 8, letterSpacing: 1)),
+      ]),
+    );
+  }
+
+  Widget _diagnosticRow(String label, String value, Color accent) => Row(children: [
+    Expanded(child: Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.48), fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 0.8))),
+    const SizedBox(width: 10),
+    Flexible(child: Text(value, textAlign: TextAlign.end, style: TextStyle(color: accent, fontSize: 10, fontWeight: FontWeight.w900))),
+  ]);
+
   @override
   Widget build(BuildContext context) {
     String selName = 'TAP TO SELECT';
@@ -1043,73 +1342,56 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       selPing = n.pingText;
       selPingC = n.pingColor;
     }
-
     return Scaffold(
       backgroundColor: background,
       body: Stack(children: [
         Positioned.fill(child: AnimatedBuilder(animation: _timeCtl, builder: (ctx, _) => CustomPaint(painter: _CyberP(_timeCtl.value)))),
-        Positioned.fill(child: IgnorePointer(child: AnimatedBuilder(animation: _timeCtl, builder: (ctx, _) => CustomPaint(painter: _ScanP(_timeCtl.value))))),
+        Positioned.fill(child: IgnorePointer(child: AnimatedBuilder(animation: _timeCtl, builder: (ctx, _) => CustomPaint(painter: _ScanP(_timeCtl.value)))),
         SafeArea(child: Column(children: [
-          const SizedBox(height: 18),
-          AnimatedBuilder(animation: _timeCtl, builder: (ctx, _) {
-            final g = sin(_timeCtl.value * 2 * pi * 2);
-            return Stack(children: [
-              if (g > 0.92) Transform.translate(offset: const Offset(2, 0), child: const Text('ZEUS VPN', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900, letterSpacing: 8, color: magenta))),
-              if (g < -0.92) Transform.translate(offset: const Offset(-2, 0), child: const Text('ZEUS VPN', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900, letterSpacing: 8, color: cyan))),
-              Text('ZEUS VPN', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900, letterSpacing: 8, color: Colors.white, shadows: [Shadow(color: cyan.withValues(alpha: 0.8), blurRadius: 12), Shadow(color: magenta.withValues(alpha: 0.6), blurRadius: 22)])),
-            ]);
-          }),
-          const SizedBox(height: 6),
-          Text('CYBERPUNK NEON // PATT-NG + WARP', style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 9, letterSpacing: 3)),
-          const SizedBox(height: 18),
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: Row(children: [
-            Expanded(child: GestureDetector(onTap: _openSubs, child: _box(Row(children: [
-              const Icon(Icons.layers, color: magenta, size: 18),
-              const SizedBox(width: 8),
-              const Text('SUBS', style: TextStyle(color: magenta, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 2)),
-              const Spacer(),
-              Text('${_subs.length}', style: const TextStyle(color: magenta, fontSize: 11, fontWeight: FontWeight.bold)),
-            ]), color: magenta, padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14)))),
-            const SizedBox(width: 10),
-            GestureDetector(onTap: _openPatt, child: _box(const Icon(Icons.tune, color: green, size: 20), color: green, padding: const EdgeInsets.all(12))),
-          ])),
-          const SizedBox(height: 12),
-          GestureDetector(onTap: _nodes.isEmpty ? () => _snack('Sync subs first!', err: true) : _openNodes, child: _box(Row(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.dns, color: cyan, size: 16),
-            const SizedBox(width: 8),
-            ConstrainedBox(constraints: const BoxConstraints(maxWidth: 160), child: Text(selName, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
-            if (selPing != '--') ...[
-              const SizedBox(width: 6),
-              Text(selPing, style: TextStyle(color: selPingC, fontSize: 10, fontWeight: FontWeight.bold)),
-            ],
-            const SizedBox(width: 6),
-            const Icon(Icons.expand_more, color: cyan, size: 16),
-          ]), color: cyan, radius: 30, padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10))),
-          const Spacer(),
-          GestureDetector(onTap: _toggle, child: ScaleTransition(scale: _connected ? _pulseAnim : const AlwaysStoppedAnimation(1.0), child: Stack(alignment: Alignment.center, children: [
-            RotationTransition(turns: _ringCtl, child: Container(width: 170, height: 170, decoration: BoxDecoration(shape: BoxShape.circle, gradient: SweepGradient(colors: _connected ? [green, Colors.transparent, green] : [cyan, Colors.transparent, cyan])))),
-            Container(width: 148, height: 148, decoration: BoxDecoration(shape: BoxShape.circle, color: background, border: Border.all(color: _connected ? green : (_connecting ? amber : cyan), width: 2), boxShadow: [BoxShadow(color: (_connected ? green : cyan).withValues(alpha: 0.35), blurRadius: 26, spreadRadius: 3)]), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(_connecting ? Icons.hourglass_top : Icons.power_settings_new, size: 44, color: _connected ? green : (_connecting ? amber : cyan)),
-              const SizedBox(height: 6),
-              Text(_connected ? _dur : (_connecting ? 'WAIT...' : 'CONNECT'), style: TextStyle(color: _connected ? green : (_connecting ? amber : cyan), fontSize: 12, letterSpacing: 2, fontWeight: FontWeight.bold)),
+          Padding(padding: const EdgeInsets.fromLTRB(20, 12, 20, 9), child: Row(children: [
+            Container(width: 42, height: 42, decoration: BoxDecoration(color: cyan.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(13), border: Border.all(color: cyan.withValues(alpha: 0.5)), boxShadow: [BoxShadow(color: cyan.withValues(alpha: 0.1), blurRadius: 18)]), child: const Icon(Icons.bolt_rounded, color: cyan, size: 26)),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('ZEUS VPN', style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900, letterSpacing: 3.2, shadows: [Shadow(color: cyan, blurRadius: 12)])),
+              const SizedBox(height: 3),
+              Text('CYBER OPERATIONS  //  PATT-NG', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 8, letterSpacing: 1.3)),
             ])),
-          ]))),
-          const Spacer(),
-          if (_connected) Padding(padding: const EdgeInsets.symmetric(horizontal: 24), child: _box(Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-            _stat('UP', _up, Icons.arrow_upward, magenta),
-            _stat('DOWN', _down, Icons.arrow_downward, cyan),
-            GestureDetector(onTap: _testing ? null : _speedTest, child: _stat('SPEED', _testing ? '...' : (_speed.isEmpty ? 'TEST' : _speed), Icons.speed, green)),
-          ]), color: amber)),
-          const SizedBox(height: 14),
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 24), child: _box(Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-            _chip('FP', _patt.fp.toUpperCase(), magenta),
-            _chip('FRAG', _patt.frag.toUpperCase(), cyan),
-            _chip('WARP', _warpOn ? 'ON' : 'OFF', green),
-            _chip('NET', _patt.network.toUpperCase(), amber),
-          ]), color: cyan, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10))),
-          const SizedBox(height: 24),
+            Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7), decoration: BoxDecoration(color: (_ready ? green : amber).withValues(alpha: 0.08), borderRadius: BorderRadius.circular(9), border: Border.all(color: (_ready ? green : amber).withValues(alpha: 0.35))), child: Row(children: [
+              Container(width: 6, height: 6, decoration: BoxDecoration(color: _ready ? green : amber, shape: BoxShape.circle)),
+              const SizedBox(width: 6),
+              Text(_ready ? 'READY' : 'BOOTING', style: TextStyle(color: _ready ? green : amber, fontSize: 8, fontWeight: FontWeight.w900, letterSpacing: 0.7)),
+            ])),
+          ])),
+          Container(height: 1, margin: const EdgeInsets.symmetric(horizontal: 20), color: cyan.withValues(alpha: 0.16)),
+          Expanded(child: AnimatedSwitcher(duration: const Duration(milliseconds: 240), child: switch (_activeTab) {
+            1 => _networkScreen(),
+            2 => _feedsScreen(),
+            3 => _toolsScreen(),
+            _ => _dashboard(selName, selPing, selPingC),
+          })),
         ])),
       ]),
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(color: const Color(0xFF060912), border: Border(top: BorderSide(color: cyan.withValues(alpha: 0.2))), boxShadow: [BoxShadow(color: cyan.withValues(alpha: 0.04), blurRadius: 18, offset: const Offset(0, -4))]),
+        child: BottomNavigationBar(
+          currentIndex: _activeTab,
+          onTap: (index) => setState(() => _activeTab = index),
+          type: BottomNavigationBarType.fixed,
+          backgroundColor: const Color(0xFF060912),
+          selectedItemColor: cyan,
+          unselectedItemColor: const Color(0xFF657084),
+          selectedFontSize: 9,
+          unselectedFontSize: 9,
+          showUnselectedLabels: true,
+          elevation: 0,
+          items: const [
+            BottomNavigationBarItem(icon: Icon(Icons.grid_view_rounded), label: 'DASH'),
+            BottomNavigationBarItem(icon: Icon(Icons.hub_outlined), activeIcon: Icon(Icons.hub_rounded), label: 'NODES'),
+            BottomNavigationBarItem(icon: Icon(Icons.rss_feed_rounded), label: 'FEEDS'),
+            BottomNavigationBarItem(icon: Icon(Icons.memory_rounded), label: 'TOOLS'),
+          ],
+        ),
+      ),
     );
   }
 
