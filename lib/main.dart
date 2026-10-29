@@ -869,6 +869,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             _snack('Registering WARP device...');
             final kp = genWarpKeys();
             final out = await registerWarp(kp);
+            if (!mounted) return;
             if (out == null) {
               _snack('WARP registration failed!', err: true);
             } else {
