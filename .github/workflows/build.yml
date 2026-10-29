@@ -27,8 +27,22 @@ jobs:
         run: flutter create --platforms=android .
       - name: Patch Android files
         run: python3 tools/patch_android.py
-      - name: Create keystore
-        run: rm -rf ~/.android && mkdir -p ~/.android && keytool -genkeypair -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname CN=Android,OU=Test,O=Test,C=US
+      - name: Stable keystore (fetch or create once)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p ~/.android ci
+          if [ -f ci/keystore.b64 ]; then
+            base64 -d ci/keystore.b64 > ~/.android/debug.keystore
+          else
+            keytool -genkeypair -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname CN=Android,OU=Test,O=Test,C=US
+            base64 -w0 ~/.android/debug.keystore > ci/keystore.b64
+            git config user.email "zeus-bot@users.noreply.github.com"
+            git config user.name "Zeus Bot"
+            git add ci/keystore.b64
+            git commit -m "chore: lock stable keystore [skip ci]"
+            git push "https://x-access-token:${GH_TOKEN}@github.com/abolboy/zeus_vpn_app.git" HEAD:main
+          fi
       - name: Pub get
         run: flutter pub get
       - name: Build APK
