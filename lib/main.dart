@@ -6,6 +6,7 @@ import 'package:flutter_v2ray_client/model/v2ray_status.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'warp.dart';
 
 const Color CYAN = Color(0xFF00F0FF);
 const Color MAGENTA = Color(0xFFFF007F);
@@ -83,7 +84,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   bool _ready = false;
   bool _loading = false;
   bool _connected = false;
+  bool _connecting = false;
+  bool _busy = false;
   bool _testing = false;
+  bool _warpOn = false;
+  String? _warpJson;
+  int _delayMode = 0;
   String _speed = '';
   String _up = '0 B/s';
   String _down = '0 B/s';
@@ -93,6 +99,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   late AnimationController _timeCtl;
   late AnimationController _pulseCtl;
   late AnimationController _ringCtl;
+  late Animation<double> _pulseAnim;
 
   @override
   void initState() {
@@ -100,14 +107,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _timeCtl = AnimationController(vsync: this, duration: const Duration(seconds: 6))..repeat();
     _pulseCtl = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat(reverse: true);
     _ringCtl = AnimationController(vsync: this, duration: const Duration(seconds: 4))..repeat();
+    _pulseAnim = Tween<double>(begin: 0.96, end: 1.04).animate(CurvedAnimation(parent: _pulseCtl, curve: Curves.easeInOut));
     _v2ray = V2ray(onStatusChanged: (V2RayStatus s) {
       if (mounted) {
         setState(() {
-          _connected = s.state == 'CONNECTED';
+          final st = (s.state ?? '').toString().toUpperCase();
+          _connected = st == 'CONNECTED';
+          _connecting = st == 'CONNECTING' || st == 'CONNECT';
           _up = _fmt(s.uploadSpeed);
           _down = _fmt(s.downloadSpeed);
           _dur = _connected ? (s.duration ?? '00:00:00') : '00:00:00';
-          if (!_connected) _speed = '';
+          if (!_connected && !_connecting) _speed = '';
         });
       }
     });
@@ -122,6 +132,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final p = await SharedPreferences.getInstance();
     _subs = p.getStringList('subs') ?? [];
     _selUri = p.getString('sel');
+    _warpOn = p.getBool('warp_on') ?? false;
+    _warpJson = p.getString('warp_json');
+    if (_warpJson != null && _warpJson!.isEmpty) _warpJson = null;
     _loadPatt(p);
     setState(() => _ready = true);
     if (_subs.isNotEmpty) _syncAll();
@@ -188,6 +201,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     await p.setString('p_net', _patt.network);
   }
 
+  Future<void> _saveWarp() async {
+    final p = await SharedPreferences.getInstance();
+    await p.setBool('warp_on', _warpOn);
+    await p.setString('warp_json', _warpJson ?? '');
+  }
+
   String _fmt(int bps) {
     if (bps < 1024) return '$bps B/s';
     if (bps < 1048576) return '${(bps / 1024).toStringAsFixed(1)} KB/s';
@@ -247,6 +266,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         json['dns'] = {'servers': ['https+local://1.1.1.1/dns-query', 'https+local://8.8.8.8/dns-query']};
       } else if (_patt.dnsMode == 'custom' && _patt.customDns.isNotEmpty) {
         json['dns'] = {'servers': _patt.customDns.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList()};
+      }
+      if (_warpOn && _warpJson != null && _warpJson!.isNotEmpty) {
+        final w = jsonDecode(_warpJson!) as Map<String, dynamic>;
+        final newOuts = <dynamic>[w];
+        if (_patt.bypassLan) {
+          newOuts.add({'tag': 'direct', 'protocol': 'freedom'});
+          json['routing'] = {'domainStrategy': 'AsIs', 'rules': [{'type': 'field', 'ip': ['geoip:private'], 'outboundTag': 'direct'}]};
+        }
+        json['outbounds'] = newOuts;
+        return jsonEncode(json);
       }
       if (_patt.mux) main['mux'] = {'enabled': true, 'concurrency': int.tryParse(_patt.muxConc) ?? 8};
       if (_patt.frag != 'none' || _patt.noise) {
@@ -314,8 +343,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   Future<void> _pingAll() async {
+    final c = _delayMode == 1 ? 4 : 20;
     final q = List<ServerNode>.from(_nodes);
-    await Future.wait(List.generate(20, (_) async {
+    await Future.wait(List.generate(c, (_) async {
       while (q.isNotEmpty) {
         final n = q.removeAt(0);
         await _pingOne(n);
@@ -324,6 +354,29 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   Future<void> _pingOne(ServerNode n) async {
+    if (_delayMode == 1) {
+      try {
+        final parser = V2ray.parseFromURL(n.rawUri);
+        final ms = await _v2ray.getServerDelay(config: parser.getFullConfiguration());
+        if (ms <= 0) throw Exception('timeout');
+        if (mounted) {
+          setState(() {
+            n.pingText = '$ms ms';
+            n.pingColor = ms < 200 ? GREEN : (ms < 500 ? AMBER : MAGENTA);
+          });
+          _refreshNodes?.call();
+        }
+      } catch (_) {
+        if (mounted) {
+          setState(() {
+            n.pingText = 'TIMEOUT';
+            n.pingColor = MAGENTA;
+          });
+          _refreshNodes?.call();
+        }
+      }
+      return;
+    }
     try {
       final u = Uri.parse(n.rawUri);
       if (u.port == 0) throw Exception('no port');
@@ -370,23 +423,38 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   Future<void> _toggle() async {
-    if (!_ready) return;
-    if (_connected) {
-      await _v2ray.stopV2Ray();
+    if (!_ready) {
+      _snack('Core is initializing...', err: true);
       return;
     }
-    if (_selUri == null) {
-      _snack('First select a node.', err: true);
+    if (_busy) return;
+    if (_connecting) {
+      _snack('Already connecting, wait...');
       return;
     }
-    final ok = await _v2ray.requestPermission();
-    if (!ok) {
-      _snack('VPN permission denied.', err: true);
-      return;
+    _busy = true;
+    try {
+      if (_connected) {
+        await _v2ray.stopV2Ray();
+      } else {
+        if (_selUri == null) {
+          _snack('First select a node.', err: true);
+          return;
+        }
+        final ok = await _v2ray.requestPermission();
+        if (!ok) {
+          _snack('VPN permission denied.', err: true);
+          return;
+        }
+        final parser = V2ray.parseFromURL(_selUri!);
+        final config = _injectCore(parser.getFullConfiguration());
+        await _v2ray.startV2Ray(remark: parser.remark, config: config, proxyOnly: false);
+      }
+    } catch (_) {
+      _snack('Core error, try again.', err: true);
+    } finally {
+      _busy = false;
     }
-    final parser = V2ray.parseFromURL(_selUri!);
-    final config = _injectCore(parser.getFullConfiguration());
-    await _v2ray.startV2Ray(remark: parser.remark, config: config, proxyOnly: false);
   }
 
   void _snack(String m, {bool err = false}) {
@@ -416,6 +484,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         child: child,
       );
     });
+  }
+
+  Widget _pill(IconData ic, String label, Color c, VoidCallback on) {
+    return GestureDetector(onTap: on, child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(color: c.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(10), border: Border.all(color: c.withValues(alpha: 0.5))),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(ic, color: c, size: 14),
+        const SizedBox(width: 6),
+        Text(label, style: TextStyle(color: c, fontSize: 10, fontWeight: FontWeight.bold)),
+      ]),
+    ));
   }
 
   Widget _dd(String label, List<String> items, String cur, void Function(String) on) {
@@ -466,11 +546,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           const Text('NODE CENTER', style: TextStyle(color: CYAN, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 3)),
           const SizedBox(width: 8),
           Text('${vis.length}/${_nodes.length}', style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 10)),
-          const Spacer(),
-          IconButton(icon: const Icon(Icons.sort, color: AMBER, size: 20), onPressed: () => setMs(() => sort = (sort + 1) % 3)),
-          IconButton(icon: const Icon(Icons.network_ping, color: GREEN, size: 20), onPressed: _pingAll),
-          IconButton(icon: const Icon(Icons.refresh, color: CYAN, size: 20), onPressed: _syncAll),
         ])),
+        Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Wrap(spacing: 8, runSpacing: 8, children: [
+          _pill(Icons.refresh, 'SYNC', CYAN, _syncAll),
+          _pill(Icons.network_ping, 'PING ALL', GREEN, _pingAll),
+          _pill(Icons.sort, sort == 0 ? 'SORT: AUTO' : (sort == 1 ? 'SORT: PING' : 'SORT: NAME'), AMBER, () => setMs(() => sort = (sort + 1) % 3)),
+          _pill(Icons.timer_outlined, _delayMode == 0 ? 'DELAY: TCP' : 'DELAY: REAL', MAGENTA, () => setMs(() => _delayMode = _delayMode == 0 ? 1 : 0)),
+        ])),
+        const SizedBox(height: 10),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: TextField(style: const TextStyle(color: Colors.white, fontSize: 13), onChanged: (v) => setMs(() => q = v), decoration: InputDecoration(hintText: 'SEARCH NODE...', hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.25), fontSize: 12), prefixIcon: const Icon(Icons.search, color: CYAN, size: 18), filled: true, fillColor: Colors.white.withValues(alpha: 0.04), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))))),
         const SizedBox(height: 10),
         SizedBox(height: 34, child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16), children: tags.map((t) {
@@ -554,6 +637,24 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         Container(width: 54, height: 4, decoration: BoxDecoration(color: GREEN.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(8))),
         const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text('PATT-NG CORE', style: TextStyle(color: GREEN, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 3))),
         Expanded(child: ListView(padding: const EdgeInsets.symmetric(horizontal: 20), children: [
+          _sw('WARP (Cloudflare WireGuard)', _warpOn, (v) {
+            setMs(() => _warpOn = v);
+            _saveWarp();
+          }),
+          if (_warpJson != null) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text('WARP device: REGISTERED', style: TextStyle(color: GREEN, fontSize: 10, fontWeight: FontWeight.bold))),
+          if (_warpOn && _warpJson == null) Padding(padding: const EdgeInsets.only(bottom: 14), child: SizedBox(width: double.infinity, height: 44, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: CYAN.withValues(alpha: 0.1), side: const BorderSide(color: CYAN)), onPressed: () async {
+            _snack('Registering WARP device...');
+            final kp = genWarpKeys();
+            final out = await registerWarp(kp);
+            if (out == null) {
+              _snack('WARP registration failed!', err: true);
+            } else {
+              setState(() => _warpJson = jsonEncode(out));
+              _saveWarp();
+              _snack('WARP registered!');
+            }
+            setMs(() {});
+          }, child: const Text('REGISTER WARP DEVICE', style: TextStyle(color: CYAN, fontWeight: FontWeight.bold, letterSpacing: 1))))),
           _dd('FINGERPRINT', ['unsafe', 'chrome', 'firefox', 'safari', 'randomized', 'randomizednoalpn'], _patt.fp, (v) {
             setMs(() => _patt.fp = v);
             _savePatt();
@@ -703,7 +804,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ]);
           }),
           const SizedBox(height: 6),
-          Text('CYBERPUNK NEON // PATT-NG CORE', style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 9, letterSpacing: 3)),
+          Text('CYBERPUNK NEON // PATT-NG + WARP', style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 9, letterSpacing: 3)),
           const SizedBox(height: 18),
           Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: Row(children: [
             Expanded(child: GestureDetector(onTap: _openSubs, child: _box(Row(children: [
@@ -729,12 +830,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             const Icon(Icons.expand_more, color: CYAN, size: 16),
           ]), color: CYAN, radius: 30, padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10))),
           const Spacer(),
-          GestureDetector(onTap: _toggle, child: ScaleTransition(scale: _connected ? Tween<double>(begin: 0.96, end: 1.04).animate(CurvedAnimation(parent: _pulseCtl, curve: Curves.easeInOut)) : const AlwaysStoppedAnimation(1.0), child: Stack(alignment: Alignment.center, children: [
+          GestureDetector(onTap: _toggle, child: ScaleTransition(scale: _connected ? _pulseAnim : const AlwaysStoppedAnimation(1.0), child: Stack(alignment: Alignment.center, children: [
             RotationTransition(turns: _ringCtl, child: Container(width: 170, height: 170, decoration: BoxDecoration(shape: BoxShape.circle, gradient: SweepGradient(colors: _connected ? [GREEN, Colors.transparent, GREEN] : [CYAN, Colors.transparent, CYAN])))),
-            Container(width: 148, height: 148, decoration: BoxDecoration(shape: BoxShape.circle, color: BG, border: Border.all(color: _connected ? GREEN : CYAN, width: 2), boxShadow: [BoxShadow(color: (_connected ? GREEN : CYAN).withValues(alpha: 0.35), blurRadius: 26, spreadRadius: 3)]), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(Icons.power_settings_new, size: 44, color: _connected ? GREEN : CYAN),
+            Container(width: 148, height: 148, decoration: BoxDecoration(shape: BoxShape.circle, color: BG, border: Border.all(color: _connected ? GREEN : (_connecting ? AMBER : CYAN), width: 2), boxShadow: [BoxShadow(color: (_connected ? GREEN : CYAN).withValues(alpha: 0.35), blurRadius: 26, spreadRadius: 3)]), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(_connecting ? Icons.hourglass_top : Icons.power_settings_new, size: 44, color: _connected ? GREEN : (_connecting ? AMBER : CYAN)),
               const SizedBox(height: 6),
-              Text(_connected ? _dur : 'CONNECT', style: TextStyle(color: _connected ? GREEN : CYAN, fontSize: 12, letterSpacing: 2, fontWeight: FontWeight.bold)),
+              Text(_connected ? _dur : (_connecting ? 'WAIT...' : 'CONNECT'), style: TextStyle(color: _connected ? GREEN : (_connecting ? AMBER : CYAN), fontSize: 12, letterSpacing: 2, fontWeight: FontWeight.bold)),
             ])),
           ]))),
           const Spacer(),
@@ -747,7 +848,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           Padding(padding: const EdgeInsets.symmetric(horizontal: 24), child: _box(Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
             _chip('FP', _patt.fp.toUpperCase(), MAGENTA),
             _chip('FRAG', _patt.frag.toUpperCase(), CYAN),
-            _chip('CS', _patt.cs.isNotEmpty ? 'ON' : 'AUTO', GREEN),
+            _chip('WARP', _warpOn ? 'ON' : 'OFF', GREEN),
             _chip('NET', _patt.network.toUpperCase(), AMBER),
           ]), color: CYAN, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10))),
           const SizedBox(height: 24),
