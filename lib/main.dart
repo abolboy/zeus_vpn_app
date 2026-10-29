@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_v2ray_client/flutter_v2ray.dart';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:math';
 import 'warp.dart';
 
@@ -85,7 +86,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     connectTimeout: const Duration(seconds: 8),
     receiveTimeout: const Duration(seconds: 20),
     maxRedirects: 5,
-    maxResponseContentLength: 10 * 1024 * 1024,
   ));
   List<String> _subs = [];
   List<ServerNode> _nodes = [];
@@ -473,19 +473,36 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           failedSubscriptions++;
           continue;
         }
-        final response = await _dio.get(
+        final response = await _dio.get<ResponseBody>(
           subscriptionUri.toString(),
           options: Options(
             headers: {'User-Agent': 'v2rayNG/1.8.5'},
-            responseType: ResponseType.plain,
+            responseType: ResponseType.stream,
           ),
         );
+        final responseBody = response.data;
+        if (responseBody == null) {
+          failedSubscriptions++;
+          continue;
+        }
         if (response.realUri.scheme != 'https') {
+          await responseBody.stream.drain<void>();
           failedSubscriptions++;
           continue;
         }
 
-        var body = response.data.toString().trim();
+        // Bound memory use even when a subscription endpoint returns a huge body.
+        const maxSubscriptionBytes = 10 * 1024 * 1024;
+        final bodyBytes = BytesBuilder(copy: false);
+        var receivedBytes = 0;
+        await for (final chunk in responseBody.stream) {
+          receivedBytes += chunk.length;
+          if (receivedBytes > maxSubscriptionBytes) {
+            throw const FormatException('Subscription response exceeds 10 MiB.');
+          }
+          bodyBytes.add(chunk);
+        }
+        var body = utf8.decode(bodyBytes.takeBytes()).trim();
         final compact = body.replaceAll(RegExp(r'\s'), '');
         try {
           body = utf8.decode(base64.decode(base64.normalize(compact)));
