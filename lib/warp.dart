@@ -63,6 +63,14 @@ Uint8List x25519(Uint8List kIn, Uint8List uIn) {
   return _int2le((x2 * inv) % _p255, 32);
 }
 
+/// Ensures a WireGuard interface address has exactly one CIDR suffix.
+/// Cloudflare responses may already include the prefix.
+String normalizeWarpInterfaceAddress(String address, int prefixLength) {
+  final value = address.trim();
+  if (value.isEmpty) return value;
+  return value.contains('/') ? value : '$value/$prefixLength';
+}
+
 class WarpKeys {
   final String priv;
   final String pub;
@@ -98,7 +106,13 @@ Future<Map<String, dynamic>?> registerWarp(WarpKeys kp) async {
     final d = res.data as Map<String, dynamic>;
     final cfg = d['config'] as Map<String, dynamic>;
     final iface = cfg['interface'] as Map<String, dynamic>;
-    final addr = (iface['addresses'] as Map<String, dynamic>)['v4'] as String;
+    final interfaceAddresses = iface['addresses'] as Map<String, dynamic>;
+    final addr = interfaceAddresses['v4'] as String;
+    final addresses = <String>[normalizeWarpInterfaceAddress(addr, 32)];
+    final addrV6 = interfaceAddresses['v6'] as String?;
+    if (addrV6 != null && addrV6.trim().isNotEmpty) {
+      addresses.add(normalizeWarpInterfaceAddress(addrV6, 128));
+    }
     final peer = (cfg['peers'] as List)[0] as Map<String, dynamic>;
     final peerPub = peer['public_key'] as String;
     final ep = peer['endpoint'] as Map<String, dynamic>;
@@ -128,7 +142,7 @@ Future<Map<String, dynamic>?> registerWarp(WarpKeys kp) async {
       'protocol': 'wireguard',
       'settings': {
         'secretKey': kp.priv,
-        'address': ['$addr/32'],
+        'address': addresses,
         'peers': [
           {'publicKey': peerPub, 'endpoint': endpoint, 'allowedIPs': ['0.0.0.0/0', '::/0']}
         ],
