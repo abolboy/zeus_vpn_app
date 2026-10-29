@@ -209,6 +209,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final legacySelection = p.getString('sel');
     _warpOn = p.getBool('warp_on') ?? false;
 
+    // Establish legacy fallbacks first. If one secure-storage operation fails
+    // midway through migration, keep any values already loaded from secure
+    // storage instead of resetting the whole in-memory state.
+    _subs = legacySubs;
+    _selUri = legacySelection;
+    _warpJson = p.getString('warp_json');
+
     // Subscription URLs can contain bearer credentials, selected node URIs
     // contain server credentials, and WARP config contains a private key.
     // Migrate these values to Android Keystore-backed encrypted storage.
@@ -243,10 +250,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       }
       await p.remove('warp_json');
     } catch (_) {
+      // Keep the legacy fallbacks and any secure values already loaded.
       // Do not erase legacy values when migration cannot complete.
-      _subs = legacySubs;
-      _selUri = legacySelection;
-      _warpJson = p.getString('warp_json');
       _snack('Secure storage unavailable; private settings migration needs attention.', err: true);
     }
     if (_warpJson != null && _warpJson!.isEmpty) _warpJson = null;
