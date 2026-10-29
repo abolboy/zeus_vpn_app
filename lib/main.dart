@@ -65,7 +65,7 @@ class ServerNode {
 }
 
 class Patt {
-  String fp = 'unsafe';
+  String fp = 'chrome';
   String cs = '';
   String pcs = '';
   String vcn = '';
@@ -890,7 +890,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           Expanded(child: Text(_subs[i], style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis)),
           IconButton(icon: const Icon(Icons.delete_outline, color: magenta, size: 20), onPressed: () {
             setState(() => _subs.removeAt(i));
-            SharedPreferences.getInstance().then((p) => p.setStringList('subs', _subs));
+            _saveSubscriptions();
             setMs(() {});
           }),
         ])))),
