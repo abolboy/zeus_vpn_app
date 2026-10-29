@@ -29,7 +29,7 @@ Uint8List x25519(Uint8List kIn, Uint8List uIn) {
   k[31] &= 127;
   k[31] |= 64;
   final e = _le2int(k);
-  final u = _le2int(uIn) % _p255;
+  final u = (_le2int(uIn) & ((BigInt.one << 255) - BigInt.one)) % _p255;
   BigInt x1 = u, x2 = BigInt.one, z2 = BigInt.zero, x3 = u, z3 = BigInt.one;
   int swap = 0;
   for (int t = 254; t >= 0; t--) {
@@ -51,7 +51,7 @@ Uint8List x25519(Uint8List kIn, Uint8List uIn) {
     x3 = (DA + CB) % _p255;
     x3 = x3.modPow(BigInt.two, _p255);
     z3 = (DA - CB) % _p255;
-    z3 = z3.modPow(BigInt.two, _p255);
+    z3 = (x1 * z3.modPow(BigInt.two, _p255)) % _p255;
     x2 = (AA * BB) % _p255;
     z2 = (E * ((AA + _a24 * E) % _p255)) % _p255;
   }
@@ -102,13 +102,25 @@ Future<Map<String, dynamic>?> registerWarp(WarpKeys kp) async {
     final peer = (cfg['peers'] as List)[0] as Map<String, dynamic>;
     final peerPub = peer['public_key'] as String;
     final ep = peer['endpoint'] as Map<String, dynamic>;
-    String endpoint = (ep['v4'] as String?) ?? '';
-    if (endpoint.isEmpty) endpoint = '${ep['host']}:2408';
+    // Cloudflare returns v4 as "IP:0"; the real WireGuard port comes from "host" (2408).
+    final hostStr = (ep['host'] as String?) ?? '';
+    final hostName = hostStr.contains(':') ? hostStr.substring(0, hostStr.lastIndexOf(':')) : hostStr;
+    var port = hostStr.contains(':') ? (int.tryParse(hostStr.substring(hostStr.lastIndexOf(':') + 1)) ?? 2408) : 2408;
+    if (port == 0) port = 2408;
+    final v4Str = (ep['v4'] as String?) ?? '';
+    final v4Ip = v4Str.contains(':') ? v4Str.substring(0, v4Str.lastIndexOf(':')) : v4Str;
+    final epHost = v4Ip.isNotEmpty ? v4Ip : (hostName.isNotEmpty ? hostName : 'engage.cloudflareclient.com');
+    final endpoint = '$epHost:$port';
     List<int> reserved = [];
     try {
-      final cid = cfg['client_ids'];
-      if (cid is List && cid.isNotEmpty) {
-        reserved = base64.decode(cid[0] as String).toList();
+      // Cloudflare returns a single base64 string in "client_id" (3 bytes).
+      String? cid = cfg['client_id'] as String?;
+      if (cid == null || cid.isEmpty) {
+        final ids = cfg['client_ids'];
+        if (ids is List && ids.isNotEmpty) cid = ids[0] as String?;
+      }
+      if (cid != null && cid.isNotEmpty) {
+        reserved = base64.decode(base64.normalize(cid)).toList();
       }
     } catch (_) {}
     return {
