@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_v2ray_client/flutter_v2ray.dart';
-import 'package:flutter_v2ray_client/model/v2ray_status.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -34,9 +33,10 @@ class ServerNode {
   final String subTag;
   final String rawUri;
   final String displayName;
+  final String baseUri;
   String pingText;
   Color pingColor;
-  ServerNode({required this.subTag, required this.rawUri, required this.displayName, this.pingText = '--', this.pingColor = Colors.grey});
+  ServerNode({required this.subTag, required this.rawUri, required this.displayName, required this.baseUri, this.pingText = '--', this.pingColor = Colors.grey});
 }
 
 class Patt {
@@ -125,10 +125,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   Future<void> _boot() async {
-    await _v2ray.initialize(
-      notificationIconResourceType: "mipmap",
-      notificationIconResourceName: "ic_launcher",
-    );
     final p = await SharedPreferences.getInstance();
     _subs = p.getStringList('subs') ?? [];
     _selUri = p.getString('sel');
@@ -136,7 +132,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _warpJson = p.getString('warp_json');
     if (_warpJson != null && _warpJson!.isEmpty) _warpJson = null;
     _loadPatt(p);
-    setState(() => _ready = true);
+    var coreOk = true;
+    try {
+      await _v2ray.initialize(
+        notificationIconResourceType: "mipmap",
+        notificationIconResourceName: "ic_launcher",
+      );
+    } catch (_) {
+      coreOk = false;
+    }
+    if (!mounted) return;
+    setState(() => _ready = coreOk);
+    if (!coreOk) _snack('Core failed to initialize.', err: true);
     if (_subs.isNotEmpty) _syncAll();
   }
 
@@ -215,8 +222,44 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   int _ms(ServerNode n) => int.tryParse(n.pingText.replaceAll(' ms', '').trim()) ?? 999999;
 
+  Map<String, dynamic>? _vmess(String uri) {
+    try {
+      final b = uri.substring('vmess://'.length).split('#').first.trim();
+      List<int> bytes;
+      try {
+        bytes = base64.decode(base64.normalize(b));
+      } catch (_) {
+        bytes = base64Url.decode(base64Url.normalize(b));
+      }
+      return jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  MapEntry<String, int>? _hostPort(String uri) {
+    try {
+      if (uri.startsWith('vmess://')) {
+        final j = _vmess(uri);
+        if (j == null) return null;
+        return MapEntry(j['add'].toString(), int.tryParse(j['port'].toString()) ?? 0);
+      }
+      final u = Uri.parse(uri);
+      return MapEntry(u.host, u.port);
+    } catch (_) {
+      return null;
+    }
+  }
+
   String _name(String uri) {
     try {
+      if (uri.startsWith('vmess://')) {
+        final j = _vmess(uri);
+        if (j != null) {
+          final ps = (j['ps'] ?? '').toString();
+          return ps.isNotEmpty ? ps : '${j['add']}:${j['port']}';
+        }
+      }
       final u = Uri.parse(uri);
       if (u.fragment.isNotEmpty) return Uri.decodeComponent(u.fragment);
       return '${u.host}:${u.port}';
@@ -238,9 +281,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         q['sid'] = _patt.sid;
         q['spx'] = _patt.spx;
       }
-      if (u.scheme == 'vless' && _patt.network == 'tcp' && _patt.flow.isNotEmpty && _patt.flow != 'none') {
+      final netNow = _patt.network != 'tcp' ? _patt.network : (q['type'] ?? 'tcp');
+      final secNow = q['security'] ?? 'none';
+      if (u.scheme == 'vless' && netNow == 'tcp' && (secNow == 'tls' || secNow == 'reality') && _patt.flow.isNotEmpty && _patt.flow != 'none') {
         q['flow'] = _patt.flow;
-      } else {
+      } else if (netNow != 'tcp') {
         q.remove('flow');
       }
       if (_patt.alpn.isNotEmpty) q['alpn'] = _patt.alpn;
@@ -283,7 +328,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         if (_patt.frag != 'none') {
           fs['fragment'] = {'packets': _patt.frag.startsWith('tlshello') ? 'tlshello' : _patt.frag, 'length': _patt.fragLen, 'interval': _patt.fragInt};
         }
-        if (_patt.noise) fs['noise'] = {'type': _patt.noiseType, 'packet': _patt.noisePacket, 'delay': _patt.noiseDelay};
+        if (_patt.noise) fs['noises'] = [{'type': _patt.noiseType, 'packet': _patt.noisePacket, 'delay': _patt.noiseDelay}];
         final stream = (main['streamSettings'] as Map<String, dynamic>?) ?? <String, dynamic>{};
         final sock = (stream['sockopt'] as Map<String, dynamic>?) ?? <String, dynamic>{};
         sock['dialerProxy'] = 'zeus-frag';
@@ -303,7 +348,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   Future<void> _syncAll() async {
-    if (_subs.isEmpty) return;
+    if (_subs.isEmpty) {
+      setState(() {
+        _nodes = [];
+        _selUri = null;
+      });
+      _refreshNodes?.call();
+      return;
+    }
     final prev = _selUri;
     setState(() {
       _loading = true;
@@ -313,25 +365,31 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     for (int i = 0; i < _subs.length; i++) {
       final tag = 'SUB-${i + 1}';
       try {
-        final res = await _dio.get(_subs[i], options: Options(headers: {'User-Agent': 'v2rayNG/1.8.5'}));
+        final res = await _dio.get(_subs[i], options: Options(headers: {'User-Agent': 'v2rayNG/1.8.5'}, responseType: ResponseType.plain));
         String body = res.data.toString().trim();
+        final compact = body.replaceAll(RegExp(r'\s'), '');
         try {
-          body = utf8.decode(base64.decode(base64.normalize(body)));
-        } catch (_) {}
+          body = utf8.decode(base64.decode(base64.normalize(compact)));
+        } catch (_) {
+          try {
+            body = utf8.decode(base64Url.decode(base64Url.normalize(compact)));
+          } catch (_) {}
+        }
         for (final raw in body.split('\n').map((e) => e.trim())) {
           if (raw.startsWith('vless://') || raw.startsWith('trojan://') || raw.startsWith('vmess://')) {
             final link = raw.startsWith('vmess://') ? raw : _injectQuery(raw);
-            got.add(ServerNode(subTag: tag, rawUri: link, displayName: '[$tag] ${_name(link)}'));
+            got.add(ServerNode(subTag: tag, rawUri: link, baseUri: raw, displayName: '[$tag] ${_name(raw)}'));
           }
         }
       } catch (_) {}
     }
+    if (!mounted) return;
     setState(() {
       _nodes = got;
-      if (prev != null && _nodes.any((n) => n.rawUri == prev)) {
+      if (prev != null && _nodes.any((n) => n.baseUri == prev)) {
         _selUri = prev;
       } else if (_nodes.isNotEmpty) {
-        _selUri = _nodes.first.rawUri;
+        _selUri = _nodes.first.baseUri;
       } else {
         _selUri = null;
       }
@@ -378,10 +436,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       return;
     }
     try {
-      final u = Uri.parse(n.rawUri);
-      if (u.port == 0) throw Exception('no port');
+      final hp = _hostPort(n.rawUri);
+      if (hp == null || hp.value == 0) throw Exception('no port');
       final sw = Stopwatch()..start();
-      final s = await Socket.connect(u.host, u.port, timeout: const Duration(seconds: 3));
+      final s = await Socket.connect(hp.key, hp.value, timeout: const Duration(seconds: 3));
       sw.stop();
       s.destroy();
       if (mounted) {
@@ -437,8 +495,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       if (_connected) {
         await _v2ray.stopV2Ray();
       } else {
-        if (_selUri == null) {
-          _snack('First select a node.', err: true);
+        final idx = _nodes.indexWhere((n) => n.baseUri == _selUri);
+        if (idx < 0) {
+          _snack(_loading ? 'Syncing nodes, wait...' : 'First select a node.', err: true);
           return;
         }
         final ok = await _v2ray.requestPermission();
@@ -446,7 +505,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           _snack('VPN permission denied.', err: true);
           return;
         }
-        final parser = V2ray.parseFromURL(_selUri!);
+        final parser = V2ray.parseFromURL(_nodes[idx].rawUri);
         final config = _injectCore(parser.getFullConfiguration());
         await _v2ray.startV2Ray(remark: parser.remark, config: config, proxyOnly: false);
       }
@@ -458,6 +517,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   void _snack(String m, {bool err = false}) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m, style: const TextStyle(color: Colors.white)), backgroundColor: err ? MAGENTA : GREEN, behavior: SnackBarBehavior.floating));
   }
 
@@ -502,6 +562,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     return Padding(padding: const EdgeInsets.only(bottom: 14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10, fontWeight: FontWeight.bold)),
       DropdownButtonFormField<String>(
+        key: ValueKey('dd_$label'),
         value: items.contains(cur) ? cur : items.first,
         dropdownColor: GLASS,
         style: const TextStyle(color: Colors.white, fontSize: 13),
@@ -516,6 +577,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   Widget _tf(String label, String cur, void Function(String) on) {
     return Padding(padding: const EdgeInsets.only(bottom: 14), child: TextFormField(
+      key: ValueKey('tf_$label'),
       initialValue: cur,
       style: const TextStyle(color: Colors.white, fontSize: 13),
       decoration: InputDecoration(labelText: label, labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10), filled: true, fillColor: Colors.white.withValues(alpha: 0.04), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))),
@@ -524,7 +586,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   Widget _sw(String label, bool val, void Function(bool) on) {
-    return SwitchListTile(contentPadding: EdgeInsets.zero, title: Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 13)), value: val, onChanged: on);
+    return SwitchListTile(key: ValueKey('sw_$label'), contentPadding: EdgeInsets.zero, title: Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 13)), value: val, onChanged: on);
   }
 
   void _openNodes() {
@@ -562,10 +624,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         }).toList())),
         Expanded(child: vis.isEmpty ? Center(child: Text('NO NODES', style: TextStyle(color: Colors.white.withValues(alpha: 0.3)))) : ListView.builder(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), itemCount: vis.length, itemBuilder: (ctx, i) {
           final n = vis[i];
-          final sel = n.rawUri == _selUri;
+          final sel = n.baseUri == _selUri;
           return GestureDetector(onTap: () {
-            setState(() => _selUri = n.rawUri);
-            SharedPreferences.getInstance().then((p) => p.setString('sel', n.rawUri));
+            setState(() => _selUri = n.baseUri);
+            SharedPreferences.getInstance().then((p) => p.setString('sel', n.baseUri));
             setMs(() {});
             Navigator.pop(ctx);
           }, child: Container(margin: const EdgeInsets.only(bottom: 8), padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: sel ? CYAN.withValues(alpha: 0.12) : Colors.white.withValues(alpha: 0.03), borderRadius: BorderRadius.circular(12), border: Border.all(color: sel ? CYAN : Colors.white.withValues(alpha: 0.06))), child: Row(children: [
@@ -598,7 +660,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           const SizedBox(width: 8),
           IconButton(icon: const Icon(Icons.add_circle, color: GREEN, size: 26), onPressed: () {
             final v = ctl.text.trim();
-            if (!v.startsWith('http')) {
+            final su = Uri.tryParse(v);
+            if (su == null || !(su.scheme == 'http' || su.scheme == 'https') || su.host.isEmpty) {
               _snack('Invalid URL!', err: true);
               return;
             }
@@ -782,7 +845,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     if (_loading) {
       selName = 'SYNCING...';
     } else if (_selUri != null && _nodes.isNotEmpty) {
-      final n = _nodes.firstWhere((e) => e.rawUri == _selUri, orElse: () => _nodes.first);
+      final n = _nodes.firstWhere((e) => e.baseUri == _selUri, orElse: () => _nodes.first);
       selName = n.displayName;
       selPing = n.pingText;
       selPingC = n.pingColor;
