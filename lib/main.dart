@@ -95,6 +95,53 @@ class Patt {
   String network = 'tcp';
 }
 
+/// Applies optional PATT-NG overrides without silently replacing fields
+/// already present in an imported share URI.
+String applyPattQuery(String uri, Patt patt) {
+  try {
+    final u = Uri.parse(uri);
+    final q = Map<String, String>.from(u.queryParameters);
+    q['fp'] = patt.fp;
+    if (patt.cs.isNotEmpty) q['cs'] = patt.cs;
+    if (patt.pcs.isNotEmpty) q['pcs'] = patt.pcs;
+    if (patt.vcn.isNotEmpty) q['vcn'] = patt.vcn;
+    // flutter_v2ray_client 3.5.0 removed allowInsecure; never carry an
+    // obsolete TLS-verification bypass into the effective share URI.
+    q.remove('allowInsecure');
+    if (patt.reality) {
+      q['security'] = 'reality';
+      q['pbk'] = patt.pbk;
+      q['sid'] = patt.sid;
+      q['spx'] = patt.spx;
+    }
+    final netNow = patt.network != 'tcp' ? patt.network : (q['type'] ?? 'tcp');
+    final secNow = q['security'] ?? 'none';
+    if (u.scheme == 'vless' && netNow == 'tcp' && (secNow == 'tls' || secNow == 'reality')) {
+      if (patt.flow == 'xtls-rprx-vision') {
+        q['flow'] = patt.flow;
+      } else if (patt.flow == 'none') {
+        q.remove('flow');
+      }
+    } else {
+      // Flow is only valid for VLESS over TCP with TLS or REALITY.
+      q.remove('flow');
+    }
+    if (patt.alpn == 'none') {
+      q.remove('alpn');
+    } else if (patt.alpn.isNotEmpty && patt.alpn != 'preserve') {
+      q['alpn'] = patt.alpn;
+    }
+    if (patt.sni.isNotEmpty) q['sni'] = patt.sni;
+    if (patt.path.isNotEmpty && patt.path != '/') q['path'] = patt.path;
+    if (patt.host.isNotEmpty) q['host'] = patt.host;
+    if (patt.headerType != 'none') q['headerType'] = patt.headerType;
+    if (patt.network.isNotEmpty && patt.network != 'tcp') q['type'] = patt.network;
+    return u.replace(queryParameters: q).toString();
+  } catch (_) {
+    return uri;
+  }
+}
+
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
   @override
@@ -377,50 +424,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
   }
 
-  String _injectQuery(String uri) {
-    try {
-      final u = Uri.parse(uri);
-      final q = Map<String, String>.from(u.queryParameters);
-      q['fp'] = _patt.fp;
-      if (_patt.cs.isNotEmpty) q['cs'] = _patt.cs;
-      if (_patt.pcs.isNotEmpty) q['pcs'] = _patt.pcs;
-      if (_patt.vcn.isNotEmpty) q['vcn'] = _patt.vcn;
-      // flutter_v2ray_client 3.5.0 removed allowInsecure; never carry an
-      // obsolete TLS-verification bypass into the effective share URI.
-      q.remove('allowInsecure');
-      if (_patt.reality) {
-        q['security'] = 'reality';
-        q['pbk'] = _patt.pbk;
-        q['sid'] = _patt.sid;
-        q['spx'] = _patt.spx;
-      }
-      final netNow = _patt.network != 'tcp' ? _patt.network : (q['type'] ?? 'tcp');
-      final secNow = q['security'] ?? 'none';
-      if (u.scheme == 'vless' && netNow == 'tcp' && (secNow == 'tls' || secNow == 'reality')) {
-        if (_patt.flow == 'xtls-rprx-vision') {
-          q['flow'] = _patt.flow;
-        } else if (_patt.flow == 'none') {
-          q.remove('flow');
-        }
-      } else {
-        // Flow is only valid for VLESS over TCP with TLS or REALITY.
-        q.remove('flow');
-      }
-      if (_patt.alpn == 'none') {
-        q.remove('alpn');
-      } else if (_patt.alpn.isNotEmpty && _patt.alpn != 'preserve') {
-        q['alpn'] = _patt.alpn;
-      }
-      if (_patt.sni.isNotEmpty) q['sni'] = _patt.sni;
-      if (_patt.path.isNotEmpty && _patt.path != '/') q['path'] = _patt.path;
-      if (_patt.host.isNotEmpty) q['host'] = _patt.host;
-      if (_patt.headerType != 'none') q['headerType'] = _patt.headerType;
-      if (_patt.network.isNotEmpty && _patt.network != 'tcp') q['type'] = _patt.network;
-      return u.replace(queryParameters: q).toString();
-    } catch (_) {
-      return uri;
-    }
-  }
+  String _injectQuery(String uri) => applyPattQuery(uri, _patt);
 
   String _injectCore(String config) {
     final json = jsonDecode(config) as Map<String, dynamic>;
