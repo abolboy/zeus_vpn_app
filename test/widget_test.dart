@@ -18,6 +18,13 @@ void main() {
     );
     expect(safeFeed, isNot(contains('private-token')));
     expect(safeFeed, contains('[subscription URL redacted]'));
+    final safeJson = sanitizeCoreLogLine(
+      '{"secretKey":"warp-private","access_token":"api-private"}',
+    );
+    expect(safeJson, isNot(contains('warp-private')));
+    expect(safeJson, isNot(contains('api-private')));
+    expect(safeJson, contains('secretKey=[redacted]'));
+    expect(safeJson, contains('access_token=[redacted]'));
   });
 
   group('WARP profile validation', () {
