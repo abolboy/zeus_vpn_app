@@ -1496,7 +1496,7 @@ class _HomePageState extends State<HomePage>
   Future<void> _testCoreDelay() async {
     if (!mounted || _testingDelay) return;
     final index = _nodes.indexWhere((node) => node.baseUri == _selUri);
-    if (index < 0) {
+    if (!_connected && index < 0) {
       _snack('Select and sync a server before testing core latency.', err: true);
       return;
     }
@@ -1506,9 +1506,14 @@ class _HomePageState extends State<HomePage>
       _coreDelay = '...';
     });
     try {
-      final parser = V2ray.parseFromURL(_nodes[index].rawUri);
-      final config = _injectCore(parser.getFullConfiguration());
-      final milliseconds = await _v2ray.getServerDelay(config: config);
+      final milliseconds = _connected
+          ? await _v2ray.getConnectedServerDelay()
+          : await _v2ray.getServerDelay(
+              config: _injectCore(
+                V2ray.parseFromURL(_nodes[index].rawUri)
+                    .getFullConfiguration(),
+              ),
+            );
       if (!mounted) return;
       if (milliseconds <= 0) {
         setState(() => _coreDelay = 'TIMEOUT');
