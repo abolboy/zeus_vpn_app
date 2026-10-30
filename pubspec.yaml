@@ -12,6 +12,7 @@ dependencies:
   
   # هسته اتصال
   flutter_v2ray_client: 3.5.0
+  cryptography: ^2.9.0
   
   # شبکه و ذخیره‌سازی
   dio: ^5.4.0
