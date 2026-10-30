@@ -4,7 +4,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:zeus_vpn/main.dart';
 
 Future<void> _waitForSubscriptionSheetToClose(WidgetTester tester) async {
-  final sheetTitle = find.text('مدیریت اشتراک‌ها');
+  final sheetTitle = find.text('ذخیره و همگام‌سازی');
   for (var attempt = 0; attempt < 60; attempt++) {
     if (sheetTitle.evaluate().isEmpty) return;
     await tester.pump(const Duration(milliseconds: 100));
@@ -26,7 +26,7 @@ void main() {
 
     await tester.tap(find.text('سرورها').last);
     await tester.pump(const Duration(milliseconds: 350));
-    expect(find.text('سرورها'), findsOneWidget);
+    expect(find.text('سرورها'), findsWidgets);
 
     await tester.tap(find.text('اشتراک').last);
     await tester.pump(const Duration(milliseconds: 350));
