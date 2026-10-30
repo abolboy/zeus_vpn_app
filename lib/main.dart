@@ -429,8 +429,8 @@ class _HomePageState extends State<HomePage>
       if (mounted) {
         setState(() {
           final st = s.state.toString().toUpperCase();
-          _connected = st == 'متصل';
-          _connecting = st == 'در حال اتصال' || st == 'CONNECT';
+          _connected = st == 'CONNECTED';
+          _connecting = st == 'CONNECTING' || st == 'CONNECT';
           _up = _fmt(s.uploadSpeed);
           _down = _fmt(s.downloadSpeed);
           _dur = _connected ? s.duration : '00:00:00';
