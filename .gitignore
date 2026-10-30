@@ -13,5 +13,11 @@ android/key.properties
 android/app/*.jks
 android/app/*.keystore
 
-# Never commit a keystore export
+# Never commit Android signing material or password-bearing Gradle properties.
+*.jks
+*.keystore
+*.p12
+*.pfx
+key.properties
+release.properties
 ci/keystore.b64
