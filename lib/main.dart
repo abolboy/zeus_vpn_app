@@ -1381,6 +1381,10 @@ class _HomePageState extends State<HomePage>
                 if (!mounted || !ctx.mounted || !subscriptionsSaved || !directUrisSaved) {
                   return false;
                 }
+                // Close the keyboard while the sheet's TextField is still mounted.
+                // This avoids leaving the platform text-input connection active
+                // after the modal route and its controller have been disposed.
+                FocusScope.of(ctx).unfocus();
                 Navigator.of(ctx).pop();
                 await _syncAll();
                 return true;
