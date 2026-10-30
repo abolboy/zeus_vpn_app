@@ -95,6 +95,55 @@ class Patt {
   String network = 'preserve';
 }
 
+/// Returns a user-facing validation error for a direct VLESS, Trojan, or
+/// VMess share URI. This is intentionally local and does not connect to hosts.
+String? directShareUriError(String value) {
+  final raw = value.trim();
+  final uri = Uri.tryParse(raw);
+  if (uri == null || raw.isEmpty) {
+    return 'Enter a valid VLESS, Trojan, or VMess link.';
+  }
+
+  final scheme = uri.scheme.toLowerCase();
+  if (scheme == 'vless' || scheme == 'trojan') {
+    if (uri.host.isEmpty || !uri.hasPort || uri.port < 1 || uri.port > 65535) {
+      return 'The server address or port is invalid.';
+    }
+    if (uri.userInfo.trim().isEmpty) {
+      return scheme == 'vless'
+          ? 'The VLESS user ID is missing.'
+          : 'The Trojan password is missing.';
+    }
+    return null;
+  }
+
+  if (scheme == 'vmess') {
+    final encoded = raw.substring('vmess://'.length).split('#').first.trim();
+    if (encoded.isEmpty) return 'The VMess profile is empty.';
+    try {
+      List<int> bytes;
+      try {
+        bytes = base64.decode(base64.normalize(encoded));
+      } catch (_) {
+        bytes = base64Url.decode(base64Url.normalize(encoded));
+      }
+      final decoded = jsonDecode(utf8.decode(bytes));
+      if (decoded is! Map) return 'The VMess profile is not valid JSON.';
+      final host = (decoded['add'] ?? '').toString().trim();
+      final port = int.tryParse((decoded['port'] ?? '').toString()) ?? 0;
+      final id = (decoded['id'] ?? '').toString().trim();
+      if (host.isEmpty || port < 1 || port > 65535 || id.isEmpty) {
+        return 'The VMess profile needs a server, valid port, and user ID.';
+      }
+      return null;
+    } catch (_) {
+      return 'The VMess profile could not be decoded.';
+    }
+  }
+
+  return 'Only VLESS, Trojan, and VMess links are supported here.';
+}
+
 /// Applies optional PATT-NG overrides without silently replacing fields
 /// already present in an imported share URI.
 String applyPattQuery(String uri, Patt patt) {
@@ -197,11 +246,13 @@ class _SubscriptionSheetState extends State<_SubscriptionSheet> {
 
     final scheme = parsed.scheme.toLowerCase();
     final isDirect = const ['vless', 'trojan', 'vmess'].contains(scheme);
-    if (isDirect && scheme != 'vmess' && parsed.host.isEmpty) {
-      widget.onValidationError('The server link is incomplete or invalid.');
-      return;
-    }
-    if (!isDirect && (scheme != 'https' || parsed.host.isEmpty)) {
+    if (isDirect) {
+      final validationError = directShareUriError(value);
+      if (validationError != null) {
+        widget.onValidationError(validationError);
+        return;
+      }
+    } else if (scheme != 'https' || parsed.host.isEmpty) {
       widget.onValidationError(
         'Only HTTPS subscriptions or VLESS/Trojan/VMess links are supported.',
       );
@@ -447,7 +498,8 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
+class _HomePageState extends State<HomePage>
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   final Dio _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 8),
     receiveTimeout: const Duration(seconds: 20),
@@ -459,6 +511,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   String? _selUri;
   final Patt _patt = Patt();
   bool _ready = false;
+  bool _appInForeground = true;
   bool _loading = false;
   int _syncEpoch = 0;
   int _activeTab = 0;
@@ -483,10 +536,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    _timeCtl = AnimationController(vsync: this, duration: const Duration(seconds: 6))..repeat();
-    _pulseCtl = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat(reverse: true);
-    _ringCtl = AnimationController(vsync: this, duration: const Duration(seconds: 4))..repeat();
+    _timeCtl = AnimationController(vsync: this, duration: const Duration(seconds: 6));
+    _pulseCtl = AnimationController(vsync: this, duration: const Duration(seconds: 2));
+    _ringCtl = AnimationController(vsync: this, duration: const Duration(seconds: 4));
     _pulseAnim = Tween<double>(begin: 0.96, end: 1.04).animate(CurvedAnimation(parent: _pulseCtl, curve: Curves.easeInOut));
+    WidgetsBinding.instance.addObserver(this);
     _v2ray = V2ray(onStatusChanged: (V2RayStatus s) {
       if (mounted) {
         setState(() {
@@ -498,9 +552,40 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           _dur = _connected ? s.duration : '00:00:00';
           if (!_connected && !_connecting) _speed = '';
         });
+        _syncMotionState();
       }
     });
+    _syncMotionState();
     _boot();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appInForeground = state == AppLifecycleState.resumed;
+    _syncMotionState();
+  }
+
+  void _syncMotionState() {
+    final shouldAnimate = _appInForeground && _activeTab == 0;
+    if (shouldAnimate) {
+      if (!_timeCtl.isAnimating) _timeCtl.repeat();
+      if (!_ringCtl.isAnimating) _ringCtl.repeat();
+      if (_connected) {
+        if (!_pulseCtl.isAnimating) _pulseCtl.repeat(reverse: true);
+      } else {
+        _pulseCtl.stop();
+      }
+    } else {
+      _timeCtl.stop();
+      _ringCtl.stop();
+      _pulseCtl.stop();
+    }
+  }
+
+  void _setActiveTab(int index) {
+    if (!mounted || index == _activeTab) return;
+    setState(() => _activeTab = index);
+    _syncMotionState();
   }
 
   Future<void> _boot() async {
@@ -706,6 +791,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   int _ms(ServerNode n) => int.tryParse(n.pingText.replaceAll(' ms', '').trim()) ?? 999999;
 
   Map<String, dynamic>? _vmess(String uri) {
+    if (directShareUriError(uri) != null) return null;
     try {
       final b = uri.substring('vmess://'.length).split('#').first.trim();
       List<int> bytes;
@@ -714,7 +800,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       } catch (_) {
         bytes = base64Url.decode(base64Url.normalize(b));
       }
-      return jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+      return Map<String, dynamic>.from(jsonDecode(utf8.decode(bytes)) as Map);
     } catch (_) {
       return null;
     }
@@ -814,6 +900,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
     // Work from a stable snapshot while the user can still edit subscriptions.
     final subscriptions = List<String>.from(_subs);
+    final directUris = List<String>.from(_directUris);
     final previousSelection = _selUri;
     setState(() {
       _loading = true;
@@ -821,8 +908,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
     final foundNodes = <ServerNode>[];
     final seenNodeUris = <String>{};
-    for (var i = 0; i < _directUris.length; i++) {
-      final raw = _directUris[i];
+    for (var i = 0; i < directUris.length; i++) {
+      final raw = directUris[i];
       if (!seenNodeUris.add(raw)) continue;
       foundNodes.add(ServerNode(subTag: 'DIRECT', rawUri: raw.startsWith('vmess://') ? raw : _injectQuery(raw), baseUri: raw, displayName: '[DIRECT] ${_name(raw)}'));
     }
@@ -913,7 +1000,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
     // A transient outage must not erase a previously working server list.
     // Only replace the inventory after at least one feed completed successfully.
-    if (subscriptions.isNotEmpty && failedSubscriptions == subscriptions.length && _directUris.isEmpty) {
+    if (subscriptions.isNotEmpty && failedSubscriptions == subscriptions.length && directUris.isEmpty) {
       setState(() => _loading = false);
       _refreshNodes?.call();
       _snack('Unable to load subscriptions. Keeping the previous server list.', err: true);
@@ -1083,6 +1170,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _syncEpoch++;
     _timeCtl.dispose();
     _pulseCtl.dispose();
     _ringCtl.dispose();
@@ -1490,12 +1579,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             Text(_selUri == null ? 'No server selected — add a feed' : 'Tap to open node control center', style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 10)),
           ])),
           if (ping != '--') Text(ping, style: TextStyle(color: pingColor, fontWeight: FontWeight.w900, fontSize: 10)),
-        ]), accent: cyan, onTap: () => setState(() => _activeTab = 1)),
+        ]), accent: cyan, onTap: () => _setActiveTab(1)),
         const SizedBox(height: 20),
         _screenHeader('QUICK ACCESS', 'Cyber control deck', magenta),
-        _quickAction(Icons.hub_rounded, 'Node control center', 'Search, latency and server selection', cyan, () => setState(() => _activeTab = 1)),
-        _quickAction(Icons.rss_feed_rounded, 'Subscription manager', '${_subs.length} secure feed(s) configured', magenta, () => setState(() => _activeTab = 2)),
-        _quickAction(Icons.memory_rounded, 'PATT-NG / WARP lab', 'Fingerprint, DNS and tunnel parameters', green, () => setState(() => _activeTab = 3)),
+        _quickAction(Icons.hub_rounded, 'Node control center', 'Search, latency and server selection', cyan, () => _setActiveTab(1)),
+        _quickAction(Icons.rss_feed_rounded, 'Subscription manager', '${_subs.length} secure feed(s) configured', magenta, () => _setActiveTab(2)),
+        _quickAction(Icons.memory_rounded, 'PATT-NG / WARP lab', 'Fingerprint, DNS and tunnel parameters', green, () => _setActiveTab(3)),
         Wrap(spacing: 7, runSpacing: 7, children: [
           _pill(Icons.fingerprint_rounded, 'FP: ${_patt.fp.toUpperCase()}', magenta, _openPatt),
           _pill(Icons.alt_route_rounded, 'NET: ${_patt.network.toUpperCase()}', cyan, _openPatt),
@@ -1530,7 +1619,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             const SizedBox(height: 8),
             Text(_subs.isEmpty ? 'Add an HTTPS subscription to populate this list.' : 'Sync subscriptions and verify the feed URLs.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 11)),
             const SizedBox(height: 12),
-            ElevatedButton(onPressed: () => setState(() => _activeTab = 2), child: const Text('MANAGE FEEDS')),
+            ElevatedButton(onPressed: () => _setActiveTab(2), child: const Text('MANAGE FEEDS')),
           ]), accent: amber)
         else
           ..._nodes.map((node) {
@@ -1650,7 +1739,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ]), accent: cyan),
         const SizedBox(height: 10),
         _quickAction(Icons.tune_rounded, 'Edit engine parameters', 'Open the full PATT-NG configuration', green, _openPatt),
-        _quickAction(Icons.dns_rounded, 'Server inventory', 'Review nodes and latency', cyan, () => setState(() => _activeTab = 1)),
+        _quickAction(Icons.dns_rounded, 'Server inventory', 'Review nodes and latency', cyan, () => _setActiveTab(1)),
         _screenHeader('DEVICE STATUS', 'Diagnostics', amber),
         _neonPanel(Column(children: [
           _diagnosticRow('VPN CORE', _ready ? 'INITIALIZED' : 'STARTING / ERROR', _ready ? green : amber),
@@ -1684,7 +1773,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           color: Colors.transparent,
           child: InkWell(
             borderRadius: BorderRadius.circular(16),
-            onTap: () => setState(() => _activeTab = index),
+            onTap: () => _setActiveTab(index),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 220),
               curve: Curves.easeOutCubic,
