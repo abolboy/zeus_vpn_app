@@ -359,9 +359,54 @@ String? pattConfigurationError(String serverUri, Patt patt) {
       (!validRange(patt.fragLen) || !validRange(patt.fragInt))) {
     return 'Fragment length and interval must be valid ranges such as 100-200.';
   }
-  if (patt.noise &&
-      (!validRange(patt.noisePacket) || !validRange(patt.noiseDelay))) {
-    return 'Noise packet and delay must be valid ranges such as 10-20.';
+  if (patt.noise) {
+    if (!validRange(patt.noiseDelay)) {
+      return 'Noise delay must be a valid range such as 10-20.';
+    }
+
+    final payload = patt.noisePacket.trim();
+    bool validPayload = false;
+    switch (patt.noiseType) {
+      case 'rand':
+        validPayload = validRange(payload);
+        break;
+      case 'str':
+        validPayload = payload.isNotEmpty && utf8.encode(payload).length <= 1024;
+        break;
+      case 'hex':
+        validPayload = payload.isNotEmpty &&
+            payload.length.isEven &&
+            payload.length <= 2048 &&
+            RegExp(r'^[0-9a-fA-F]+$').hasMatch(payload);
+        break;
+      case 'base64':
+        if (payload.isNotEmpty && payload.length <= 2048) {
+          try {
+            final decoded = base64.decode(base64.normalize(payload));
+            validPayload = decoded.isNotEmpty && decoded.length <= 1024;
+          } catch (_) {
+            try {
+              final decoded = base64Url.decode(base64Url.normalize(payload));
+              validPayload = decoded.isNotEmpty && decoded.length <= 1024;
+            } catch (_) {
+              validPayload = false;
+            }
+          }
+        }
+        break;
+      default:
+        validPayload = false;
+    }
+
+    if (!validPayload) {
+      return switch (patt.noiseType) {
+        'rand' => 'Random noise packet must be a valid range such as 10-20.',
+        'str' => 'String noise payload must contain 1–1024 UTF-8 bytes.',
+        'hex' => 'Hex noise payload must contain an even number of hexadecimal characters.',
+        'base64' => 'Base64 noise payload must decode to 1–1024 bytes.',
+        _ => 'Unsupported noise type.',
+      };
+    }
   }
   if (patt.mux) {
     final concurrency = int.tryParse(patt.muxConc) ?? 0;
@@ -1753,7 +1798,10 @@ class _HomePageState extends State<HomePage>
               setMs(() => _patt.noiseType = v);
               _savePatt();
             }),
-            _tf('NOISE PACKET', _patt.noisePacket, (v) {
+            _tf(
+              _patt.noiseType == 'rand' ? 'NOISE LENGTH RANGE' : 'NOISE PAYLOAD',
+              _patt.noisePacket,
+              (v) {
               _patt.noisePacket = v;
               _savePatt();
             }),
