@@ -42,6 +42,7 @@ jobs:
       - name: Verify Android security and branding
         run: |
           python3 - <<'PY'
+          import subprocess
           import xml.etree.ElementTree as ET
           from pathlib import Path
 
@@ -61,7 +62,31 @@ jobs:
           }
           assert "android.permission.INTERNET" in permissions, "INTERNET permission missing"
           assert "android.permission.FOREGROUND_SERVICE" in permissions, "Foreground service permission missing"
-          print("Android manifest, secure-storage backup policy, and ZEUS branding verified.")
+
+          tracked = subprocess.run(
+              ["git", "ls-files", "-z"],
+              check=True,
+              capture_output=True,
+              text=True,
+          ).stdout.split("\\0")
+          forbidden_exact = {
+              "ci/keystore.b64",
+              "key.properties",
+              "android/key.properties",
+              "android/app/key.properties",
+              "release.properties",
+          }
+          forbidden_suffixes = (".jks", ".keystore", ".p12", ".pfx")
+          signing_files = [
+              item for item in tracked
+              if item in forbidden_exact
+              or Path(item).name.lower() in {"key.properties", "release.properties"}
+              or item.lower().endswith(forbidden_suffixes)
+          ]
+          assert not signing_files, (
+              "Signing material must never be committed: " + ", ".join(signing_files)
+          )
+          print("Android manifest, secure-storage backup policy, ZEUS branding, and signing-material exclusion verified.")
           PY
 
       - name: Resolve dependencies
