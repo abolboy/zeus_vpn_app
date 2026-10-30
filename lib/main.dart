@@ -115,9 +115,14 @@ String subscriptionDisplayLabel(String value) {
 
 /// Redacts common credential-bearing values before diagnostic logs are shown.
 String sanitizeCoreLogLine(String value) {
-  final withoutShareUris = value.replaceAll(
-    RegExp(r'(vless|trojan|vmess)://[^\s]+', caseSensitive: false),
-    '[share URI redacted]',
+  final withoutShareUris = value.replaceAllMapped(
+    RegExp(r'(https?|vless|trojan|vmess)://[^\s]+', caseSensitive: false),
+    (match) {
+      final scheme = match.group(1)?.toLowerCase();
+      return scheme == 'http' || scheme == 'https'
+          ? '[subscription URL redacted]'
+          : '[share URI redacted]';
+    },
   );
   return withoutShareUris.replaceAll(
     RegExp(
@@ -1562,7 +1567,7 @@ class _HomePageState extends State<HomePage>
                 border: Border.all(color: amber.withValues(alpha: 0.35)),
               ),
               child: const Text(
-                'WARP-ONLY MODE: the WARP outbound replaces the selected VLESS/Trojan/VMess outbound. Server transport, REALITY, Vision, fragmentation, noise and MUX overrides are not applied. DNS, log level and optional LAN bypass still apply.',
+                'WARP-ONLY MODE: select a valid profile to provide the local core layout, but its VLESS/Trojan/VMess server outbound is replaced by WARP. This is not WARP-plus-proxy chaining. Server transport, REALITY, Vision, fragmentation, noise and MUX overrides are ignored; DNS, log level and optional LAN bypass still apply.',
                 style: TextStyle(color: amber, fontSize: 10, height: 1.45),
               ),
             ),
@@ -2176,9 +2181,9 @@ class _HomePageState extends State<HomePage>
             const SizedBox(height: 4),
             Text(
               _warpOn
-                  ? 'WARP-only mode: this replaces the selected proxy outbound.'
+                  ? 'WARP-only egress is active; the selected server outbound is bypassed.'
                   : (_warpJson != null
-                      ? 'Registration data is ready; enable WARP to use it.'
+                      ? 'WARP registration is ready; enabling it switches to WARP-only mode.'
                       : 'No WARP registration detected'),
               style: TextStyle(color: Colors.white.withValues(alpha: 0.48), fontSize: 10),
             ),
