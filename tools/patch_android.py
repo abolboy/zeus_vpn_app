@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 
 def p(*parts):
@@ -29,6 +30,15 @@ def patch_manifest():
             insert += '    <uses-permission android:name="' + perm + '" />\n'
     if insert and "<application" in text:
         text = text.replace("<application", insert + "    <application", 1)
+    if 'android:label=' in text:
+        text = re.sub(
+            r'android:label="[^"]*"',
+            'android:label="ZEUS VPN"',
+            text,
+            count=1,
+        )
+    elif "<application" in text:
+        text = text.replace("<application", '<application android:label="ZEUS VPN"', 1)
     if "android:extractNativeLibs" not in text and "<application" in text:
         text = text.replace("<application", '<application android:extractNativeLibs="true"', 1)
     if text != original:
