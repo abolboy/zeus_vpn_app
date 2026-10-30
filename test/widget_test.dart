@@ -5,6 +5,16 @@ import 'package:flutter_v2ray_client/flutter_v2ray.dart';
 import 'package:zeus_vpn/main.dart';
 
 void main() {
+  test('sanitizes credential-bearing values from core logs', () {
+    final safe = sanitizeCoreLogLine(
+      'failed vless://user:secret@example.com:443 token=super-secret',
+    );
+    expect(safe, isNot(contains('user:secret')));
+    expect(safe, isNot(contains('super-secret')));
+    expect(safe, contains('[share URI redacted]'));
+    expect(safe, contains('token=[redacted]'));
+  });
+
   group('PATT-NG preflight validation', () {
     test('requires valid VLESS TCP REALITY parameters', () {
       final key = base64Url.encode(List<int>.filled(32, 7));
