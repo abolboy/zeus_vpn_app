@@ -74,7 +74,7 @@ void main() {
 
     // The sheet is dismissed while its input had focus. Its controller must
     // remain alive until the sheet subtree has actually left the widget tree.
-    expect(find.text('SUBSCRIPTIONS'), findsNothing);
+    expect(find.text('ذخیره و همگام‌سازی'), findsNothing);
     expect(tester.takeException(), isNull,
         reason: 'Closing the subscription sheet must not use a disposed controller.');
 
@@ -97,11 +97,11 @@ void main() {
     await tester.tap(find.text('اشتراک').last);
     await tester.pump(const Duration(milliseconds: 500));
 
-    final addFeed = find.text('ADD FIRST FEED');
+    final addFeed = find.text('افزودن اشتراک');
     if (addFeed.evaluate().isNotEmpty) {
       await tester.tap(addFeed.first);
     } else {
-      await tester.tap(find.text('MANAGE FEEDS').first);
+      await tester.tap(find.text('مدیریت اشتراک‌ها').first);
     }
     await tester.pump(const Duration(milliseconds: 500));
 
@@ -113,9 +113,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('NODE 1'), findsOneWidget);
-    await tester.tap(find.text('SAVE & SYNC'));
+    await tester.tap(find.text('ذخیره و همگام‌سازی'));
     await _waitForSubscriptionSheetToClose(tester);
-    expect(find.text('SUBSCRIPTIONS'), findsNothing);
+    expect(find.text('ذخیره و همگام‌سازی'), findsNothing);
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.text('سرورها').last);
