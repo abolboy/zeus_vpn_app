@@ -13,6 +13,11 @@ void main() {
     expect(safe, isNot(contains('super-secret')));
     expect(safe, contains('[share URI redacted]'));
     expect(safe, contains('token=[redacted]'));
+    final safeFeed = sanitizeCoreLogLine(
+      'request https://feeds.example/private-token?key=secret',
+    );
+    expect(safeFeed, isNot(contains('private-token')));
+    expect(safeFeed, contains('[subscription URL redacted]'));
   });
 
   group('WARP profile validation', () {
