@@ -39,6 +39,31 @@ jobs:
       - name: Patch Android files
         run: python3 tools/patch_android.py
 
+      - name: Verify Android security and branding
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          root_dir = Path("android/app/src/main")
+          manifest = ET.parse(root_dir / "AndroidManifest.xml").getroot()
+          android = "{http://schemas.android.com/apk/res/android}"
+          app = manifest.find("application")
+          assert app is not None, "Android application element is missing"
+          assert app.get(android + "allowBackup") == "false", "Secure storage backup must be disabled"
+          assert app.get(android + "label") == "ZEUS VPN", "Application label is not branded"
+          assert app.get(android + "icon") == "@drawable/zeus_app_icon", "ZEUS launcher icon is not configured"
+          assert (root_dir / "res/drawable/zeus_app_icon.xml").is_file(), "ZEUS icon vector is missing"
+          assert (root_dir / "res/drawable/launch_background.xml").is_file(), "ZEUS splash background is missing"
+          permissions = {
+              element.get(android + "name")
+              for element in manifest.findall("uses-permission")
+          }
+          assert "android.permission.INTERNET" in permissions, "INTERNET permission missing"
+          assert "android.permission.FOREGROUND_SERVICE" in permissions, "Foreground service permission missing"
+          print("Android manifest, secure-storage backup policy, and ZEUS branding verified.")
+          PY
+
       - name: Resolve dependencies
         run: flutter pub get
 
