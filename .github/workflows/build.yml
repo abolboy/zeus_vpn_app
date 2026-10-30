@@ -27,21 +27,21 @@ jobs:
         run: flutter create --platforms=android .
       - name: Patch Android files
         run: python3 tools/patch_android.py
-      - name: Stable keystore (fetch or create once)
+      - name: Signing keystore
         env:
-          GH_TOKEN: ${{ github.token }}
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
         run: |
-          mkdir -p ~/.android ci
-          if [ -f ci/keystore.b64 ]; then
+          set -euo pipefail
+          mkdir -p ~/.android
+          if [ -n "${KEYSTORE_B64:-}" ]; then
+            echo "Using keystore from the KEYSTORE_B64 repository secret"
+            echo "$KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
+          elif [ -f ci/keystore.b64 ]; then
+            echo "::warning::Signing with the keystore committed in this public repo (ci/keystore.b64). Anyone can sign an APK with this key. Move it to a secret named KEYSTORE_B64 and delete the file."
             base64 -d ci/keystore.b64 > ~/.android/debug.keystore
           else
-            keytool -genkeypair -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname CN=Android,OU=Test,O=Test,C=US
-            base64 -w0 ~/.android/debug.keystore > ci/keystore.b64
-            git config user.email "zeus-bot@users.noreply.github.com"
-            git config user.name "Zeus Bot"
-            git add ci/keystore.b64
-            git commit -m "chore: lock stable keystore [skip ci]"
-            git push "https://x-access-token:${GH_TOKEN}@github.com/abolboy/zeus_vpn_app.git" HEAD:main
+            echo "::warning::No keystore found. Using a one-off key for this build only; updates will not install over older builds. Add the KEYSTORE_B64 secret for a stable signature."
+            keytool -genkeypair -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android,OU=Test,O=Test,C=US"
           fi
       - name: Pub get
         run: flutter pub get
@@ -55,7 +55,15 @@ jobs:
       - name: Publish direct APK to Releases
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_NO: ${{ github.run_number }}
         run: |
-          REL=$(curl -s -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/abolboy/zeus_vpn_app/releases -d "{\"tag_name\":\"build-${{ github.run_number }}\",\"name\":\"ZEUS VPN Build ${{ github.run_number }}\"}")
+          set -euo pipefail
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          REL=$(curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$REPO/releases" -d "{\"tag_name\":\"build-$RUN_NO\",\"name\":\"ZEUS VPN Build $RUN_NO\"}")
           ID=$(echo "$REL" | jq -r .id)
-          curl -s -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Content-Type: application/vnd.android.package-archive" --data-binary @build/app/outputs/flutter-apk/app-release.apk "https://uploads.github.com/repos/abolboy/zeus_vpn_app/releases/$ID/assets?name=ZEUS-VPN.apk"
+          if [ -z "$ID" ] || [ "$ID" = "null" ]; then
+            echo "Release creation failed: $REL"
+            exit 1
+          fi
+          curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Content-Type: application/vnd.android.package-archive" --data-binary @"$APK" "https://uploads.github.com/repos/$REPO/releases/$ID/assets?name=ZEUS-VPN.apk" > /dev/null
