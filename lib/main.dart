@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -66,7 +67,7 @@ class _SubscriptionSheet extends StatefulWidget {
   final ValueChanged<int> onRemoveSubscription;
   final ValueChanged<int> onRemoveDirectUri;
   final ValueChanged<String> onValidationError;
-  final VoidCallback onSave;
+  final Future<bool> Function() onSave;
 
   const _SubscriptionSheet({
     required this.subscriptions,
@@ -86,6 +87,17 @@ class _SubscriptionSheet extends StatefulWidget {
 
 class _SubscriptionSheetState extends State<_SubscriptionSheet> {
   late final TextEditingController _inputController;
+  bool _saving = false;
+
+  Future<void> _saveAndSync() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      await widget.onSave();
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
 
   @override
   void initState() {
@@ -189,7 +201,7 @@ class _SubscriptionSheetState extends State<_SubscriptionSheet> {
                     onSubmitted: (_) => _addEntry(),
                     style: const TextStyle(color: Colors.white, fontSize: 12),
                     decoration: InputDecoration(
-                      hintText: 'https://...',
+                      hintText: 'HTTPS feed or single VLESS / Trojan / VMess link',
                       hintStyle: TextStyle(
                         color: Colors.white.withValues(alpha: 0.2),
                         fontSize: 11,
@@ -339,9 +351,9 @@ class _SubscriptionSheetState extends State<_SubscriptionSheet> {
                   backgroundColor: cyan.withValues(alpha: 0.1),
                   side: const BorderSide(color: cyan),
                 ),
-                onPressed: widget.onSave,
-                child: const Text(
-                  'SAVE & SYNC',
+                onPressed: _saving ? null : _saveAndSync,
+                child: Text(
+                  _saving ? 'SAVING...' : 'SAVE & SYNC',
                   style: TextStyle(
                     color: cyan,
                     fontWeight: FontWeight.bold,
@@ -379,6 +391,7 @@ class _HomePageState extends State<HomePage>
   bool _appInForeground = true;
   bool _loading = false;
   int _syncEpoch = 0;
+  Future<void> _storageWriteQueue = Future<void>.value();
   int _activeTab = 0;
   bool _connected = false;
   bool _connecting = false;
@@ -629,25 +642,47 @@ class _HomePageState extends State<HomePage>
     }
   }
 
-  Future<void> _saveDirectUris() async {
-    try {
-      await secureStorage.write(key: 'direct_server_uris', value: jsonEncode(_directUris));
-    } catch (_) {
-      _snack('Could not securely save direct server links.', err: true);
-    }
+  Future<bool> _queueSecureWrite({
+    required String key,
+    required String value,
+    String? legacyPreferenceKey,
+    required String errorMessage,
+  }) {
+    final result = Completer<bool>();
+    _storageWriteQueue = _storageWriteQueue.then((_) async {
+      try {
+        await secureStorage.write(key: key, value: value);
+        if (legacyPreferenceKey != null) {
+          final preferences = await SharedPreferences.getInstance();
+          await preferences.remove(legacyPreferenceKey);
+        }
+        result.complete(true);
+      } catch (_) {
+        if (mounted) _snack(errorMessage, err: true);
+        result.complete(false);
+      }
+    });
+    return result.future;
   }
 
-  Future<void> _saveSubscriptions() async {
-    try {
-      await secureStorage.write(
-        key: 'subscriptions_json',
-        value: jsonEncode(_subs),
-      );
-      final p = await SharedPreferences.getInstance();
-      await p.remove('subs');
-    } catch (_) {
-      _snack('Could not securely save subscription URLs.', err: true);
-    }
+  Future<bool> _saveDirectUris() {
+    // Capture the exact state at enqueue time; later edits cannot change this write.
+    final snapshot = List<String>.from(_directUris);
+    return _queueSecureWrite(
+      key: 'direct_server_uris',
+      value: jsonEncode(snapshot),
+      errorMessage: 'Could not securely save direct server links.',
+    );
+  }
+
+  Future<bool> _saveSubscriptions() {
+    final snapshot = List<String>.from(_subs);
+    return _queueSecureWrite(
+      key: 'subscriptions_json',
+      value: jsonEncode(snapshot),
+      legacyPreferenceKey: 'subs',
+      errorMessage: 'Could not securely save subscription URLs.',
+    );
   }
 
   Future<void> _saveSelection(String uri) async {
@@ -1269,9 +1304,16 @@ class _HomePageState extends State<HomePage>
                 _saveDirectUris();
               },
               onValidationError: (message) => _snack(message, err: true),
-              onSave: () {
+              onSave: () async {
+                // Earlier add/remove writes are serialized ahead of these final snapshots.
+                final subscriptionsSaved = await _saveSubscriptions();
+                final directUrisSaved = await _saveDirectUris();
+                if (!mounted || !subscriptionsSaved || !directUrisSaved) {
+                  return false;
+                }
                 Navigator.of(ctx).pop();
-                _syncAll();
+                await _syncAll();
+                return true;
               },
             ),
           ),
