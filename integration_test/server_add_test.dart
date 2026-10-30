@@ -4,7 +4,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:zeus_vpn/main.dart';
 
 Future<void> _waitForSubscriptionSheetToClose(WidgetTester tester) async {
-  final sheetTitle = find.text('SUBSCRIPTIONS');
+  final sheetTitle = find.text('مدیریت اشتراک‌ها');
   for (var attempt = 0; attempt < 60; attempt++) {
     if (sheetTitle.evaluate().isEmpty) return;
     await tester.pump(const Duration(milliseconds: 100));
@@ -24,21 +24,21 @@ void main() {
     await tester.pumpWidget(const ZeusApp());
     await tester.pump(const Duration(seconds: 2));
 
-    await tester.tap(find.text('NODES').last);
+    await tester.tap(find.text('سرورها').last);
     await tester.pump(const Duration(milliseconds: 350));
-    expect(find.text('Node control center'), findsOneWidget);
+    expect(find.text('سرورها'), findsOneWidget);
 
-    await tester.tap(find.text('FEEDS').last);
+    await tester.tap(find.text('اشتراک').last);
     await tester.pump(const Duration(milliseconds: 350));
-    expect(find.text('Subscriptions'), findsOneWidget);
+    expect(find.text('اشتراک‌ها'), findsOneWidget);
 
-    await tester.tap(find.text('LAB').last);
+    await tester.tap(find.text('تنظیمات').last);
     await tester.pump(const Duration(milliseconds: 350));
-    expect(find.text('PATT-NG & WARP'), findsOneWidget);
+    expect(find.text('تنظیمات و امنیت'), findsOneWidget);
 
-    await tester.tap(find.text('HOME').last);
+    await tester.tap(find.text('خانه').last);
     await tester.pump(const Duration(milliseconds: 350));
-    expect(find.text('Selected server'), findsOneWidget);
+    expect(find.text('انتخاب سرور'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -48,16 +48,16 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
 
     // Open the FEEDS tab and the subscription manager.
-    final feedsTab = find.text('FEEDS');
+    final feedsTab = find.text('اشتراک');
     expect(feedsTab, findsWidgets);
     await tester.tap(feedsTab.last);
     await tester.pump(const Duration(milliseconds: 500));
 
-    final addFeed = find.text('ADD FIRST FEED');
+    final addFeed = find.text('افزودن اشتراک');
     if (addFeed.evaluate().isNotEmpty) {
       await tester.tap(addFeed.first);
     } else {
-      final manageFeeds = find.text('MANAGE FEEDS');
+      final manageFeeds = find.text('مدیریت اشتراک‌ها');
       expect(manageFeeds, findsWidgets);
       await tester.tap(manageFeeds.first);
     }
@@ -69,7 +69,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('SUB 1'), findsOneWidget);
-    await tester.tap(find.text('SAVE & SYNC'));
+    await tester.tap(find.text('ذخیره و همگام‌سازی'));
     await _waitForSubscriptionSheetToClose(tester);
 
     // The sheet is dismissed while its input had focus. Its controller must
@@ -86,7 +86,7 @@ void main() {
 
     expect(tester.takeException(), isNull,
         reason: 'The UI must not throw while a feed sync fails.');
-    expect(find.text('FEEDS'), findsWidgets,
+    expect(find.text('اشتراک'), findsWidgets,
         reason: 'The app should remain navigable after a failed sync.');
   });
 
@@ -94,7 +94,7 @@ void main() {
     await tester.pumpWidget(const ZeusApp());
     await tester.pump(const Duration(seconds: 2));
 
-    await tester.tap(find.text('FEEDS').last);
+    await tester.tap(find.text('اشتراک').last);
     await tester.pump(const Duration(milliseconds: 500));
 
     final addFeed = find.text('ADD FIRST FEED');
@@ -118,9 +118,9 @@ void main() {
     expect(find.text('SUBSCRIPTIONS'), findsNothing);
     expect(tester.takeException(), isNull);
 
-    await tester.tap(find.text('NODES').last);
+    await tester.tap(find.text('سرورها').last);
     await tester.pump(const Duration(milliseconds: 500));
-    await tester.tap(find.text('Open full node center'));
+    await tester.tap(find.text('مرکز مدیریت سرورها'));
     await tester.pump(const Duration(milliseconds: 300));
     expect(
       find.text('[DIRECT] single-node'),

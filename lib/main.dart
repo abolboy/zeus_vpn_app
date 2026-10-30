@@ -13,12 +13,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'core/zeus_domain.dart';
 import 'warp.dart';
 
-const Color cyan = Color(0xFFB7FF32);
-const Color magenta = Color(0xFFFF4054);
-const Color green = Color(0xFF00FF6A);
-const Color amber = Color(0xFFFFB800);
-const Color background = Color(0xFF020603);
-const Color glass = Color(0xFF071009);
+const Color cyan = Color(0xFF00DDA0);
+const Color magenta = Color(0xFFFF5268);
+const Color green = Color(0xFF00F0A0);
+const Color amber = Color(0xFFFFC857);
+const Color background = Color(0xFF030806);
+const Color glass = Color(0xFF07130F);
 const FlutterSecureStorage secureStorage = FlutterSecureStorage(
   aOptions: AndroidOptions(encryptedSharedPreferences: true),
 );
@@ -32,11 +32,12 @@ class ZeusApp extends StatelessWidget {
     return MaterialApp(
       title: 'ZEUS VPN',
       debugShowCheckedModeBanner: false,
+      builder: (context, child) => Directionality(textDirection: TextDirection.rtl, child: child ?? const SizedBox.shrink()),
       theme: ThemeData(
         brightness: Brightness.dark,
-        fontFamily: 'monospace',
+        fontFamily: 'sans-serif',
         scaffoldBackgroundColor: background,
-        colorScheme: const ColorScheme.dark(primary: cyan, secondary: magenta, surface: glass),
+        colorScheme: const ColorScheme.dark(primary: green, secondary: cyan, surface: glass),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: const Color(0xFF071109),
@@ -50,7 +51,7 @@ class ZeusApp extends StatelessWidget {
           foregroundColor: cyan,
           side: BorderSide(color: cyan.withValues(alpha: 0.5)),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          textStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1),
+          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
           padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
         )),
       ),
@@ -202,7 +203,7 @@ class _SubscriptionSheetState extends State<_SubscriptionSheet> {
                     onSubmitted: (_) => _addEntry(),
                     style: const TextStyle(color: Colors.white, fontSize: 12),
                     decoration: InputDecoration(
-                      hintText: 'HTTPS feed or single VLESS / Trojan / VMess link',
+                      hintText: 'لینک اشتراک HTTPS یا لینک مستقیم سرور را وارد کنید',
                       hintStyle: TextStyle(
                         color: Colors.white.withValues(alpha: 0.2),
                         fontSize: 11,
@@ -1788,164 +1789,120 @@ class _HomePageState extends State<HomePage>
 
   Widget _dashboard(String name, String ping, Color pingColor) {
     final accent = _connected ? green : (_connecting ? amber : cyan);
+    final selectedName = (_connected || _connecting)
+        ? (_activeRouteLabel ?? 'اتصال فعال')
+        : (_warpOn ? 'Cloudflare WARP' : name);
+    final selectedPing = ping == '--' ? '—' : ping;
     return SingleChildScrollView(
       key: const ValueKey('dash'),
       physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _neonPanel(
-          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 15),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            gradient: const LinearGradient(
+              begin: Alignment.topRight, end: Alignment.bottomLeft,
+              colors: [Color(0xFF0B241A), Color(0xFF06110D), Color(0xFF050B09)],
+            ),
+            border: Border.all(color: green.withValues(alpha: 0.22)),
+            boxShadow: [BoxShadow(color: green.withValues(alpha: 0.07), blurRadius: 28)],
+          ),
+          child: Column(children: [
             Row(children: [
-              const Icon(Icons.terminal_rounded, color: green, size: 15),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'LIVE SYSTEM MONITOR',
-                  style: TextStyle(
-                    color: green,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.4,
-                  ),
-                ),
-              ),
-              Text(
-                'READ-ONLY',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.35),
-                  fontSize: 8,
-                  letterSpacing: 1,
-                ),
+              Container(width: 42, height: 42,
+                decoration: BoxDecoration(color: green.withValues(alpha: .12), borderRadius: BorderRadius.circular(14), border: Border.all(color: green.withValues(alpha: .3))),
+                child: const Icon(Icons.bolt_rounded, color: green, size: 27)),
+              const SizedBox(width: 11),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('ZEUS VPN', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900, letterSpacing: 1.8)),
+                Text('مرکز فرماندهی اتصال شما', style: TextStyle(color: Colors.white.withValues(alpha: .52), fontSize: 10)),
+              ])),
+              Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                decoration: BoxDecoration(color: accent.withValues(alpha: .1), borderRadius: BorderRadius.circular(20), border: Border.all(color: accent.withValues(alpha: .45))),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Container(width: 6, height: 6, decoration: BoxDecoration(color: accent, shape: BoxShape.circle)),
+                  const SizedBox(width: 6),
+                  Text(_connected ? 'متصل' : (_connecting ? 'در حال اتصال' : 'آماده اتصال'), style: TextStyle(color: accent, fontSize: 9, fontWeight: FontWeight.w800)),
+                ]),
               ),
             ]),
-            Divider(height: 18, color: green.withValues(alpha: 0.18)),
-            Text(
-              'zeus@android:~\$ tunnel --status',
-              style: TextStyle(
-                color: cyan.withValues(alpha: 0.85),
-                fontSize: 10,
-                fontFamily: 'monospace',
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 10),
-            _terminalLine('VPN CORE', _ready ? 'INITIALIZED' : 'BOOTING', _ready ? green : amber),
-            _terminalLine(
-              'TUNNEL',
-              _connected ? 'ESTABLISHED' : (_connecting ? 'NEGOTIATING' : 'IDLE'),
-              _connected ? green : (_connecting ? amber : magenta),
-            ),
-            _terminalLine('NODE POOL', '${_nodes.length} REGISTERED', cyan),
-            _terminalLine('FEED SOURCES', '${_subs.length} CONFIGURED', green),
-          ]),
-          accent: green,
-        ),
-        const SizedBox(height: 10),
-        _neonPanel(Column(children: [
-          Row(children: [
-            Container(width: 7, height: 7, decoration: BoxDecoration(color: accent, shape: BoxShape.circle, boxShadow: [BoxShadow(color: accent.withValues(alpha: 0.8), blurRadius: 8)])),
-            const SizedBox(width: 8),
-            Expanded(child: Text(_connected ? 'SECURE TUNNEL ACTIVE' : (_connecting ? 'ESTABLISHING TUNNEL' : 'SYSTEM STANDBY'), style: TextStyle(color: accent, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.4))),
-            Text(_ready ? 'CORE READY' : 'BOOTING', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 8)),
-          ]),
-          const SizedBox(height: 20),
-          GestureDetector(onTap: _toggle, child: ScaleTransition(
-            scale: _connected ? _pulseAnim : const AlwaysStoppedAnimation(1.0),
-            child: SizedBox(width: 198, height: 198, child: Stack(alignment: Alignment.center, children: [
-              RotationTransition(turns: _ringCtl, child: Container(width: 190, height: 190, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: accent.withValues(alpha: 0.35)), gradient: SweepGradient(colors: [accent.withValues(alpha: 0.0), accent, magenta, accent.withValues(alpha: 0.0)])))),
-              Container(width: 166, height: 166, decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xFF050811), border: Border.all(color: accent, width: 1.6), boxShadow: [BoxShadow(color: accent.withValues(alpha: 0.2), blurRadius: 26, spreadRadius: 3)]), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Icon(_connected ? Icons.shield_rounded : (_connecting ? Icons.hourglass_top_rounded : Icons.power_settings_new_rounded), color: accent, size: 42),
-                const SizedBox(height: 9),
-                Text(_connected ? 'CONNECTED' : (_connecting ? 'CONNECTING' : 'INITIATE'), style: TextStyle(color: accent, fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 1.8)),
-                const SizedBox(height: 5),
-                Text(_connected ? _dur : 'SECURE LINK', style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 9)),
+            const SizedBox(height: 24),
+            GestureDetector(onTap: _toggle, child: ScaleTransition(
+              scale: _connected ? _pulseAnim : const AlwaysStoppedAnimation(1.0),
+              child: SizedBox(width: 206, height: 206, child: Stack(alignment: Alignment.center, children: [
+                RotationTransition(turns: _ringCtl, child: Container(width: 196, height: 196,
+                  decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: accent.withValues(alpha: .35), width: 1.2),
+                    boxShadow: [BoxShadow(color: accent.withValues(alpha: .10), blurRadius: 22, spreadRadius: 4)]))),
+                Container(width: 166, height: 166,
+                  decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xFF06110D),
+                    border: Border.all(color: accent, width: 2),
+                    boxShadow: [BoxShadow(color: accent.withValues(alpha: .17), blurRadius: 32, spreadRadius: 3)]),
+                  child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Icon(_connected ? Icons.shield_rounded : (_connecting ? Icons.hourglass_top_rounded : Icons.power_settings_new_rounded), color: accent, size: 43),
+                    const SizedBox(height: 8),
+                    Text(_connected ? 'متصل' : (_connecting ? 'در حال اتصال' : 'اتصال'), style: TextStyle(color: accent, fontSize: 19, fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 4),
+                    Text(_connected ? _dur : 'برای شروع لمس کنید', style: TextStyle(color: Colors.white.withValues(alpha: .48), fontSize: 10)),
+                  ]),
+                ),
               ])),
-            ])),
-          )),
-          const SizedBox(height: 14),
-          Text('TAP THE CORE TO CONTROL THE TUNNEL', style: TextStyle(color: Colors.white.withValues(alpha: 0.42), fontSize: 9, letterSpacing: 1.2)),
-        ]), accent: accent),
-        const SizedBox(height: 11),
-        Row(children: [
-          Expanded(child: _neonPanel(_stat('UPLOAD', _up, Icons.north_east_rounded, magenta), accent: magenta)),
-          const SizedBox(width: 8),
-          Expanded(child: _neonPanel(_stat('DOWNLOAD', _down, Icons.south_west_rounded, cyan), accent: cyan)),
-          const SizedBox(width: 8),
-          Expanded(child: _neonPanel(_stat('CORE RTT', _testingDelay ? '...' : (_coreDelay.isEmpty ? 'TEST' : _coreDelay), Icons.network_ping_rounded, green), accent: green, onTap: _testingDelay ? null : _testCoreDelay)),
-        ]),
-        const SizedBox(height: 20),
-        _screenHeader(
-          _connected || _connecting ? 'RUNNING TUNNEL' : 'NEXT CONNECTION',
-          (_connected || _connecting)
-              ? (_activeRouteUsesWarp ? 'Cloudflare WARP' : 'Connected server')
-              : (_warpOn ? 'Cloudflare WARP' : 'Selected server'),
-          ((_connected || _connecting) ? _activeRouteUsesWarp : _warpOn)
-              ? green
-              : cyan,
-          meta: (_connected || _connecting)
-              ? 'LIVE SESSION'
-              : (_warpOn ? 'WARP-ONLY EGRESS' : '${_nodes.length} NODES'),
+            )),
+            const SizedBox(height: 20),
+            Container(width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
+              decoration: BoxDecoration(color: Colors.black.withValues(alpha: .28), borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.white.withValues(alpha: .07))),
+              child: Row(children: [
+                Icon(_warpOn ? Icons.cloud_done_rounded : Icons.public_rounded, color: green, size: 20),
+                const SizedBox(width: 10),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(selectedName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 3),
+                  Text(_connected ? 'مسیر فعال اتصال' : (_selUri == null ? 'هنوز سروری انتخاب نشده' : 'سرور انتخابی برای اتصال بعدی'), style: TextStyle(color: Colors.white.withValues(alpha: .48), fontSize: 9)),
+                ])),
+                Text(selectedPing, style: TextStyle(color: pingColor, fontSize: 10, fontWeight: FontWeight.w900)),
+                const SizedBox(width: 4),
+                Icon(Icons.chevron_left_rounded, color: Colors.white.withValues(alpha: .45)),
+              ]),
+            ),
+          ]),
         ),
-        _neonPanel(Row(children: [
-          Icon(
-            ((_connected || _connecting) ? _activeRouteUsesWarp : _warpOn)
-                ? Icons.cloud_done_rounded
-                : Icons.dns_rounded,
-            color: ((_connected || _connecting) ? _activeRouteUsesWarp : _warpOn)
-                ? green
-                : cyan,
-            size: 25,
-          ),
-          const SizedBox(width: 12),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(
-              (_connected || _connecting)
-                  ? (_activeRouteLabel ?? 'Active tunnel')
-                  : (_warpOn ? 'Cloudflare WARP tunnel' : name),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-                fontSize: 12,
-              ),
-            ),
-            const SizedBox(height: 5),
-            Text(
-              (_connected || _connecting)
-                  ? (_activeRouteUsesWarp
-                      ? 'WARP is carrying the current session'
-                      : 'Current VPN session — disconnect to change server')
-                  : (_warpOn
-                      ? 'WARP will replace the selected server outbound'
-                      : (_selUri == null
-                          ? 'No server selected — add a feed'
-                          : 'Tap to open node control center')),
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.45),
-                fontSize: 10,
-              ),
-            ),
-          ])),
-          if (!((_connected || _connecting) ? _activeRouteUsesWarp : _warpOn) && ping != '--')
-            Text(ping, style: TextStyle(color: pingColor, fontWeight: FontWeight.w900, fontSize: 10)),
-        ]), accent: ((_connected || _connecting) ? _activeRouteUsesWarp : _warpOn) ? green : cyan, onTap: () => _setActiveTab(1)),
-        const SizedBox(height: 20),
-        _screenHeader('QUICK ACCESS', 'Terminal operations', magenta),
-        _quickAction(Icons.hub_rounded, 'Node control center', 'Search, latency and server selection', cyan, () => _setActiveTab(1)),
-        _quickAction(Icons.rss_feed_rounded, 'Subscription manager', '${_subs.length} secure feed(s) configured', magenta, () => _setActiveTab(2)),
-        _quickAction(Icons.memory_rounded, 'PATT-NG / WARP lab', 'Fingerprint, DNS and tunnel parameters', green, () => _setActiveTab(3)),
-        Wrap(spacing: 7, runSpacing: 7, children: [
-          _pill(Icons.fingerprint_rounded, 'FP: ${_patt.fp.toUpperCase()}', magenta, _openPatt),
-          _pill(Icons.alt_route_rounded, 'NET: ${_patt.network.toUpperCase()}', cyan, _openPatt),
-          _pill(
-            Icons.cloud_outlined,
-            'WARP: ${(_connected || _connecting) ? (_activeRouteUsesWarp ? 'ACTIVE' : 'OFF') : (_warpOn ? 'NEXT ON' : 'OFF')}',
-            green,
-            _openPatt,
-          ),
+        const SizedBox(height: 16),
+        Row(children: [
+          Expanded(child: _metricTile('آپلود', _up, Icons.north_east_rounded, magenta)),
+          const SizedBox(width: 9),
+          Expanded(child: _metricTile('دانلود', _down, Icons.south_west_rounded, cyan)),
         ]),
+        const SizedBox(height: 9),
+        Row(children: [
+          Expanded(child: _metricTile('پینگ هسته', _testingDelay ? '...' : (_coreDelay.isEmpty ? 'بررسی' : _coreDelay), Icons.network_ping_rounded, green, onTap: _testingDelay ? null : _testCoreDelay)),
+          const SizedBox(width: 9),
+          Expanded(child: _metricTile('سرورها', '${_nodes.length}', Icons.dns_rounded, amber, onTap: () => _setActiveTab(1))),
+        ]),
+        const SizedBox(height: 22),
+        _screenHeader('دسترسی سریع', 'مدیریت سرویس', green),
+        _quickAction(Icons.dns_rounded, 'انتخاب سرور', 'جست‌وجو و بررسی پینگ سرورها', green, () => _setActiveTab(1)),
+        _quickAction(Icons.qr_code_2_rounded, 'مدیریت اشتراک', '${_subs.length} اشتراک ثبت‌شده', cyan, () => _setActiveTab(2)),
+        _quickAction(Icons.tune_rounded, 'تنظیمات و WARP', 'تنظیم هسته، DNS و ابزارهای اتصال', magenta, () => _setActiveTab(3)),
       ]),
+    );
+  }
+
+  Widget _metricTile(String label, String value, IconData icon, Color tint, {VoidCallback? onTap}) {
+    return _neonPanel(
+      Row(children: [
+        Container(width: 36, height: 36, decoration: BoxDecoration(color: tint.withValues(alpha: .1), borderRadius: BorderRadius.circular(12)),
+          child: Icon(icon, color: tint, size: 18)),
+        const SizedBox(width: 9),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, style: TextStyle(color: Colors.white.withValues(alpha: .5), fontSize: 9)),
+          const SizedBox(height: 4),
+          Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: tint, fontSize: 12, fontWeight: FontWeight.w900)),
+        ])),
+      ]),
+      accent: tint,
+      onTap: onTap,
     );
   }
 
@@ -1955,10 +1912,10 @@ class _HomePageState extends State<HomePage>
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _screenHeader('NETWORK INTELLIGENCE', 'Node control center', cyan, meta: '${_nodes.length} FOUND'),
-        _quickAction(Icons.manage_search_rounded, 'Open full node center', 'Search, filter and sort imported nodes', magenta, _openNodes),
-        _quickAction(Icons.sync_rounded, 'Sync nodes', _loading ? 'Sync in progress' : 'Refresh secure feeds', cyan, _loading ? () {} : _syncAll),
-        _quickAction(Icons.network_ping_rounded, 'Probe latency', 'Check node response', green, _pingAll),
+        _screenHeader('مدیریت شبکه', 'سرورها', cyan, meta: '${_nodes.length} سرور'),
+        _quickAction(Icons.manage_search_rounded, 'مرکز مدیریت سرورها', 'جست‌وجو، فیلتر و مرتب‌سازی سرورها', magenta, _openNodes),
+        _quickAction(Icons.sync_rounded, 'همگام‌سازی سرورها', _loading ? 'در حال همگام‌سازی' : 'دریافت آخرین فهرست سرورها', cyan, _loading ? () {} : _syncAll),
+        _quickAction(Icons.network_ping_rounded, 'بررسی پینگ', 'سنجش تأخیر پاسخ سرورها', green, _pingAll),
         _neonPanel(Row(children: [
           const Icon(Icons.timer_outlined, color: magenta),
           const SizedBox(width: 9),
@@ -2013,36 +1970,36 @@ class _HomePageState extends State<HomePage>
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _screenHeader('FEED CONTROL', 'Subscriptions', magenta, meta: '${_subs.length} FEEDS'),
+        _screenHeader('مدیریت منابع', 'اشتراک‌ها', magenta, meta: '${_subs.length} منبع'),
         _neonPanel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('SECURE IMPORT PIPELINE', style: TextStyle(color: magenta, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.4)),
+          const Text('ورود امن کانفیگ‌ها', style: TextStyle(color: magenta, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.4)),
           const SizedBox(height: 8),
-          Text('Feeds must use HTTPS. Subscription links may contain access credentials, so treat them like passwords.', style: TextStyle(color: Colors.white.withValues(alpha: 0.58), fontSize: 11, height: 1.5)),
+          Text('لینک‌های اشتراک باید HTTPS باشند. این لینک‌ها ممکن است اطلاعات ورود داشته باشند؛ مانند رمز عبور از آن‌ها محافظت کنید.', style: TextStyle(color: Colors.white.withValues(alpha: 0.58), fontSize: 11, height: 1.5)),
           const SizedBox(height: 12),
           Row(children: [
-            Expanded(child: ElevatedButton.icon(onPressed: _openSubs, icon: const Icon(Icons.add_link_rounded), label: const Text('MANAGE FEEDS'))),
+            Expanded(child: ElevatedButton.icon(onPressed: _openSubs, icon: const Icon(Icons.add_link_rounded), label: const Text('مدیریت اشتراک‌ها'))),
             const SizedBox(width: 8),
-            Expanded(child: OutlinedButton.icon(onPressed: _loading ? null : _syncAll, icon: const Icon(Icons.sync_rounded), label: const Text('SYNC NOW'), style: OutlinedButton.styleFrom(foregroundColor: cyan, side: BorderSide(color: cyan.withValues(alpha: 0.5))))),
+            Expanded(child: OutlinedButton.icon(onPressed: _loading ? null : _syncAll, icon: const Icon(Icons.sync_rounded), label: const Text('همگام‌سازی'), style: OutlinedButton.styleFrom(foregroundColor: cyan, side: BorderSide(color: cyan.withValues(alpha: 0.5))))),
           ]),
         ]), accent: magenta),
         const SizedBox(height: 18),
-        _screenHeader('CONFIGURED SOURCES', 'Feed inventory', cyan),
+        _screenHeader('منابع ثبت‌شده', 'فهرست اشتراک‌ها', cyan),
         if (_subs.isEmpty)
           _neonPanel(Column(children: [
             const Icon(Icons.rss_feed_rounded, color: amber, size: 34),
             const SizedBox(height: 9),
-            const Text('NO FEEDS CONFIGURED', style: TextStyle(color: amber, fontWeight: FontWeight.w900)),
+            const Text('هنوز اشتراکی ثبت نشده', style: TextStyle(color: amber, fontWeight: FontWeight.w900)),
             const SizedBox(height: 8),
-            const Text('Add a trusted subscription URL to import server profiles.', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF9DA6B8), fontSize: 11)),
+            const Text('برای دریافت سرورها، یک لینک اشتراک معتبر اضافه کنید.', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF9DA6B8), fontSize: 11)),
             const SizedBox(height: 12),
-            ElevatedButton(onPressed: _openSubs, child: const Text('ADD FIRST FEED')),
+            ElevatedButton(onPressed: _openSubs, child: const Text('افزودن اشتراک')),
           ]), accent: amber)
         else
           ..._subs.asMap().entries.map((entry) => Padding(padding: const EdgeInsets.only(bottom: 9), child: _neonPanel(Row(children: [
             const Icon(Icons.rss_feed_rounded, color: magenta, size: 22),
             const SizedBox(width: 11),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('FEED ${entry.key + 1}', style: const TextStyle(color: cyan, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+              Text('اشتراک ${entry.key + 1}', style: const TextStyle(color: cyan, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
               const SizedBox(height: 5),
               Text(subscriptionDisplayLabel(entry.value), maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white.withValues(alpha: 0.72), fontSize: 10)),
             ])),
@@ -2064,15 +2021,15 @@ class _HomePageState extends State<HomePage>
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _screenHeader('ENGINE ROOM', 'PATT-NG & WARP', green, meta: 'ADVANCED'),
+        _screenHeader('مرکز ابزارها', 'تنظیمات و امنیت', green, meta: 'پیشرفته'),
         _neonPanel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Row(children: [
             Icon(Icons.memory_rounded, color: green, size: 28),
             SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('PATT-NG CORE SETTINGS', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900)),
+              Text('تنظیمات هسته PATT-NG', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900)),
               SizedBox(height: 5),
-              Text('Fingerprint, transport, DNS and packet options', style: TextStyle(color: Color(0xFF9DA6B8), fontSize: 10)),
+              Text('فینگرپرینت، شبکه، DNS و تنظیمات بسته‌ها', style: TextStyle(color: Color(0xFF9DA6B8), fontSize: 10)),
             ])),
           ]),
           const SizedBox(height: 13),
@@ -2083,14 +2040,14 @@ class _HomePageState extends State<HomePage>
             _chip('DNS', _patt.dnsMode.toUpperCase(), green),
           ]),
           const SizedBox(height: 13),
-          SizedBox(width: double.infinity, child: ElevatedButton.icon(onPressed: _openPatt, icon: const Icon(Icons.settings_ethernet_rounded), label: const Text('OPEN ADVANCED LAB'))),
+          SizedBox(width: double.infinity, child: ElevatedButton.icon(onPressed: _openPatt, icon: const Icon(Icons.settings_ethernet_rounded), label: const Text('تنظیمات پیشرفته'))),
         ]), accent: green),
         const SizedBox(height: 10),
         _neonPanel(Row(children: [
           const Icon(Icons.cloud_sync_rounded, color: cyan, size: 27),
           const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('CLOUDFLARE WARP', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900)),
+            const Text('کلادفلر WARP', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900)),
             const SizedBox(height: 4),
             Text(
               (_connected || _connecting)
@@ -2119,10 +2076,10 @@ class _HomePageState extends State<HomePage>
           ),
         ]), accent: cyan),
         const SizedBox(height: 10),
-        _quickAction(Icons.tune_rounded, 'Edit engine parameters', 'Open the full PATT-NG configuration', green, _openPatt),
-        _quickAction(Icons.dns_rounded, 'Server inventory', 'Review nodes and latency', cyan, () => _setActiveTab(1)),
-        _screenHeader('DEVICE STATUS', 'Diagnostics', amber),
-        _quickAction(Icons.terminal_rounded, 'Core log console', 'Search, refresh and clear recent Xray diagnostics', magenta, _openCoreLogs),
+        _quickAction(Icons.tune_rounded, 'پارامترهای هسته', 'تنظیم دقیق PATT-NG', green, _openPatt),
+        _quickAction(Icons.dns_rounded, 'فهرست سرورها', 'مشاهده سرورها و تأخیر اتصال', cyan, () => _setActiveTab(1)),
+        _screenHeader('وضعیت دستگاه', 'عیب‌یابی', amber),
+        _quickAction(Icons.terminal_rounded, 'گزارش‌های اتصال', 'جست‌وجو و بررسی گزارش‌های Xray', magenta, _openCoreLogs),
         _neonPanel(Column(children: [
           _diagnosticRow('VPN CORE', _ready ? 'INITIALIZED' : 'STARTING / ERROR', _ready ? green : amber),
           const Divider(color: Color(0x22FFFFFF), height: 22),
@@ -2133,7 +2090,7 @@ class _HomePageState extends State<HomePage>
           _diagnosticRow('TUNNEL STATE', _connected ? 'CONNECTED' : (_connecting ? 'CONNECTING' : 'DISCONNECTED'), _connected ? green : (_connecting ? amber : cyan)),
         ]), accent: amber),
         const SizedBox(height: 14),
-        Text('ZEUS VPN • CYBERPUNK INTERFACE • VERIFICATION REQUIRED', textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 8, letterSpacing: 1)),
+        Text('ZEUS VPN • اتصال امن و پایدار', textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 8, letterSpacing: 1)),
       ]),
     );
   }
@@ -2275,12 +2232,12 @@ class _HomePageState extends State<HomePage>
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const Text('ZEUS VPN', style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900, letterSpacing: 3.2, shadows: [Shadow(color: cyan, blurRadius: 12)])),
               const SizedBox(height: 3),
-              Text('SECURE SHELL  //  CORE MONITOR', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 8, letterSpacing: 1.3)),
+              Text('اتصال امن • سریع • بدون محدودیت', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 8, letterSpacing: 1.3)),
             ])),
             Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7), decoration: BoxDecoration(color: (_ready ? green : amber).withValues(alpha: 0.08), borderRadius: BorderRadius.circular(9), border: Border.all(color: (_ready ? green : amber).withValues(alpha: 0.35))), child: Row(children: [
               Container(width: 6, height: 6, decoration: BoxDecoration(color: _ready ? green : amber, shape: BoxShape.circle)),
               const SizedBox(width: 6),
-              Text(_ready ? 'READY' : 'BOOTING', style: TextStyle(color: _ready ? green : amber, fontSize: 8, fontWeight: FontWeight.w900, letterSpacing: 0.7)),
+              Text(_ready ? 'آماده' : 'شروع', style: TextStyle(color: _ready ? green : amber, fontSize: 8, fontWeight: FontWeight.w900, letterSpacing: 0.7)),
             ])),
           ])),
           Container(height: 1, margin: const EdgeInsets.symmetric(horizontal: 20), color: cyan.withValues(alpha: 0.16)),
@@ -2316,10 +2273,10 @@ class _HomePageState extends State<HomePage>
           ),
           child: Row(
             children: [
-              _navItem(0, Icons.grid_view_rounded, 'HOME'),
-              _navItem(1, Icons.hub_rounded, 'NODES'),
-              _navItem(2, Icons.rss_feed_rounded, 'FEEDS'),
-              _navItem(3, Icons.memory_rounded, 'LAB'),
+              _navItem(0, Icons.home_rounded, 'خانه'),
+              _navItem(1, Icons.dns_rounded, 'سرورها'),
+              _navItem(2, Icons.grid_view_rounded, 'اشتراک'),
+              _navItem(3, Icons.settings_rounded, 'تنظیمات'),
             ],
           ),
         ),
