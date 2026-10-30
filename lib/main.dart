@@ -13,12 +13,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'core/zeus_domain.dart';
 import 'warp.dart';
 
-const Color cyan = Color(0xFF00F0FF);
-const Color magenta = Color(0xFFFF007F);
-const Color green = Color(0xFF00FF88);
+const Color cyan = Color(0xFFB7FF32);
+const Color magenta = Color(0xFFFF4054);
+const Color green = Color(0xFF00FF6A);
 const Color amber = Color(0xFFFFB800);
-const Color background = Color(0xFF030308);
-const Color glass = Color(0xFF0A0A14);
+const Color background = Color(0xFF020603);
+const Color glass = Color(0xFF071009);
 const FlutterSecureStorage secureStorage = FlutterSecureStorage(
   aOptions: AndroidOptions(encryptedSharedPreferences: true),
 );
@@ -34,11 +34,12 @@ class ZeusApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
+        fontFamily: 'monospace',
         scaffoldBackgroundColor: background,
         colorScheme: const ColorScheme.dark(primary: cyan, secondary: magenta, surface: glass),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
-          fillColor: const Color(0xFF080C16),
+          fillColor: const Color(0xFF071109),
           labelStyle: const TextStyle(color: cyan, fontSize: 11),
           hintStyle: const TextStyle(color: Color(0xFF657084), fontSize: 11),
           enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: cyan.withValues(alpha: 0.22))),
@@ -1722,14 +1723,14 @@ class _HomePageState extends State<HomePage>
       width: double.infinity,
       padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(
-        color: const Color(0xE6090D18),
-        borderRadius: BorderRadius.circular(17),
+        color: const Color(0xE6071009),
+        borderRadius: BorderRadius.circular(9),
         border: Border.all(color: accent.withValues(alpha: 0.3)),
         boxShadow: [BoxShadow(color: accent.withValues(alpha: 0.055), blurRadius: 18)],
       ),
       child: child,
     );
-    return onTap == null ? card : Material(color: Colors.transparent, child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(17), child: card));
+    return onTap == null ? card : Material(color: Colors.transparent, child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(9), child: card));
   }
 
   Widget _quickAction(IconData icon, String title, String subtitle, Color accent, VoidCallback onTap) => Padding(
@@ -1753,6 +1754,54 @@ class _HomePageState extends State<HomePage>
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _neonPanel(
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              const Icon(Icons.terminal_rounded, color: green, size: 15),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'LIVE SYSTEM MONITOR',
+                  style: TextStyle(
+                    color: green,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.4,
+                  ),
+                ),
+              ),
+              Text(
+                'READ-ONLY',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.35),
+                  fontSize: 8,
+                  letterSpacing: 1,
+                ),
+              ),
+            ]),
+            Divider(height: 18, color: green.withValues(alpha: 0.18)),
+            Text(
+              'zeus@android:~\$ tunnel --status',
+              style: TextStyle(
+                color: cyan.withValues(alpha: 0.85),
+                fontSize: 10,
+                fontFamily: 'monospace',
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 10),
+            _terminalLine('VPN CORE', _ready ? 'INITIALIZED' : 'BOOTING', _ready ? green : amber),
+            _terminalLine(
+              'TUNNEL',
+              _connected ? 'ESTABLISHED' : (_connecting ? 'NEGOTIATING' : 'IDLE'),
+              _connected ? green : (_connecting ? amber : magenta),
+            ),
+            _terminalLine('NODE POOL', '\${_nodes.length} REGISTERED', cyan),
+            _terminalLine('FEED SOURCES', '\${_subs.length} CONFIGURED', green),
+          ]),
+          accent: green,
+        ),
+        const SizedBox(height: 10),
         _neonPanel(Column(children: [
           Row(children: [
             Container(width: 7, height: 7, decoration: BoxDecoration(color: accent, shape: BoxShape.circle, boxShadow: [BoxShadow(color: accent.withValues(alpha: 0.8), blurRadius: 8)])),
@@ -1843,7 +1892,7 @@ class _HomePageState extends State<HomePage>
             Text(ping, style: TextStyle(color: pingColor, fontWeight: FontWeight.w900, fontSize: 10)),
         ]), accent: ((_connected || _connecting) ? _activeRouteUsesWarp : _warpOn) ? green : cyan, onTap: () => _setActiveTab(1)),
         const SizedBox(height: 20),
-        _screenHeader('QUICK ACCESS', 'Cyber control deck', magenta),
+        _screenHeader('QUICK ACCESS', 'Terminal operations', magenta),
         _quickAction(Icons.hub_rounded, 'Node control center', 'Search, latency and server selection', cyan, () => _setActiveTab(1)),
         _quickAction(Icons.rss_feed_rounded, 'Subscription manager', '${_subs.length} secure feed(s) configured', magenta, () => _setActiveTab(2)),
         _quickAction(Icons.memory_rounded, 'PATT-NG / WARP lab', 'Fingerprint, DNS and tunnel parameters', green, () => _setActiveTab(3)),
@@ -2050,6 +2099,40 @@ class _HomePageState extends State<HomePage>
     );
   }
 
+  Widget _terminalLine(String label, String value, Color tint) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(children: [
+        Expanded(
+          child: Text(
+            '[$label]',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.42),
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.7,
+            ),
+          ),
+        ),
+        Container(
+          width: 5,
+          height: 5,
+          decoration: BoxDecoration(color: tint, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          value,
+          style: TextStyle(
+            color: tint,
+            fontSize: 9,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ]),
+    );
+  }
+
   Widget _diagnosticRow(String label, String value, Color accent) => Row(children: [
     Expanded(child: Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.48), fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 0.8))),
     const SizedBox(width: 10),
@@ -2153,7 +2236,7 @@ class _HomePageState extends State<HomePage>
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const Text('ZEUS VPN', style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900, letterSpacing: 3.2, shadows: [Shadow(color: cyan, blurRadius: 12)])),
               const SizedBox(height: 3),
-              Text('CYBER OPERATIONS  //  PATT-NG', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 8, letterSpacing: 1.3)),
+              Text('SECURE SHELL  //  CORE MONITOR', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 8, letterSpacing: 1.3)),
             ])),
             Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7), decoration: BoxDecoration(color: (_ready ? green : amber).withValues(alpha: 0.08), borderRadius: BorderRadius.circular(9), border: Border.all(color: (_ready ? green : amber).withValues(alpha: 0.35))), child: Row(children: [
               Container(width: 6, height: 6, decoration: BoxDecoration(color: _ready ? green : amber, shape: BoxShape.circle)),
@@ -2176,8 +2259,8 @@ class _HomePageState extends State<HomePage>
         child: Container(
           padding: const EdgeInsets.all(6),
           decoration: BoxDecoration(
-            color: const Color(0xF2080D18),
-            borderRadius: BorderRadius.circular(22),
+            color: const Color(0xF2061009),
+            borderRadius: BorderRadius.circular(10),
             border: Border.all(color: cyan.withValues(alpha: 0.22)),
             boxShadow: [
               BoxShadow(
@@ -2220,28 +2303,43 @@ class _HomePageState extends State<HomePage>
 class _CyberP extends CustomPainter {
   final double t;
   _CyberP(this.t);
+
   @override
   void paint(Canvas canvas, Size size) {
+    // Low-contrast terminal grid.
     final grid = Paint()
-      ..color = cyan.withValues(alpha: 0.06)
-      ..strokeWidth = 1;
-    final horizon = size.height * 0.42;
-    final shift = (t * 6) % 1;
-    for (double i = 0; i <= 14; i++) {
-      final f = (i + shift) / 14;
-      final y = horizon + (size.height - horizon) * f * f;
+      ..color = cyan.withValues(alpha: 0.025)
+      ..strokeWidth = 0.6;
+    for (double x = 0; x < size.width; x += 32) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), grid);
+    }
+    for (double y = 0; y < size.height; y += 36) {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
     }
-    for (double i = -14; i <= 14; i++) {
-      canvas.drawLine(Offset(size.width / 2, horizon), Offset(size.width / 2 + i * (size.width / 12), size.height), grid);
-    }
-    final rnd = Random(7);
-    for (int i = 0; i < 40; i++) {
-      final x = rnd.nextDouble() * size.width;
-      final y = rnd.nextDouble() * horizon * 0.9;
-      final tw = 0.5 + 0.5 * sin(t * 2 * pi + i);
-      final star = Paint()..color = magenta.withValues(alpha: 0.15 + 0.3 * tw);
-      canvas.drawCircle(Offset(x, y), 1.2 * tw, star);
+
+    // Decorative binary rain; it does not represent network traffic or logs.
+    final columns = (size.width / 32).ceil();
+    for (var column = 0; column < columns; column++) {
+      final random = Random(column * 97 + 11);
+      final bits = List.generate(12, (_) => random.nextBool() ? '1' : '0')
+          .join('\n');
+      final alpha = 0.025 + 0.035 * (0.5 + 0.5 * sin(t * 2 * pi + column));
+      final painter = TextPainter(
+        text: TextSpan(
+          text: bits,
+          style: TextStyle(
+            color: green.withValues(alpha: alpha),
+            fontSize: 9,
+            height: 1.35,
+            fontFamily: 'monospace',
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final travel = (t * size.height * 0.7 + column * 71) %
+          (size.height + 220);
+      painter.paint(canvas, Offset(column * 32.0 + 5, travel - 110));
     }
   }
 
