@@ -107,7 +107,7 @@ void main() {
 
     await tester.tap(find.text('NODES').last);
     await tester.pump(const Duration(milliseconds: 500));
-    await tester.tap(find.text('NODE CENTER'));
+    await tester.tap(find.text('Open full node center'));
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('[DIRECT] single-node'), findsOneWidget);
     expect(tester.takeException(), isNull);
