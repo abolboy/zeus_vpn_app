@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_v2ray_client/flutter_v2ray.dart';
-import 'package:zeus_vpn/main.dart';
+import 'package:zeus_vpn/core/zeus_domain.dart';
 
 void main() {
   test('LAN bypass moves an existing valid direct rule ahead of catch-all rules', () {
