@@ -1048,14 +1048,6 @@ Map<String, dynamic> withLanBypass(Map<String, dynamic> config) {
     throw const FormatException('Core configuration has no outbound list.');
   }
 
-  var directTag = 'zeus-lan-bypass';
-  while (outbounds.any(
-    (item) => item is Map && item['tag'] == directTag,
-  )) {
-    directTag = '${directTag}_';
-  }
-  outbounds.add({'tag': directTag, 'protocol': 'freedom'});
-
   final routing = config['routing'] is Map
       ? Map<String, dynamic>.from(config['routing'] as Map)
       : <String, dynamic>{};
@@ -1063,16 +1055,26 @@ Map<String, dynamic> withLanBypass(Map<String, dynamic> config) {
       ? List<dynamic>.from(routing['rules'] as List)
       : <dynamic>[];
 
-  final hasLanRule = rules.any((rule) {
-    if (rule is! Map ||
-        rule['type'] != 'field' ||
-        rule['outboundTag'] != directTag) {
+  final hasValidLanRule = rules.any((rule) {
+    if (rule is! Map || rule['type'] != 'field') return false;
+    final ips = rule['ip'];
+    final tag = rule['outboundTag'];
+    if (ips is! List ||
+        !ips.contains('geoip:private') ||
+        tag is! String) {
       return false;
     }
-    final ips = rule['ip'];
-    return ips is List && ips.contains('geoip:private');
+    return outbounds.any((item) => item is Map && item['tag'] == tag);
   });
-  if (!hasLanRule) {
+
+  if (!hasValidLanRule) {
+    var directTag = 'zeus-lan-bypass';
+    while (outbounds.any(
+      (item) => item is Map && item['tag'] == directTag,
+    )) {
+      directTag = '${directTag}_';
+    }
+    outbounds.add({'tag': directTag, 'protocol': 'freedom'});
     rules.insert(0, {
       'type': 'field',
       'ip': ['geoip:private'],
