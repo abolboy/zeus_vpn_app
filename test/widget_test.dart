@@ -33,6 +33,9 @@ void main() {
       outbounds.any((item) => item is Map && item['tag'] == 'zeus-lan-bypass'),
       isTrue,
     );
+    withLanBypass(updated);
+    expect((updated['outbounds'] as List<dynamic>), hasLength(2));
+    expect((updated['routing'] as Map<String, dynamic>)['rules'], hasLength(2));
   });
 
   test('sanitizes credential-bearing values from core logs', () {
