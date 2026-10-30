@@ -40,20 +40,20 @@ Uint8List x25519(Uint8List kIn, Uint8List uIn) {
     }
     swap = b;
     final A = (x2 + z2) % _p255;
-    final AA = A.modPow(BigInt.two, _p255);
+    final aa = A.modPow(BigInt.two, _p255);
     final B = (x2 - z2) % _p255;
-    final BB = B.modPow(BigInt.two, _p255);
-    final E = (AA - BB) % _p255;
+    final bb = B.modPow(BigInt.two, _p255);
+    final E = (aa - bb) % _p255;
     final C = (x3 + z3) % _p255;
     final D = (x3 - z3) % _p255;
-    final DA = (D * A) % _p255;
-    final CB = (C * B) % _p255;
-    x3 = (DA + CB) % _p255;
+    final da = (D * A) % _p255;
+    final cb = (C * B) % _p255;
+    x3 = (da + cb) % _p255;
     x3 = x3.modPow(BigInt.two, _p255);
-    z3 = (DA - CB) % _p255;
+    z3 = (da - cb) % _p255;
     z3 = (x1 * z3.modPow(BigInt.two, _p255)) % _p255;
-    x2 = (AA * BB) % _p255;
-    z2 = (E * ((AA + _a24 * E) % _p255)) % _p255;
+    x2 = (aa * bb) % _p255;
+    z2 = (E * ((aa + _a24 * E) % _p255)) % _p255;
   }
   if (swap == 1) {
     BigInt tx = x2; x2 = x3; x3 = tx;
@@ -61,6 +61,14 @@ Uint8List x25519(Uint8List kIn, Uint8List uIn) {
   }
   final inv = z2.modPow(_p255 - BigInt.two, _p255);
   return _int2le((x2 * inv) % _p255, 32);
+}
+
+/// Ensures a WireGuard interface address has exactly one CIDR suffix.
+/// Cloudflare responses may already include the prefix.
+String normalizeWarpInterfaceAddress(String address, int prefixLength) {
+  final value = address.trim();
+  if (value.isEmpty) return value;
+  return value.contains('/') ? value : '$value/$prefixLength';
 }
 
 class WarpKeys {
@@ -80,12 +88,12 @@ WarpKeys genWarpKeys() {
 }
 
 Future<Map<String, dynamic>?> registerWarp(WarpKeys kp) async {
+  final dio = Dio(BaseOptions(
+    connectTimeout: const Duration(seconds: 10),
+    receiveTimeout: const Duration(seconds: 15),
+    headers: {'User-Agent': 'okhttp/3.12.1', 'Content-Type': 'application/json'},
+  ));
   try {
-    final dio = Dio(BaseOptions(
-      connectTimeout: const Duration(seconds: 10),
-      receiveTimeout: const Duration(seconds: 15),
-      headers: {'User-Agent': 'okhttp/3.12.1', 'Content-Type': 'application/json'},
-    ));
     final res = await dio.post('https://api.cloudflareclient.com/v0a2158/reg', data: {
       'key': kp.pub,
       'install_id': '',
@@ -98,7 +106,13 @@ Future<Map<String, dynamic>?> registerWarp(WarpKeys kp) async {
     final d = res.data as Map<String, dynamic>;
     final cfg = d['config'] as Map<String, dynamic>;
     final iface = cfg['interface'] as Map<String, dynamic>;
-    final addr = (iface['addresses'] as Map<String, dynamic>)['v4'] as String;
+    final interfaceAddresses = iface['addresses'] as Map<String, dynamic>;
+    final addr = interfaceAddresses['v4'] as String;
+    final addresses = <String>[normalizeWarpInterfaceAddress(addr, 32)];
+    final addrV6 = interfaceAddresses['v6'] as String?;
+    if (addrV6 != null && addrV6.trim().isNotEmpty) {
+      addresses.add(normalizeWarpInterfaceAddress(addrV6, 128));
+    }
     final peer = (cfg['peers'] as List)[0] as Map<String, dynamic>;
     final peerPub = peer['public_key'] as String;
     final ep = peer['endpoint'] as Map<String, dynamic>;
@@ -128,7 +142,7 @@ Future<Map<String, dynamic>?> registerWarp(WarpKeys kp) async {
       'protocol': 'wireguard',
       'settings': {
         'secretKey': kp.priv,
-        'address': ['$addr/32'],
+        'address': addresses,
         'peers': [
           {'publicKey': peerPub, 'endpoint': endpoint, 'allowedIPs': ['0.0.0.0/0', '::/0']}
         ],
@@ -139,5 +153,7 @@ Future<Map<String, dynamic>?> registerWarp(WarpKeys kp) async {
     };
   } catch (_) {
     return null;
+  } finally {
+    dio.close(force: true);
   }
 }
