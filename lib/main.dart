@@ -101,15 +101,16 @@ String subscriptionDisplayLabel(String value) {
   final uri = Uri.tryParse(value.trim());
   if (uri == null || uri.host.isEmpty) return 'HTTPS subscription';
 
-  final port = uri.hasPort && uri.port != 443 ? ':' + uri.port.toString() : '';
+  final port = uri.hasPort && uri.port != 443 ? ':${uri.port}' : '';
   final path = uri.path.isEmpty || uri.path == '/' ? '' : '/•••';
   final hidden = <String>[
     if (uri.userInfo.isNotEmpty) 'credentials hidden',
     if (uri.hasQuery) 'query hidden',
     if (uri.hasFragment) 'fragment hidden',
   ];
-  final privacyNote = hidden.isEmpty ? '' : '  •  ' + hidden.join(' · ');
-  return 'https://' + uri.host + port + path + privacyNote;
+  final hiddenText = hidden.join(' · ');
+  final privacyNote = hidden.isEmpty ? '' : '  •  $hiddenText';
+  return 'https://${uri.host}$port$path$privacyNote';
 }
 
 /// Redacts common credential-bearing values before diagnostic logs are shown.
@@ -228,7 +229,7 @@ String? warpConfigurationError(String? value) {
       return 'The saved WARP peer public key is invalid.';
     }
     final endpoint = (peer['endpoint'] ?? '').toString().trim();
-    final endpointUri = Uri.tryParse('udp://' + endpoint);
+    final endpointUri = Uri.tryParse('udp://$endpoint');
     if (endpointUri == null ||
         endpointUri.host.isEmpty ||
         !endpointUri.hasPort ||
