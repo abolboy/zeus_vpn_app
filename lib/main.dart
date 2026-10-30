@@ -23,6 +23,28 @@ const FlutterSecureStorage secureStorage = FlutterSecureStorage(
   aOptions: AndroidOptions(encryptedSharedPreferences: true),
 );
 
+class _LiveStats {
+  const _LiveStats({
+    this.upload = '0 B/s',
+    this.download = '0 B/s',
+    this.duration = '00:00:00',
+  });
+
+  final String upload;
+  final String download;
+  final String duration;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _LiveStats &&
+      other.upload == upload &&
+      other.download == download &&
+      other.duration == duration;
+
+  @override
+  int get hashCode => Object.hash(upload, download, duration);
+}
+
 void main() => runApp(const ZeusApp());
 
 class ZeusApp extends StatelessWidget {
@@ -407,12 +429,10 @@ class _HomePageState extends State<HomePage>
   String? _warpJson;
   int _delayMode = 0;
   String _coreDelay = '';
-  String _up = '0 B/s';
-  String _down = '0 B/s';
-  String _dur = '00:00:00';
+  final ValueNotifier<_LiveStats> _liveStats =
+      ValueNotifier(const _LiveStats());
   VoidCallback? _refreshNodes;
   late V2ray _v2ray;
-  late AnimationController _timeCtl;
   late AnimationController _pulseCtl;
   late AnimationController _ringCtl;
   late Animation<double> _pulseAnim;
@@ -420,34 +440,55 @@ class _HomePageState extends State<HomePage>
   @override
   void initState() {
     super.initState();
-    _timeCtl = AnimationController(vsync: this, duration: const Duration(seconds: 6));
     _pulseCtl = AnimationController(vsync: this, duration: const Duration(seconds: 2));
     _ringCtl = AnimationController(vsync: this, duration: const Duration(seconds: 4));
     _pulseAnim = Tween<double>(begin: 0.96, end: 1.04).animate(CurvedAnimation(parent: _pulseCtl, curve: Curves.easeInOut));
     WidgetsBinding.instance.addObserver(this);
     _v2ray = V2ray(onStatusChanged: (V2RayStatus s) {
-      if (mounted) {
+      if (!mounted) return;
+
+      final state = s.state.toString().toUpperCase();
+      final nextConnected = state == 'CONNECTED';
+      final nextConnecting = state == 'CONNECTING' || state == 'CONNECT';
+      final nextStats = _LiveStats(
+        upload: _fmt(s.uploadSpeed),
+        download: _fmt(s.downloadSpeed),
+        duration: nextConnected ? s.duration : '00:00:00',
+      );
+      if (_liveStats.value != nextStats) _liveStats.value = nextStats;
+
+      final connectionStateChanged =
+          nextConnected != _connected || nextConnecting != _connecting;
+      final inactiveRouteNeedsClear = !nextConnected &&
+          !nextConnecting &&
+          (_activeRouteLabel != null ||
+              _activeRouteBaseUri != null ||
+              _activeRouteUsesWarp);
+      final selectionNeedsRepair = !nextConnected &&
+          !nextConnecting &&
+          _selUri != null &&
+          !_nodes.any((node) => node.baseUri == _selUri);
+
+      if (connectionStateChanged ||
+          inactiveRouteNeedsClear ||
+          selectionNeedsRepair) {
         setState(() {
-          final st = s.state.toString().toUpperCase();
-          _connected = st == 'CONNECTED';
-          _connecting = st == 'CONNECTING' || st == 'CONNECT';
-          _up = _fmt(s.uploadSpeed);
-          _down = _fmt(s.downloadSpeed);
-          _dur = _connected ? s.duration : '00:00:00';
-          if (!_connected && !_connecting) {
+          _connected = nextConnected;
+          _connecting = nextConnecting;
+          if (!nextConnected && !nextConnecting) {
             _coreDelay = '';
             _activeRouteLabel = null;
             _activeRouteBaseUri = null;
             _activeRouteUsesWarp = false;
-            if (_selUri != null &&
-                !_nodes.any((node) => node.baseUri == _selUri)) {
+            if (selectionNeedsRepair) {
               _selUri = _nodes.isEmpty ? null : _nodes.first.baseUri;
               if (_selUri != null) _saveSelection(_selUri!);
             }
           }
         });
-        _syncMotionState();
       }
+
+      if (connectionStateChanged) _syncMotionState();
     });
     _syncMotionState();
     _boot();
@@ -460,18 +501,19 @@ class _HomePageState extends State<HomePage>
   }
 
   void _syncMotionState() {
-    final shouldAnimate = _appInForeground && _activeTab == 0;
-    if (shouldAnimate) {
-      if (!_timeCtl.isAnimating) _timeCtl.repeat();
+    final dashboardVisible = _appInForeground && _activeTab == 0;
+    final tunnelActive = _connected || _connecting;
+
+    // Keep expensive motion off while idle, off-screen, or on another tab.
+    if (dashboardVisible && tunnelActive) {
       if (!_ringCtl.isAnimating) _ringCtl.repeat();
-      if (_connected) {
-        if (!_pulseCtl.isAnimating) _pulseCtl.repeat(reverse: true);
-      } else {
-        _pulseCtl.stop();
-      }
     } else {
-      _timeCtl.stop();
       _ringCtl.stop();
+    }
+
+    if (dashboardVisible && _connected) {
+      if (!_pulseCtl.isAnimating) _pulseCtl.repeat(reverse: true);
+    } else {
       _pulseCtl.stop();
     }
   }
@@ -995,7 +1037,7 @@ class _HomePageState extends State<HomePage>
   }
   Future<void> _pingAll() async {
     if (!mounted || _nodes.isEmpty) return;
-    final c = _delayMode == 1 ? 4 : 20;
+    final c = _delayMode == 1 ? 4 : 8;
     final q = List<ServerNode>.from(_nodes);
     await Future.wait(List.generate(c, (_) async {
       while (mounted && q.isNotEmpty) {
@@ -1014,18 +1056,20 @@ class _HomePageState extends State<HomePage>
         if (!mounted) return;
         if (ms <= 0) throw Exception('timeout');
         if (mounted) {
-          setState(() {
-            n.pingText = '$ms ms';
-            n.pingColor = ms < 200 ? green : (ms < 500 ? amber : magenta);
-          });
+          n.pingText = '$ms ms';
+          n.pingColor = ms < 200 ? green : (ms < 500 ? amber : magenta);
+          final displayedUri =
+              (_connected || _connecting) ? _activeRouteBaseUri : _selUri;
+          if (n.baseUri == displayedUri) setState(() {});
           _refreshNodes?.call();
         }
       } catch (_) {
         if (mounted) {
-          setState(() {
-            n.pingText = 'پایان مهلت';
-            n.pingColor = magenta;
-          });
+          n.pingText = 'پایان مهلت';
+          n.pingColor = magenta;
+          final displayedUri =
+              (_connected || _connecting) ? _activeRouteBaseUri : _selUri;
+          if (n.baseUri == displayedUri) setState(() {});
           _refreshNodes?.call();
         }
       }
@@ -1165,7 +1209,7 @@ class _HomePageState extends State<HomePage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _syncEpoch++;
-    _timeCtl.dispose();
+    _liveStats.dispose();
     _pulseCtl.dispose();
     _ringCtl.dispose();
     _dio.close(force: true);
@@ -1845,7 +1889,16 @@ class _HomePageState extends State<HomePage>
                     const SizedBox(height: 8),
                     Text(_connected ? 'متصل' : (_connecting ? 'در حال اتصال' : 'اتصال'), style: TextStyle(color: accent, fontSize: 19, fontWeight: FontWeight.w900)),
                     const SizedBox(height: 4),
-                    Text(_connected ? _dur : 'برای شروع لمس کنید', style: TextStyle(color: Colors.white.withValues(alpha: .48), fontSize: 10)),
+                    ValueListenableBuilder<_LiveStats>(
+                      valueListenable: _liveStats,
+                      builder: (context, stats, _) => Text(
+                        _connected ? stats.duration : 'برای شروع لمس کنید',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: .48),
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
                   ]),
                 ),
               ])),
@@ -1869,11 +1922,14 @@ class _HomePageState extends State<HomePage>
           ]),
         ),
         const SizedBox(height: 16),
-        Row(children: [
-          Expanded(child: _metricTile('آپلود', _up, Icons.north_east_rounded, magenta)),
-          const SizedBox(width: 9),
-          Expanded(child: _metricTile('دانلود', _down, Icons.south_west_rounded, cyan)),
-        ]),
+        ValueListenableBuilder<_LiveStats>(
+          valueListenable: _liveStats,
+          builder: (context, stats, _) => Row(children: [
+            Expanded(child: _metricTile('آپلود', stats.upload, Icons.north_east_rounded, magenta)),
+            const SizedBox(width: 9),
+            Expanded(child: _metricTile('دانلود', stats.download, Icons.south_west_rounded, cyan)),
+          ]),
+        ),
         const SizedBox(height: 9),
         Row(children: [
           Expanded(child: _metricTile('پینگ هسته', _testingDelay ? '...' : (_coreDelay.isEmpty ? 'بررسی' : _coreDelay), Icons.network_ping_rounded, green, onTap: _testingDelay ? null : _testCoreDelay)),
@@ -2188,8 +2244,11 @@ class _HomePageState extends State<HomePage>
     return Scaffold(
       backgroundColor: background,
       body: Stack(children: [
-        Positioned.fill(child: AnimatedBuilder(animation: _timeCtl, builder: (ctx, _) => CustomPaint(painter: _CyberP(_timeCtl.value)))),
-        Positioned.fill(child: IgnorePointer(child: AnimatedBuilder(animation: _timeCtl, builder: (ctx, _) => CustomPaint(painter: _ScanP(_timeCtl.value))))),
+        const Positioned.fill(
+          child: RepaintBoundary(
+            child: CustomPaint(painter: _CyberP(), isComplex: true),
+          ),
+        ),
         SafeArea(child: Column(children: [
           Padding(padding: const EdgeInsets.fromLTRB(20, 12, 20, 9), child: Row(children: [
             Container(width: 42, height: 42, decoration: BoxDecoration(color: cyan.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(13), border: Border.all(color: cyan.withValues(alpha: 0.5)), boxShadow: [BoxShadow(color: cyan.withValues(alpha: 0.1), blurRadius: 18)]), child: const Icon(Icons.bolt_rounded, color: cyan, size: 26)),
@@ -2256,12 +2315,11 @@ class _HomePageState extends State<HomePage>
 }
 
 class _CyberP extends CustomPainter {
-  final double t;
-  _CyberP(this.t);
+  const _CyberP();
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Low-contrast terminal grid.
+    // Static terminal grid: painted once and cached by the surrounding boundary.
     final grid = Paint()
       ..color = cyan.withValues(alpha: 0.025)
       ..strokeWidth = 0.6;
@@ -2272,18 +2330,17 @@ class _CyberP extends CustomPainter {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
     }
 
-    // Decorative binary rain; it does not represent network traffic or logs.
+    // Static decorative binary columns; no per-frame TextPainter allocation.
     final columns = (size.width / 32).ceil();
     for (var column = 0; column < columns; column++) {
       final random = Random(column * 97 + 11);
       final bits = List.generate(12, (_) => random.nextBool() ? '1' : '0')
           .join('\n');
-      final alpha = 0.025 + 0.035 * (0.5 + 0.5 * sin(t * 2 * pi + column));
       final painter = TextPainter(
         text: TextSpan(
           text: bits,
           style: TextStyle(
-            color: green.withValues(alpha: alpha),
+            color: green.withValues(alpha: 0.035),
             fontSize: 9,
             height: 1.35,
             fontFamily: 'monospace',
@@ -2292,26 +2349,11 @@ class _CyberP extends CustomPainter {
         ),
         textDirection: TextDirection.ltr,
       )..layout();
-      final travel = (t * size.height * 0.7 + column * 71) %
-          (size.height + 220);
-      painter.paint(canvas, Offset(column * 32.0 + 5, travel - 110));
+      final top = (column * 71) % (size.height + 220) - 110.0;
+      painter.paint(canvas, Offset(column * 32.0 + 5, top));
     }
   }
 
   @override
-  bool shouldRepaint(_CyberP old) => old.t != t;
-}
-
-class _ScanP extends CustomPainter {
-  final double t;
-  _ScanP(this.t);
-  @override
-  void paint(Canvas canvas, Size size) {
-    final y = t * size.height;
-    canvas.drawRect(Rect.fromLTWH(0, y - 30, size.width, 30), Paint()..color = cyan.withValues(alpha: 0.05));
-    canvas.drawRect(Rect.fromLTWH(0, y, size.width, 2), Paint()..color = cyan.withValues(alpha: 0.25));
-  }
-
-  @override
-  bool shouldRepaint(_ScanP old) => old.t != t;
+  bool shouldRepaint(_CyberP old) => false;
 }
