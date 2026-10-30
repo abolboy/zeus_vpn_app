@@ -1767,6 +1767,20 @@ class _HomePageState extends State<HomePage>
         Container(width: 54, height: 4, decoration: BoxDecoration(color: green.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(8))),
         const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text('PATT-NG CORE', style: TextStyle(color: green, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 3))),
         Expanded(child: ListView(padding: const EdgeInsets.symmetric(horizontal: 20), children: [
+          if (_connected || _connecting)
+            Container(
+              margin: const EdgeInsets.only(bottom: 14),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: cyan.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: cyan.withValues(alpha: 0.35)),
+              ),
+              child: const Text(
+                'LIVE SESSION: edits here are saved for the next connection. The running tunnel is not reconfigured until you disconnect and reconnect.',
+                style: TextStyle(color: cyan, fontSize: 10, height: 1.45),
+              ),
+            ),
           if (_warpOn)
             Container(
               margin: const EdgeInsets.only(bottom: 14),
@@ -2252,7 +2266,7 @@ class _HomePageState extends State<HomePage>
               ),
             ),
           ])),
-          if (!_warpOn && ping != '--')
+          if (!((_connected || _connecting) ? _activeRouteUsesWarp : _warpOn) && ping != '--')
             Text(ping, style: TextStyle(color: pingColor, fontWeight: FontWeight.w900, fontSize: 10)),
         ]), accent: ((_connected || _connecting) ? _activeRouteUsesWarp : _warpOn) ? green : cyan, onTap: () => _setActiveTab(1)),
         const SizedBox(height: 20),
