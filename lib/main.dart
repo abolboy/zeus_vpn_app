@@ -118,7 +118,7 @@ class _SubscriptionSheetState extends State<_SubscriptionSheet> {
     final parsed = Uri.tryParse(value);
     if (parsed == null || value.isEmpty) {
       widget.onValidationError(
-        'Enter an HTTPS subscription URL or VLESS/Trojan/VMess link.',
+        'لینک اشتراک HTTPS یا لینک مستقیم VLESS، Trojan یا VMess را وارد کنید.',
       );
       return;
     }
@@ -133,20 +133,20 @@ class _SubscriptionSheetState extends State<_SubscriptionSheet> {
       }
     } else if (scheme != 'https' || parsed.host.isEmpty) {
       widget.onValidationError(
-        'Only HTTPS subscriptions or VLESS/Trojan/VMess links are supported.',
+        'فقط اشتراک HTTPS یا لینک VLESS، Trojan و VMess پشتیبانی می‌شود.',
       );
       return;
     }
 
     if (isDirect) {
       if (widget.directUris.contains(value)) {
-        widget.onValidationError('This server link is already added.');
+        widget.onValidationError('این لینک سرور قبلاً اضافه شده است.');
         return;
       }
       widget.onAddDirectUri(value);
     } else {
       if (widget.subscriptions.contains(value)) {
-        widget.onValidationError('This subscription is already added.');
+        widget.onValidationError('این اشتراک قبلاً اضافه شده است.');
         return;
       }
       widget.onAddSubscription(value);
@@ -164,7 +164,7 @@ class _SubscriptionSheetState extends State<_SubscriptionSheet> {
     return Container(
       decoration: BoxDecoration(
         color: glass,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         border: Border(
           top: BorderSide(color: magenta.withValues(alpha: 0.6), width: 2),
         ),
@@ -183,7 +183,7 @@ class _SubscriptionSheetState extends State<_SubscriptionSheet> {
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
             child: Text(
-              'SUBSCRIPTIONS',
+              'مدیریت اشتراک‌ها',
               style: TextStyle(
                 color: magenta,
                 fontSize: 14,
@@ -229,7 +229,7 @@ class _SubscriptionSheetState extends State<_SubscriptionSheet> {
             child: !hasEntries
                 ? Center(
                     child: Text(
-                      'EMPTY',
+                      'هنوز موردی اضافه نشده',
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.3),
                       ),
@@ -254,7 +254,7 @@ class _SubscriptionSheetState extends State<_SubscriptionSheet> {
                           child: Row(
                             children: [
                               Text(
-                                'SUB ${index + 1}',
+                                'اشتراک ${index + 1}',
                                 style: const TextStyle(
                                   color: magenta,
                                   fontSize: 10,
@@ -274,7 +274,7 @@ class _SubscriptionSheetState extends State<_SubscriptionSheet> {
                                 ),
                               ),
                               IconButton(
-                                tooltip: 'Remove subscription',
+                                tooltip: 'حذف اشتراک',
                                 icon: const Icon(
                                   Icons.delete_outline,
                                   color: magenta,
@@ -305,7 +305,7 @@ class _SubscriptionSheetState extends State<_SubscriptionSheet> {
                           child: Row(
                             children: [
                               Text(
-                                'NODE ${index + 1}',
+                                'سرور ${index + 1}',
                                 style: const TextStyle(
                                   color: green,
                                   fontSize: 10,
@@ -325,7 +325,7 @@ class _SubscriptionSheetState extends State<_SubscriptionSheet> {
                                 ),
                               ),
                               IconButton(
-                                tooltip: 'Remove server link',
+                                tooltip: 'حذف لینک سرور',
                                 icon: const Icon(
                                   Icons.delete_outline,
                                   color: magenta,
@@ -355,7 +355,7 @@ class _SubscriptionSheetState extends State<_SubscriptionSheet> {
                 ),
                 onPressed: _saving ? null : _saveAndSync,
                 child: Text(
-                  _saving ? 'SAVING...' : 'SAVE & SYNC',
+                  _saving ? 'در حال ذخیره...' : 'ذخیره و همگام‌سازی',
                   style: const TextStyle(
                     color: cyan,
                     fontWeight: FontWeight.bold,
@@ -429,8 +429,8 @@ class _HomePageState extends State<HomePage>
       if (mounted) {
         setState(() {
           final st = s.state.toString().toUpperCase();
-          _connected = st == 'CONNECTED';
-          _connecting = st == 'CONNECTING' || st == 'CONNECT';
+          _connected = st == 'متصل';
+          _connecting = st == 'در حال اتصال' || st == 'CONNECT';
           _up = _fmt(s.uploadSpeed);
           _down = _fmt(s.downloadSpeed);
           _dur = _connected ? s.duration : '00:00:00';
@@ -1023,7 +1023,7 @@ class _HomePageState extends State<HomePage>
       } catch (_) {
         if (mounted) {
           setState(() {
-            n.pingText = 'TIMEOUT';
+            n.pingText = 'پایان مهلت';
             n.pingColor = magenta;
           });
           _refreshNodes?.call();
@@ -1049,7 +1049,7 @@ class _HomePageState extends State<HomePage>
     } catch (_) {
       if (mounted) {
         setState(() {
-          n.pingText = 'TIMEOUT';
+          n.pingText = 'پایان مهلت';
           n.pingColor = magenta;
         });
         _refreshNodes?.call();
@@ -1082,13 +1082,13 @@ class _HomePageState extends State<HomePage>
             );
       if (!mounted) return;
       if (milliseconds <= 0) {
-        setState(() => _coreDelay = 'TIMEOUT');
+        setState(() => _coreDelay = 'پایان مهلت');
       } else {
         setState(() => _coreDelay = '$milliseconds ms');
       }
     } catch (_) {
       if (!mounted) return;
-      setState(() => _coreDelay = 'FAILED');
+      setState(() => _coreDelay = 'ناموفق');
     } finally {
       if (mounted) setState(() => _testingDelay = false);
     }
@@ -1217,38 +1217,38 @@ class _HomePageState extends State<HomePage>
 
   void _openNodes() {
     String q = '';
-    String tag = 'ALL';
+    String tag = 'همه';
     int sort = 0;
     showModalBottomSheet(context: context, backgroundColor: Colors.transparent, isScrollControlled: true, builder: (ctx) => StatefulBuilder(builder: (ctx, setMs) {
       _refreshNodes = () { if (ctx.mounted) setMs(() {}); };
-      var vis = _nodes.where((n) => (tag == 'ALL' || n.subTag == tag) && (q.isEmpty || n.displayName.toLowerCase().contains(q.toLowerCase()))).toList();
+      var vis = _nodes.where((n) => (tag == 'همه' || n.subTag == tag) && (q.isEmpty || n.displayName.toLowerCase().contains(q.toLowerCase()))).toList();
       if (sort == 1) vis.sort((a, b) => _ms(a).compareTo(_ms(b)));
       if (sort == 2) vis.sort((a, b) => a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
-      final tags = <String>['ALL', ..._nodes.map((e) => e.subTag).toSet()];
+      final tags = <String>['همه', ..._nodes.map((e) => e.subTag).toSet()];
       return Container(height: MediaQuery.of(ctx).size.height * 0.9, decoration: BoxDecoration(color: glass, borderRadius: const BorderRadius.vertical(top: Radius.circular(22)), border: Border(top: BorderSide(color: cyan.withValues(alpha: 0.6), width: 2))), child: Column(children: [
         const SizedBox(height: 12),
         Container(width: 54, height: 4, decoration: BoxDecoration(color: cyan.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(8))),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Row(children: [
           const Icon(Icons.dns, color: cyan, size: 18),
           const SizedBox(width: 8),
-          const Text('NODE CENTER', style: TextStyle(color: cyan, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 3)),
+          const Text('مرکز مدیریت سرورها', style: TextStyle(color: cyan, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 3)),
           const SizedBox(width: 8),
           Text('${vis.length}/${_nodes.length}', style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 10)),
         ])),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Wrap(spacing: 8, runSpacing: 8, children: [
-          _pill(Icons.refresh, 'SYNC', cyan, _syncAll),
-          _pill(Icons.network_ping, 'PING ALL', green, _pingAll),
-          _pill(Icons.sort, sort == 0 ? 'SORT: AUTO' : (sort == 1 ? 'SORT: PING' : 'SORT: NAME'), amber, () => setMs(() => sort = (sort + 1) % 3)),
-          _pill(Icons.timer_outlined, _delayMode == 0 ? 'DELAY: TCP' : 'DELAY: REAL', magenta, () => setMs(() => _delayMode = _delayMode == 0 ? 1 : 0)),
+          _pill(Icons.refresh, 'همگام‌سازی', cyan, _syncAll),
+          _pill(Icons.network_ping, 'پینگ همه', green, _pingAll),
+          _pill(Icons.sort, sort == 0 ? 'مرتب‌سازی: خودکار' : (sort == 1 ? 'مرتب‌سازی: پینگ' : 'مرتب‌سازی: نام'), amber, () => setMs(() => sort = (sort + 1) % 3)),
+          _pill(Icons.timer_outlined, _delayMode == 0 ? 'تأخیر: TCP' : 'تأخیر: هسته', magenta, () => setMs(() => _delayMode = _delayMode == 0 ? 1 : 0)),
         ])),
         const SizedBox(height: 10),
-        Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: TextField(style: const TextStyle(color: Colors.white, fontSize: 13), onChanged: (v) => setMs(() => q = v), decoration: InputDecoration(hintText: 'SEARCH NODE...', hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.25), fontSize: 12), prefixIcon: const Icon(Icons.search, color: cyan, size: 18), filled: true, fillColor: Colors.white.withValues(alpha: 0.04), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))))),
+        Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: TextField(style: const TextStyle(color: Colors.white, fontSize: 13), onChanged: (v) => setMs(() => q = v), decoration: InputDecoration(hintText: 'جست‌وجوی سرور...', hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.25), fontSize: 12), prefixIcon: const Icon(Icons.search, color: cyan, size: 18), filled: true, fillColor: Colors.white.withValues(alpha: 0.04), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))))),
         const SizedBox(height: 10),
         SizedBox(height: 34, child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16), children: tags.map((t) {
           final on = tag == t;
           return Padding(padding: const EdgeInsets.only(right: 8), child: GestureDetector(onTap: () => setMs(() => tag = t), child: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7), decoration: BoxDecoration(color: on ? cyan.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.03), borderRadius: BorderRadius.circular(20), border: Border.all(color: on ? cyan : Colors.white.withValues(alpha: 0.1))), child: Text(t, style: TextStyle(color: on ? cyan : Colors.white.withValues(alpha: 0.6), fontSize: 11, fontWeight: FontWeight.bold)))));
         }).toList())),
-        Expanded(child: vis.isEmpty ? Center(child: Text('NO NODES', style: TextStyle(color: Colors.white.withValues(alpha: 0.3)))) : ListView.builder(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), itemCount: vis.length, itemBuilder: (ctx, i) {
+        Expanded(child: vis.isEmpty ? Center(child: Text('سروری پیدا نشد', style: TextStyle(color: Colors.white.withValues(alpha: 0.3)))) : ListView.builder(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), itemCount: vis.length, itemBuilder: (ctx, i) {
           final n = vis[i];
           final sel = n.baseUri == _selUri;
           return GestureDetector(onTap: () {
@@ -1343,7 +1343,7 @@ class _HomePageState extends State<HomePage>
       return Container(height: MediaQuery.of(ctx).size.height * 0.85, decoration: BoxDecoration(color: glass, borderRadius: const BorderRadius.vertical(top: Radius.circular(22)), border: Border(top: BorderSide(color: green.withValues(alpha: 0.6), width: 2))), child: Column(children: [
         const SizedBox(height: 12),
         Container(width: 54, height: 4, decoration: BoxDecoration(color: green.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(8))),
-        const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text('PATT-NG CORE', style: TextStyle(color: green, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 3))),
+        const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text('تنظیمات هسته PATT-NG', style: TextStyle(color: green, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 3))),
         Expanded(child: ListView(padding: const EdgeInsets.symmetric(horizontal: 20), children: [
           if (_connected || _connecting)
             Container(
@@ -1355,7 +1355,7 @@ class _HomePageState extends State<HomePage>
                 border: Border.all(color: cyan.withValues(alpha: 0.35)),
               ),
               child: const Text(
-                'LIVE SESSION: edits here are saved for the next connection. The running tunnel is not reconfigured until you disconnect and reconnect.',
+                'اتصال فعال است: تغییرات برای اتصال بعدی ذخیره می‌شوند. برای اعمال آن‌ها باید تونل را قطع و دوباره وصل کنید.',
                 style: TextStyle(color: cyan, fontSize: 10, height: 1.45),
               ),
             ),
@@ -1369,7 +1369,7 @@ class _HomePageState extends State<HomePage>
                 border: Border.all(color: amber.withValues(alpha: 0.35)),
               ),
               child: const Text(
-                'WARP-ONLY MODE: select a valid profile to provide the local core layout, but its VLESS/Trojan/VMess server outbound is replaced by WARP. This is not WARP-plus-proxy chaining. Server transport, REALITY, Vision, fragmentation, noise and MUX overrides are ignored; DNS, log level and optional LAN bypass still apply.',
+                'حالت فقط WARP: خروجی سرور VLESS/Trojan/VMess با WARP جایگزین می‌شود؛ این نسخه زنجیره‌سازی WARP با پروکسی را پشتیبانی نمی‌کند. تنظیمات انتقال، REALITY، Vision، Fragment، Noise و MUX نادیده گرفته می‌شوند؛ DNS، سطح گزارش و عبور LAN همچنان اعمال می‌شوند.',
                 style: TextStyle(color: amber, fontSize: 10, height: 1.45),
               ),
             ),
@@ -1377,7 +1377,7 @@ class _HomePageState extends State<HomePage>
             setMs(() => _warpOn = v);
             _saveWarp();
           }),
-          if (_warpJson != null) const Padding(padding: EdgeInsets.only(bottom: 10), child: Text('WARP device: REGISTERED', style: TextStyle(color: green, fontSize: 10, fontWeight: FontWeight.bold))),
+          if (_warpJson != null) const Padding(padding: EdgeInsets.only(bottom: 10), child: Text('دستگاه WARP ثبت شده است', style: TextStyle(color: green, fontSize: 10, fontWeight: FontWeight.bold))),
           if (_warpOn && _warpJson == null) Padding(padding: const EdgeInsets.only(bottom: 14), child: SizedBox(width: double.infinity, height: 44, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: cyan.withValues(alpha: 0.1), side: const BorderSide(color: cyan)), onPressed: _registeringWarp ? null : () async {
             if (_registeringWarp) return;
             setState(() => _registeringWarp = true);
@@ -1416,33 +1416,33 @@ class _HomePageState extends State<HomePage>
               if (mounted) setState(() => _registeringWarp = false);
               if (ctx.mounted) setMs(() {});
             }
-          }, child: Text(_registeringWarp ? 'REGISTERING...' : 'REGISTER WARP DEVICE', style: const TextStyle(color: cyan, fontWeight: FontWeight.bold, letterSpacing: 1))))),
-          _dd('FINGERPRINT', ['chrome', 'firefox', 'safari', 'randomized', 'randomizednoalpn'], _patt.fp, (v) {
+          }, child: Text(_registeringWarp ? 'در حال ثبت...' : 'ثبت دستگاه WARP', style: const TextStyle(color: cyan, fontWeight: FontWeight.bold, letterSpacing: 1))))),
+          _dd('اثر انگشت مرورگر', ['chrome', 'firefox', 'safari', 'randomized', 'randomizednoalpn'], _patt.fp, (v) {
             setMs(() => _patt.fp = v);
             _savePatt();
           }),
-          _tf('CIPHER SUITES', _patt.cs, (v) {
+          _tf('مجموعه رمزنگاری', _patt.cs, (v) {
             _patt.cs = v;
             _savePatt();
           }),
-          _tf('CERTIFICATE SHA-256 PIN (PCS)', _patt.pcs, (v) {
+          _tf('پین SHA-256 گواهی (PCS)', _patt.pcs, (v) {
             _patt.pcs = v;
             _savePatt();
           }),
-          _tf('VERIFY CERTIFICATE NAME (VCN)', _patt.vcn, (v) {
+          _tf('بررسی نام گواهی (VCN)', _patt.vcn, (v) {
             _patt.vcn = v;
             _savePatt();
           }),
-          _dd('FRAGMENT', ['tlshello', 'none'], _patt.frag, (v) {
+          _dd('قطعه‌بندی', ['tlshello', 'none'], _patt.frag, (v) {
             setMs(() => _patt.frag = v);
             _savePatt();
           }),
           if (_patt.frag != 'none') ...[
-            _tf('FRAG LENGTH', _patt.fragLen, (v) {
+            _tf('طول قطعه', _patt.fragLen, (v) {
               _patt.fragLen = v;
               _savePatt();
             }),
-            _tf('FRAG INTERVAL', _patt.fragInt, (v) {
+            _tf('فاصله قطعه‌ها', _patt.fragInt, (v) {
               _patt.fragInt = v;
               _savePatt();
             }),
@@ -1452,18 +1452,18 @@ class _HomePageState extends State<HomePage>
             _savePatt();
           }),
           if (_patt.noise) ...[
-            _dd('NOISE TYPE', ['rand', 'base64', 'str', 'hex'], _patt.noiseType, (v) {
+            _dd('نوع نویز', ['rand', 'base64', 'str', 'hex'], _patt.noiseType, (v) {
               setMs(() => _patt.noiseType = v);
               _savePatt();
             }),
             _tf(
-              _patt.noiseType == 'rand' ? 'NOISE LENGTH RANGE' : 'NOISE PAYLOAD',
+              _patt.noiseType == 'rand' ? 'بازه طول نویز' : 'داده نویز',
               _patt.noisePacket,
               (v) {
               _patt.noisePacket = v;
               _savePatt();
             }),
-            _tf('NOISE DELAY', _patt.noiseDelay, (v) {
+            _tf('تأخیر نویز', _patt.noiseDelay, (v) {
               _patt.noiseDelay = v;
               _savePatt();
             }),
@@ -1472,15 +1472,15 @@ class _HomePageState extends State<HomePage>
             setMs(() => _patt.mux = v);
             _savePatt();
           }),
-          if (_patt.mux) _tf('MUX CONCURRENCY', _patt.muxConc, (v) {
+          if (_patt.mux) _tf('هم‌زمانی MUX', _patt.muxConc, (v) {
             _patt.muxConc = v;
             _savePatt();
           }),
-          _sw('BYPASS LAN', _patt.bypassLan, (v) {
+          _sw('عبور مستقیم شبکه محلی', _patt.bypassLan, (v) {
             setMs(() => _patt.bypassLan = v);
             _savePatt();
           }),
-          _dd('LOG LEVEL', ['debug', 'info', 'warning', 'error', 'none'], _patt.logLevel, (v) {
+          _dd('سطح گزارش‌گیری', ['debug', 'info', 'warning', 'error', 'none'], _patt.logLevel, (v) {
             setMs(() => _patt.logLevel = v);
             _savePatt();
           }),
@@ -1488,11 +1488,11 @@ class _HomePageState extends State<HomePage>
             setMs(() => _patt.dnsMode = v);
             _savePatt();
           }),
-          if (_patt.dnsMode == 'custom') _tf('CUSTOM DNS', _patt.customDns, (v) {
+          if (_patt.dnsMode == 'custom') _tf('DNS سفارشی', _patt.customDns, (v) {
             _patt.customDns = v;
             _savePatt();
           }),
-          _sw('FORCE REALITY OVERRIDE', _patt.reality, (v) {
+          _sw('اعمال اجباری REALITY', _patt.reality, (v) {
             setMs(() => _patt.reality = v);
             _savePatt();
           }),
@@ -1657,7 +1657,7 @@ class _HomePageState extends State<HomePage>
                         const SizedBox(width: 9),
                         const Expanded(
                           child: Text(
-                            'CORE LOGS',
+                            'گزارش‌های هسته',
                             style: TextStyle(
                               color: magenta,
                               fontSize: 14,
@@ -1689,7 +1689,7 @@ class _HomePageState extends State<HomePage>
                       onChanged: (value) => setSheetState(() => search = value.trim()),
                       style: const TextStyle(color: Colors.white, fontSize: 12),
                       decoration: InputDecoration(
-                        hintText: 'FILTER LOG MESSAGES...',
+                        hintText: 'جست‌وجو در گزارش‌ها...',
                         prefixIcon: const Icon(Icons.search_rounded, color: cyan, size: 18),
                         filled: true,
                         fillColor: Colors.white.withValues(alpha: 0.04),
@@ -1708,7 +1708,7 @@ class _HomePageState extends State<HomePage>
                     child: filtered.isEmpty
                         ? Center(
                             child: Text(
-                              currentLogs.isEmpty ? 'NO CORE LOGS YET' : 'NO MATCHING LOGS',
+                              currentLogs.isEmpty ? 'هنوز گزارشی ثبت نشده' : 'گزارشی مطابق جست‌وجو نیست',
                               style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 11),
                             ),
                           )
@@ -1764,13 +1764,13 @@ class _HomePageState extends State<HomePage>
       padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(
         color: const Color(0xE6071009),
-        borderRadius: BorderRadius.circular(9),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: accent.withValues(alpha: 0.3)),
         boxShadow: [BoxShadow(color: accent.withValues(alpha: 0.055), blurRadius: 18)],
       ),
       child: child,
     );
-    return onTap == null ? card : Material(color: Colors.transparent, child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(9), child: card));
+    return onTap == null ? card : Material(color: Colors.transparent, child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(18), child: card));
   }
 
   Widget _quickAction(IconData icon, String title, String subtitle, Color accent, VoidCallback onTap) => Padding(
@@ -1919,7 +1919,7 @@ class _HomePageState extends State<HomePage>
         _neonPanel(Row(children: [
           const Icon(Icons.timer_outlined, color: magenta),
           const SizedBox(width: 9),
-          Expanded(child: Text(_delayMode == 0 ? 'TCP handshake latency mode' : 'Core-based latency mode', style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 10))),
+          Expanded(child: Text(_delayMode == 0 ? 'اندازه‌گیری تأخیر اتصال TCP' : 'اندازه‌گیری تأخیر از هسته VPN', style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 10))),
           TextButton(onPressed: () => setState(() => _delayMode = _delayMode == 0 ? 1 : 0), child: Text(_delayMode == 0 ? 'TCP' : 'REAL', style: const TextStyle(color: magenta))),
         ]), accent: magenta),
         const SizedBox(height: 14),
@@ -1927,11 +1927,11 @@ class _HomePageState extends State<HomePage>
           _neonPanel(Column(children: [
             const Icon(Icons.radar_rounded, color: amber, size: 38),
             const SizedBox(height: 10),
-            const Text('NO NODES DETECTED', style: TextStyle(color: amber, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+            const Text('هنوز سروری پیدا نشده', style: TextStyle(color: amber, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
             const SizedBox(height: 8),
-            Text(_subs.isEmpty ? 'Add an HTTPS subscription to populate this list.' : 'Sync subscriptions and verify the feed URLs.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 11)),
+            Text(_subs.isEmpty ? 'برای نمایش سرورها، یک اشتراک HTTPS اضافه کنید.' : 'اشتراک‌ها را همگام‌سازی و لینک‌ها را بررسی کنید.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 11)),
             const SizedBox(height: 12),
-            ElevatedButton(onPressed: () => _setActiveTab(2), child: const Text('MANAGE FEEDS')),
+            ElevatedButton(onPressed: () => _setActiveTab(2), child: const Text('مدیریت اشتراک‌ها')),
           ]), accent: amber)
         else
           ..._nodes.map((node) {
@@ -1943,12 +1943,12 @@ class _HomePageState extends State<HomePage>
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(node.displayName, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: selected ? green : Colors.white, fontWeight: FontWeight.w800, fontSize: 11)),
                 const SizedBox(height: 4),
-                Text('${node.subTag} • ${_hostPort(node.baseUri)?.key ?? 'unknown host'}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white.withValues(alpha: 0.42), fontSize: 9)),
+                Text('${node.subTag} • ${_hostPort(node.baseUri)?.key ?? 'میزبان نامشخص'}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white.withValues(alpha: 0.42), fontSize: 9)),
               ])),
               const SizedBox(width: 7),
               Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
                 Text(node.pingText, style: TextStyle(color: node.pingColor, fontSize: 10, fontWeight: FontWeight.w900)),
-                Text(selected ? 'SELECTED' : 'SELECT', style: TextStyle(color: tint, fontSize: 8)),
+                Text(selected ? 'انتخاب‌شده' : 'انتخاب', style: TextStyle(color: tint, fontSize: 8)),
               ]),
             ]), accent: tint, onTap: () {
               if (_connected || _connecting) {
@@ -2052,20 +2052,20 @@ class _HomePageState extends State<HomePage>
             Text(
               (_connected || _connecting)
                   ? (_activeRouteUsesWarp
-                      ? 'WARP is carrying the live session.'
-                      : 'WARP is off in the live session; next connection: ${_warpOn ? 'ON' : 'OFF'}.')
+                      ? 'اتصال فعلی از WARP عبور می‌کند.'
+                      : 'WARP در اتصال فعلی خاموش است؛ وضعیت اتصال بعدی: ${_warpOn ? 'روشن' : 'خاموش'}.')
                   : (_warpOn
-                      ? 'WARP-only egress is configured for the next connection.'
+                      ? 'خروجی فقط WARP برای اتصال بعدی تنظیم شده است.'
                       : (_warpJson != null
-                          ? 'WARP registration is ready; enabling it switches to WARP-only mode.'
-                          : 'No WARP registration detected')),
+                          ? 'ثبت WARP آماده است؛ با فعال‌سازی آن، اتصال فقط از WARP عبور می‌کند.'
+                          : 'ثبت‌نام WARP پیدا نشد')),
               style: TextStyle(color: Colors.white.withValues(alpha: 0.48), fontSize: 10),
             ),
           ])),
           Text(
             (_connected || _connecting)
-                ? (_activeRouteUsesWarp ? 'ACTIVE' : 'INACTIVE')
-                : (_warpOn ? 'NEXT: ON' : 'OFF'),
+                ? (_activeRouteUsesWarp ? 'فعال' : 'غیرفعال')
+                : (_warpOn ? 'اتصال بعدی: روشن' : 'خاموش'),
             style: TextStyle(
               color: ((_connected || _connecting) ? _activeRouteUsesWarp : _warpOn)
                   ? green
@@ -2081,13 +2081,13 @@ class _HomePageState extends State<HomePage>
         _screenHeader('وضعیت دستگاه', 'عیب‌یابی', amber),
         _quickAction(Icons.terminal_rounded, 'گزارش‌های اتصال', 'جست‌وجو و بررسی گزارش‌های Xray', magenta, _openCoreLogs),
         _neonPanel(Column(children: [
-          _diagnosticRow('VPN CORE', _ready ? 'INITIALIZED' : 'STARTING / ERROR', _ready ? green : amber),
+          _diagnosticRow('هسته VPN', _ready ? 'راه‌اندازی شده' : 'در حال راه‌اندازی / خطا', _ready ? green : amber),
           const Divider(color: Color(0x22FFFFFF), height: 22),
-          _diagnosticRow('SERVER INVENTORY', '${_nodes.length} NODE(S)', cyan),
+          _diagnosticRow('فهرست سرورها', '${_nodes.length} NODE(S)', cyan),
           const Divider(color: Color(0x22FFFFFF), height: 22),
-          _diagnosticRow('SUBSCRIPTION FEEDS', '${_subs.length} CONFIGURED', magenta),
+          _diagnosticRow('اشتراک‌ها', '${_subs.length} CONFIGURED', magenta),
           const Divider(color: Color(0x22FFFFFF), height: 22),
-          _diagnosticRow('TUNNEL STATE', _connected ? 'CONNECTED' : (_connecting ? 'CONNECTING' : 'DISCONNECTED'), _connected ? green : (_connecting ? amber : cyan)),
+          _diagnosticRow('وضعیت تونل', _connected ? 'متصل' : (_connecting ? 'در حال اتصال' : 'قطع'), _connected ? green : (_connecting ? amber : cyan)),
         ]), accent: amber),
         const SizedBox(height: 14),
         Text('ZEUS VPN • اتصال امن و پایدار', textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 8, letterSpacing: 1)),
@@ -2171,9 +2171,8 @@ class _HomePageState extends State<HomePage>
                     label,
                     style: TextStyle(
                       color: selected ? cyan : const Color(0xFF657084),
-                      fontSize: 8,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.1,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                   const SizedBox(height: 3),
@@ -2200,18 +2199,18 @@ class _HomePageState extends State<HomePage>
 
   @override
   Widget build(BuildContext context) {
-    String selName = 'TAP TO SELECT';
+    String selName = 'برای انتخاب لمس کنید';
     String selPing = '--';
     Color selPingC = Colors.grey;
     if (_connected || _connecting) {
-      selName = _activeRouteLabel ?? 'ACTIVE TUNNEL';
+      selName = _activeRouteLabel ?? 'تونل فعال';
       final activeNode = _nodes.where((node) => node.baseUri == _activeRouteBaseUri);
       if (activeNode.isNotEmpty) {
         selPing = activeNode.first.pingText;
         selPingC = activeNode.first.pingColor;
       }
     } else if (_loading) {
-      selName = 'SYNCING...';
+      selName = 'در حال همگام‌سازی...';
     } else if (_selUri != null && _nodes.isNotEmpty) {
       final selectedNode = _nodes.where((node) => node.baseUri == _selUri);
       if (selectedNode.isNotEmpty) {
