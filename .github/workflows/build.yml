@@ -1,61 +1,144 @@
-name: Build APK
+name: Build and Verify
 
 on:
   push:
     branches: [main, master]
+  pull_request:
+    branches: [main, master]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: zeus-vpn-ci-${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  verify:
+    name: Analyze, test, and build debug APK
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
+
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6.1.0
         with:
           distribution: temurin
-          java-version: 17
+          java-version: "17"
+
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@v2.23.0
         with:
           channel: stable
-      - name: Create Android folder
+
+      - name: Create Android project files
         run: flutter create --platforms=android .
+
       - name: Patch Android files
         run: python3 tools/patch_android.py
-      - name: Stable keystore (fetch or create once)
-        env:
-          GH_TOKEN: ${{ github.token }}
+
+      - name: Verify Android security and branding
         run: |
-          mkdir -p ~/.android ci
-          if [ -f ci/keystore.b64 ]; then
-            base64 -d ci/keystore.b64 > ~/.android/debug.keystore
-          else
-            keytool -genkeypair -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname CN=Android,OU=Test,O=Test,C=US
-            base64 -w0 ~/.android/debug.keystore > ci/keystore.b64
-            git config user.email "zeus-bot@users.noreply.github.com"
-            git config user.name "Zeus Bot"
-            git add ci/keystore.b64
-            git commit -m "chore: lock stable keystore [skip ci]"
-            git push "https://x-access-token:${GH_TOKEN}@github.com/abolboy/zeus_vpn_app.git" HEAD:main
-          fi
-      - name: Pub get
+          python3 - <<'PY'
+          import subprocess
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          root_dir = Path("android/app/src/main")
+          manifest = ET.parse(root_dir / "AndroidManifest.xml").getroot()
+          android = "{http://schemas.android.com/apk/res/android}"
+          app = manifest.find("application")
+          assert app is not None, "Android application element is missing"
+          assert app.get(android + "allowBackup") == "false", "Secure storage backup must be disabled"
+          assert app.get(android + "label") == "ZEUS VPN", "Application label is not branded"
+          assert app.get(android + "icon") == "@drawable/zeus_app_icon", "ZEUS launcher icon is not configured"
+          assert (root_dir / "res/drawable/zeus_app_icon.xml").is_file(), "ZEUS icon vector is missing"
+          assert (root_dir / "res/drawable/launch_background.xml").is_file(), "ZEUS splash background is missing"
+          permissions = {
+              element.get(android + "name")
+              for element in manifest.findall("uses-permission")
+          }
+          assert "android.permission.INTERNET" in permissions, "INTERNET permission missing"
+          assert "android.permission.FOREGROUND_SERVICE" in permissions, "Foreground service permission missing"
+
+          gradle_kts = Path("android/app/build.gradle.kts")
+          gradle_file = gradle_kts if gradle_kts.is_file() else Path("android/app/build.gradle")
+          gradle_text = gradle_file.read_text(encoding="utf-8")
+          debug_suffix = (
+              'applicationIdSuffix = ".debug"'
+              if gradle_file.suffix == ".kts"
+              else 'applicationIdSuffix ".debug"'
+          )
+          assert debug_suffix in gradle_text, "Debug APK must use a separate .debug application ID suffix"
+
+          tracked = subprocess.run(
+              ["git", "ls-files", "-z"],
+              check=True,
+              capture_output=True,
+              text=True,
+          ).stdout.split("\0")
+          forbidden_exact = {
+              "ci/keystore.b64",
+              "key.properties",
+              "android/key.properties",
+              "android/app/key.properties",
+              "release.properties",
+          }
+          forbidden_suffixes = (".jks", ".keystore", ".p12", ".pfx")
+          signing_files = [
+              item for item in tracked
+              if item in forbidden_exact
+              or Path(item).name.lower() in {"key.properties", "release.properties"}
+              or item.lower().endswith(forbidden_suffixes)
+          ]
+          assert not signing_files, (
+              "Signing material must never be committed: " + ", ".join(signing_files)
+          )
+          print("Android manifest, secure-storage backup policy, ZEUS branding, isolated debug package, and signing-material exclusion verified.")
+          PY
+
+      - name: Resolve dependencies
         run: flutter pub get
-      - name: Build APK
-        run: flutter build apk --release
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+
+      - name: Analyze Dart code
+        run: flutter analyze --no-pub
+
+      - name: Run tests
+        run: flutter test --no-pub
+
+      - name: Build verification APK
+        run: flutter build apk --debug --no-pub
+
+      # Publish the verification build before emulator testing so the APK
+      # remains available even if the emulator infrastructure is unavailable.
+      - name: Upload verification APK
+        uses: actions/upload-artifact@v7.0.2
         with:
-          name: zeus-vpn-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
-      - name: Publish direct APK to Releases
-        env:
-          GH_TOKEN: ${{ github.token }}
+          name: zeus-vpn-debug-verification
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      # Ensure the Linux runner exposes KVM to the Android emulator.
+      - name: Enable KVM for Android emulator
         run: |
-          REL=$(curl -s -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/abolboy/zeus_vpn_app/releases -d "{\"tag_name\":\"build-${{ github.run_number }}\",\"name\":\"ZEUS VPN Build ${{ github.run_number }}\"}")
-          ID=$(echo "$REL" | jq -r .id)
-          curl -s -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Content-Type: application/vnd.android.package-archive" --data-binary @build/app/outputs/flutter-apk/app-release.apk "https://uploads.github.com/repos/abolboy/zeus_vpn_app/releases/$ID/assets?name=ZEUS-VPN.apk"
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run Android emulator regression test
+        timeout-minutes: 20
+        uses: reactivecircus/android-emulator-runner@v2.38.0
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -camera-front none
+          disable-animations: true
+          disable-spellchecker: true
+          script: flutter test integration_test/server_add_test.dart -d emulator-5554 --no-pub
