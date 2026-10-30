@@ -4,14 +4,14 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: '>=3.6.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
   
   # هسته اتصال
-  flutter_v2ray_client: ^3.4.1
+  flutter_v2ray_client: ^3.5.0
   
   # شبکه و ذخیره‌سازی
   dio: ^5.4.0
