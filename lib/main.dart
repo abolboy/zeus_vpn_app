@@ -112,6 +112,21 @@ String subscriptionDisplayLabel(String value) {
   return 'https://' + uri.host + port + path + privacyNote;
 }
 
+/// Redacts common credential-bearing values before diagnostic logs are shown.
+String sanitizeCoreLogLine(String value) {
+  final withoutShareUris = value.replaceAll(
+    RegExp(r'(vless|trojan|vmess)://[^\s]+', caseSensitive: false),
+    '[share URI redacted]',
+  );
+  return withoutShareUris.replaceAll(
+    RegExp(
+      r'(password|secret[_-]?key|private[_-]?key|access[_-]?token|refresh[_-]?token|token|authorization)\s*[:=]\s*(?:Bearer\s+)?[^\s,;]+',
+      caseSensitive: false,
+    ),
+    r'$1=[redacted]',
+  );
+}
+
 /// Returns a user-facing validation error for a direct VLESS, Trojan, or
 /// VMess share URI. This is intentionally local and does not connect to hosts.
 String? directShareUriError(String value) {
@@ -1602,6 +1617,193 @@ class _HomePageState extends State<HomePage>
   }
 
 
+  Future<void> _openCoreLogs() async {
+    try {
+      final initialLogs = await _v2ray.getLogs();
+      if (!mounted) return;
+
+      await showModalBottomSheet<void>(
+        context: context,
+        backgroundColor: Colors.transparent,
+        isScrollControlled: true,
+        builder: (sheetContext) {
+          var search = '';
+          var currentLogs = List<String>.from(initialLogs);
+          var busy = false;
+          final sheetHeight = MediaQuery.of(sheetContext).size.height * 0.82;
+
+          return StatefulBuilder(builder: (ctx, setSheetState) {
+            final filtered = currentLogs
+                .map(sanitizeCoreLogLine)
+                .where((line) => search.isEmpty ||
+                    line.toLowerCase().contains(search.toLowerCase()))
+                .toList(growable: false);
+
+            Future<void> refresh() async {
+              if (busy) return;
+              setSheetState(() => busy = true);
+              try {
+                final latest = await _v2ray.getLogs();
+                if (!ctx.mounted) return;
+                setSheetState(() => currentLogs = List<String>.from(latest));
+              } catch (_) {
+                if (ctx.mounted) _snack('Could not refresh core logs.', err: true);
+              } finally {
+                if (ctx.mounted) setSheetState(() => busy = false);
+              }
+            }
+
+            Future<void> clear() async {
+              if (busy) return;
+              final confirmed = await showDialog<bool>(
+                context: ctx,
+                builder: (dialogContext) => AlertDialog(
+                  backgroundColor: glass,
+                  title: const Text('Clear core logs?'),
+                  content: const Text(
+                    'This clears the diagnostic buffer on this device. It does not change VPN settings.',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogContext, false),
+                      child: const Text('CANCEL'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogContext, true),
+                      child: const Text('CLEAR', style: TextStyle(color: magenta)),
+                    ),
+                  ],
+                ),
+              );
+              if (confirmed != true || !ctx.mounted) return;
+              setSheetState(() => busy = true);
+              try {
+                final cleared = await _v2ray.clearLogs();
+                if (!ctx.mounted) return;
+                if (cleared) {
+                  setSheetState(() => currentLogs = []);
+                } else {
+                  _snack('The core log buffer could not be cleared.', err: true);
+                }
+              } catch (_) {
+                if (ctx.mounted) _snack('Could not clear core logs.', err: true);
+              } finally {
+                if (ctx.mounted) setSheetState(() => busy = false);
+              }
+            }
+
+            return Container(
+              height: sheetHeight,
+              padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+              decoration: BoxDecoration(
+                color: glass,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+                border: Border(top: BorderSide(color: magenta.withValues(alpha: 0.65), width: 2)),
+              ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 12),
+                  Container(
+                    width: 52,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: magenta.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 14, 12, 10),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.terminal_rounded, color: magenta),
+                        const SizedBox(width: 9),
+                        const Expanded(
+                          child: Text(
+                            'CORE LOGS',
+                            style: TextStyle(
+                              color: magenta,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 2,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          '\${filtered.length}/\${currentLogs.length}',
+                          style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 9),
+                        ),
+                        IconButton(
+                          tooltip: 'Refresh logs',
+                          onPressed: busy ? null : refresh,
+                          icon: Icon(Icons.refresh_rounded, color: busy ? Colors.grey : cyan),
+                        ),
+                        IconButton(
+                          tooltip: 'Clear logs',
+                          onPressed: busy || currentLogs.isEmpty ? null : clear,
+                          icon: const Icon(Icons.delete_sweep_rounded, color: magenta),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: TextField(
+                      onChanged: (value) => setSheetState(() => search = value.trim()),
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                      decoration: InputDecoration(
+                        hintText: 'FILTER LOG MESSAGES...',
+                        prefixIcon: const Icon(Icons.search_rounded, color: cyan, size: 18),
+                        filled: true,
+                        fillColor: Colors.white.withValues(alpha: 0.04),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(11)),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 9, 16, 8),
+                    child: Text(
+                      'Sensitive-looking share URIs and common key fields are redacted. Logs may still contain server addresses; avoid sharing screenshots.',
+                      style: TextStyle(color: amber.withValues(alpha: 0.8), fontSize: 9, height: 1.35),
+                    ),
+                  ),
+                  Expanded(
+                    child: filtered.isEmpty
+                        ? Center(
+                            child: Text(
+                              currentLogs.isEmpty ? 'NO CORE LOGS YET' : 'NO MATCHING LOGS',
+                              style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 11),
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.fromLTRB(14, 4, 14, 16),
+                            itemCount: filtered.length,
+                            itemBuilder: (context, index) => Padding(
+                              padding: const EdgeInsets.only(bottom: 7),
+                              child: SelectableText(
+                                filtered[index],
+                                style: TextStyle(
+                                  color: filtered[index].contains('[redacted]')
+                                      ? amber
+                                      : const Color(0xFFB8C6D8),
+                                  fontFamily: 'monospace',
+                                  fontSize: 10,
+                                  height: 1.35,
+                                ),
+                              ),
+                            ),
+                          ),
+                  ),
+                ],
+              ),
+            );
+          });
+        },
+      );
+    } catch (_) {
+      if (mounted) _snack('Could not load core logs on this device.', err: true);
+    }
+  }
+
   Widget _screenHeader(String eyebrow, String title, Color accent, {String? meta}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14, top: 7),
@@ -1859,6 +2061,7 @@ class _HomePageState extends State<HomePage>
         _quickAction(Icons.tune_rounded, 'Edit engine parameters', 'Open the full PATT-NG configuration', green, _openPatt),
         _quickAction(Icons.dns_rounded, 'Server inventory', 'Review nodes and latency', cyan, () => _setActiveTab(1)),
         _screenHeader('DEVICE STATUS', 'Diagnostics', amber),
+        _quickAction(Icons.terminal_rounded, 'Core log console', 'Search, refresh and clear recent Xray diagnostics', magenta, _openCoreLogs),
         _neonPanel(Column(children: [
           _diagnosticRow('VPN CORE', _ready ? 'INITIALIZED' : 'STARTING / ERROR', _ready ? green : amber),
           const Divider(color: Color(0x22FFFFFF), height: 22),
