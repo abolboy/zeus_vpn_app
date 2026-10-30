@@ -151,6 +151,51 @@ def patch_gradle():
             f.write(text)
         print("gradle patched: " + path)
 
+def patch_debug_application_id():
+    path = GRADLE_KTS if os.path.exists(GRADLE_KTS) else GRADLE_GROOVY
+    if not os.path.exists(path):
+        print("ERROR: gradle file not found")
+        sys.exit(1)
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read()
+
+    expected = (
+        'applicationIdSuffix = ".debug"'
+        if path.endswith(".kts")
+        else 'applicationIdSuffix ".debug"'
+    )
+    if expected in text:
+        print("debug application ID suffix already ok")
+        return
+    if "applicationIdSuffix" in text:
+        print("ERROR: unexpected applicationIdSuffix already exists")
+        sys.exit(1)
+
+    match = re.search(r"(?m)^([ \\t]*)buildTypes\\s*\\{", text)
+    if match is None:
+        print("ERROR: buildTypes block not found")
+        sys.exit(1)
+
+    indent = match.group(1)
+    if path.endswith(".kts"):
+        block = (
+            '\\n' + indent + '    getByName("debug") {\\n'
+            + indent + '        applicationIdSuffix = ".debug"\\n'
+            + indent + '    }\\n'
+        )
+    else:
+        block = (
+            '\\n' + indent + '    debug {\\n'
+            + indent + '        applicationIdSuffix ".debug"\\n'
+            + indent + '    }\\n'
+        )
+
+    text = text[:match.end()] + block + text[match.end():]
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+    print("debug APK application ID suffix configured")
+
+
 def clean_props():
     if not os.path.exists(PROPS):
         print("props not found, skip")
@@ -168,5 +213,6 @@ def clean_props():
 patch_manifest()
 patch_launcher_assets()
 patch_gradle()
+patch_debug_application_id()
 clean_props()
 print("ALL PATCHES DONE")
