@@ -161,6 +161,90 @@ String? directShareUriError(String value) {
   return 'Only VLESS, Trojan, and VMess links are supported here.';
 }
 
+/// Checks advanced settings against the selected share profile before the
+/// native core is started. This prevents obviously incompatible overrides.
+String? pattConfigurationError(String serverUri, Patt patt) {
+  final uri = Uri.tryParse(serverUri);
+  if (uri == null || directShareUriError(serverUri) != null) {
+    return 'The selected server profile is incomplete or invalid.';
+  }
+
+  final scheme = uri.scheme.toLowerCase();
+  final query = uri.queryParameters;
+  final transport = patt.network != 'preserve' && patt.network.isNotEmpty
+      ? patt.network
+      : (query['type'] ?? 'tcp');
+  final security = patt.reality ? 'reality' : (query['security'] ?? 'none');
+
+  if (security == 'reality') {
+    if (scheme != 'vless') {
+      return 'REALITY security is supported here only with VLESS profiles.';
+    }
+    if (transport != 'tcp') {
+      return 'REALITY requires TCP transport. Change NETWORK to TCP or PRESERVE.';
+    }
+    final publicKey = patt.pbk.trim().isNotEmpty
+        ? patt.pbk.trim()
+        : (query['pbk'] ?? '').trim();
+    final serverName = patt.sni.trim().isNotEmpty
+        ? patt.sni.trim()
+        : (query['sni'] ?? '').trim();
+    if (publicKey.isEmpty) return 'REALITY public key (PBK) is required.';
+    if (serverName.isEmpty) return 'REALITY server name (SNI) is required.';
+    try {
+      final decoded = base64Url.decode(base64Url.normalize(publicKey));
+      if (decoded.length != 32) {
+        return 'REALITY public key must decode to exactly 32 bytes.';
+      }
+    } catch (_) {
+      return 'REALITY public key must be valid Base64/Base64URL.';
+    }
+    final shortId = patt.sid.trim().isNotEmpty
+        ? patt.sid.trim()
+        : (query['sid'] ?? '').trim();
+    if (shortId.isNotEmpty &&
+        (!RegExp(r'^[0-9a-fA-F]{2,16}$').hasMatch(shortId) ||
+            shortId.length.isOdd)) {
+      return 'REALITY short ID must be an even-length hexadecimal value (up to 16 characters).';
+    }
+  }
+
+  if (patt.flow == 'xtls-rprx-vision' &&
+      (scheme != 'vless' ||
+          transport != 'tcp' ||
+          (security != 'tls' && security != 'reality'))) {
+    return 'Vision flow requires VLESS over TCP with TLS or REALITY security.';
+  }
+
+  bool validRange(String value) {
+    final match = RegExp(r'^(\d{1,5})-(\d{1,5})$').firstMatch(value.trim());
+    if (match == null) return false;
+    final low = int.tryParse(match.group(1)!) ?? 0;
+    final high = int.tryParse(match.group(2)!) ?? 0;
+    return low > 0 && high >= low;
+  }
+
+  if (patt.frag != 'none' &&
+      (!validRange(patt.fragLen) || !validRange(patt.fragInt))) {
+    return 'Fragment length and interval must be valid ranges such as 100-200.';
+  }
+  if (patt.noise &&
+      (!validRange(patt.noisePacket) || !validRange(patt.noiseDelay))) {
+    return 'Noise packet and delay must be valid ranges such as 10-20.';
+  }
+  if (patt.mux) {
+    final concurrency = int.tryParse(patt.muxConc) ?? 0;
+    if (concurrency < 1 || concurrency > 1024) {
+      return 'MUX concurrency must be between 1 and 1024.';
+    }
+  }
+  if (patt.dnsMode == 'custom' &&
+      patt.customDns.split(',').every((server) => server.trim().isEmpty)) {
+    return 'Enter at least one custom DNS server.';
+  }
+  return null;
+}
+
 /// Applies optional PATT-NG overrides without silently replacing fields
 /// already present in an imported share URI.
 String applyPattQuery(String uri, Patt patt) {
@@ -176,9 +260,11 @@ String applyPattQuery(String uri, Patt patt) {
     q.remove('allowInsecure');
     if (patt.reality) {
       q['security'] = 'reality';
-      q['pbk'] = patt.pbk;
-      q['sid'] = patt.sid;
-      q['spx'] = patt.spx;
+      if (patt.pbk.trim().isNotEmpty) q['pbk'] = patt.pbk.trim();
+      if (patt.sid.trim().isNotEmpty) q['sid'] = patt.sid.trim();
+      if (patt.spx.trim().isNotEmpty && patt.spx.trim() != '/') {
+        q['spx'] = patt.spx.trim();
+      }
     }
     final netNow = patt.network != 'preserve' ? patt.network : (q['type'] ?? 'tcp');
     final secNow = q['security'] ?? 'none';
@@ -998,6 +1084,7 @@ class _HomePageState extends State<HomePage>
           if (raw.startsWith('vless://') ||
               raw.startsWith('trojan://') ||
               raw.startsWith('vmess://')) {
+            if (directShareUriError(raw) != null) continue;
             final link = raw.startsWith('vmess://') ? raw : _injectQuery(raw);
             if (!seenNodeUris.add(raw)) continue;
             foundNodes.add(ServerNode(
@@ -1162,6 +1249,11 @@ class _HomePageState extends State<HomePage>
         final idx = _nodes.indexWhere((n) => n.baseUri == _selUri);
         if (idx < 0) {
           _snack(_loading ? 'Syncing nodes, wait...' : 'First select a node.', err: true);
+          return;
+        }
+        final profileError = pattConfigurationError(_nodes[idx].rawUri, _patt);
+        if (profileError != null) {
+          _snack(profileError, err: true);
           return;
         }
         final ok = await _v2ray.requestPermission();
