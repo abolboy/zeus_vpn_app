@@ -171,7 +171,7 @@ def patch_debug_application_id():
         print("ERROR: unexpected applicationIdSuffix already exists")
         sys.exit(1)
 
-    match = re.search(r"(?m)^([ \\t]*)buildTypes\\s*\\{", text)
+    match = re.search(r"(?m)^([ \t]*)buildTypes\s*\{", text)
     if match is None:
         print("ERROR: buildTypes block not found")
         sys.exit(1)
@@ -179,15 +179,15 @@ def patch_debug_application_id():
     indent = match.group(1)
     if path.endswith(".kts"):
         block = (
-            '\\n' + indent + '    getByName("debug") {\\n'
-            + indent + '        applicationIdSuffix = ".debug"\\n'
-            + indent + '    }\\n'
+            '\n' + indent + '    getByName("debug") {\n'
+            + indent + '        applicationIdSuffix = ".debug"\n'
+            + indent + '    }\n'
         )
     else:
         block = (
-            '\\n' + indent + '    debug {\\n'
-            + indent + '        applicationIdSuffix ".debug"\\n'
-            + indent + '    }\\n'
+            '\n' + indent + '    debug {\n'
+            + indent + '        applicationIdSuffix ".debug"\n'
+            + indent + '    }\n'
         )
 
     text = text[:match.end()] + block + text[match.end():]
