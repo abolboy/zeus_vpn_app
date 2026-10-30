@@ -1350,7 +1350,9 @@ class _HomePageState extends State<HomePage>
           _snack(_loading ? 'Syncing nodes, wait...' : 'First select a node.', err: true);
           return;
         }
-        final profileError = pattConfigurationError(_nodes[idx].rawUri, _patt);
+        final profileError = _warpOn
+            ? null
+            : pattConfigurationError(_nodes[idx].rawUri, _patt);
         if (profileError != null) {
           _snack(profileError, err: true);
           return;
@@ -1550,6 +1552,20 @@ class _HomePageState extends State<HomePage>
         Container(width: 54, height: 4, decoration: BoxDecoration(color: green.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(8))),
         const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text('PATT-NG CORE', style: TextStyle(color: green, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 3))),
         Expanded(child: ListView(padding: const EdgeInsets.symmetric(horizontal: 20), children: [
+          if (_warpOn)
+            Container(
+              margin: const EdgeInsets.only(bottom: 14),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: amber.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: amber.withValues(alpha: 0.35)),
+              ),
+              child: const Text(
+                'WARP-ONLY MODE: the WARP outbound replaces the selected VLESS/Trojan/VMess outbound. Server transport, REALITY, Vision, fragmentation, noise and MUX overrides are not applied. DNS, log level and optional LAN bypass still apply.',
+                style: TextStyle(color: amber, fontSize: 10, height: 1.45),
+              ),
+            ),
           _sw('WARP (Cloudflare WireGuard)', _warpOn, (v) {
             setMs(() => _warpOn = v);
             _saveWarp();
@@ -1805,7 +1821,7 @@ class _HomePageState extends State<HomePage>
                           ),
                         ),
                         Text(
-                          '\${filtered.length}/\${currentLogs.length}',
+                          '${filtered.length}/${currentLogs.length}',
                           style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 9),
                         ),
                         IconButton(
@@ -1965,17 +1981,46 @@ class _HomePageState extends State<HomePage>
           Expanded(child: _neonPanel(_stat('SPEED', _testing ? '...' : (_speed.isEmpty ? 'TEST' : _speed), Icons.speed_rounded, green), accent: green, onTap: _testing ? null : _speedTest)),
         ]),
         const SizedBox(height: 20),
-        _screenHeader('ACTIVE ROUTE', 'Selected server', cyan, meta: '${_nodes.length} NODES'),
+        _screenHeader(
+          'ACTIVE ROUTE',
+          _warpOn ? 'Cloudflare WARP' : 'Selected server',
+          _warpOn ? green : cyan,
+          meta: _warpOn ? 'WARP-ONLY EGRESS' : '${_nodes.length} NODES',
+        ),
         _neonPanel(Row(children: [
-          const Icon(Icons.dns_rounded, color: cyan, size: 25),
+          Icon(
+            _warpOn ? Icons.cloud_done_rounded : Icons.dns_rounded,
+            color: _warpOn ? green : cyan,
+            size: 25,
+          ),
           const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12)),
+            Text(
+              _warpOn ? 'Cloudflare WARP tunnel' : name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                fontSize: 12,
+              ),
+            ),
             const SizedBox(height: 5),
-            Text(_selUri == null ? 'No server selected — add a feed' : 'Tap to open node control center', style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 10)),
+            Text(
+              _warpOn
+                  ? 'WARP replaces the selected server as the outbound route'
+                  : (_selUri == null
+                      ? 'No server selected — add a feed'
+                      : 'Tap to open node control center'),
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.45),
+                fontSize: 10,
+              ),
+            ),
           ])),
-          if (ping != '--') Text(ping, style: TextStyle(color: pingColor, fontWeight: FontWeight.w900, fontSize: 10)),
-        ]), accent: cyan, onTap: () => _setActiveTab(1)),
+          if (!_warpOn && ping != '--')
+            Text(ping, style: TextStyle(color: pingColor, fontWeight: FontWeight.w900, fontSize: 10)),
+        ]), accent: _warpOn ? green : cyan, onTap: () => _setActiveTab(1)),
         const SizedBox(height: 20),
         _screenHeader('QUICK ACCESS', 'Cyber control deck', magenta),
         _quickAction(Icons.hub_rounded, 'Node control center', 'Search, latency and server selection', cyan, () => _setActiveTab(1)),
@@ -2129,7 +2174,14 @@ class _HomePageState extends State<HomePage>
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             const Text('CLOUDFLARE WARP', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900)),
             const SizedBox(height: 4),
-            Text(_warpJson != null ? 'Registration data is present' : 'No WARP registration detected', style: TextStyle(color: Colors.white.withValues(alpha: 0.48), fontSize: 10)),
+            Text(
+              _warpOn
+                  ? 'WARP-only mode: this replaces the selected proxy outbound.'
+                  : (_warpJson != null
+                      ? 'Registration data is ready; enable WARP to use it.'
+                      : 'No WARP registration detected'),
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.48), fontSize: 10),
+            ),
           ])),
           Text(_warpOn ? 'ENABLED' : 'DISABLED', style: TextStyle(color: _warpOn ? green : amber, fontSize: 8, fontWeight: FontWeight.w900)),
         ]), accent: cyan),
