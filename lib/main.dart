@@ -1083,19 +1083,21 @@ class _HomePageState extends State<HomePage>
       sw.stop();
       s.destroy();
       if (mounted) {
-        setState(() {
-          final p = sw.elapsedMilliseconds;
-          n.pingText = '$p ms';
-          n.pingColor = p < 200 ? green : (p < 500 ? amber : magenta);
-        });
+        final p = sw.elapsedMilliseconds;
+        n.pingText = '$p ms';
+        n.pingColor = p < 200 ? green : (p < 500 ? amber : magenta);
+        final displayedUri =
+            (_connected || _connecting) ? _activeRouteBaseUri : _selUri;
+        if (n.baseUri == displayedUri) setState(() {});
         _refreshNodes?.call();
       }
     } catch (_) {
       if (mounted) {
-        setState(() {
-          n.pingText = 'پایان مهلت';
-          n.pingColor = magenta;
-        });
+        n.pingText = 'پایان مهلت';
+        n.pingColor = magenta;
+        final displayedUri =
+            (_connected || _connecting) ? _activeRouteBaseUri : _selUri;
+        if (n.baseUri == displayedUri) setState(() {});
         _refreshNodes?.call();
       }
     }
