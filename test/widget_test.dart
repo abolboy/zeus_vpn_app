@@ -5,6 +5,22 @@ import 'package:flutter_v2ray_client/flutter_v2ray.dart';
 import 'package:zeus_vpn/main.dart';
 
 void main() {
+  group('subscription URL display privacy', () {
+    test('hides path tokens, credentials, query values and fragments', () {
+      const source =
+          'https://alice:secret@example.com/private-token?access=top-secret#frag';
+      final label = subscriptionDisplayLabel(source);
+      expect(label, contains('https://example.com/•••'));
+      expect(label, contains('credentials hidden'));
+      expect(label, contains('query hidden'));
+      expect(label, contains('fragment hidden'));
+      expect(label, isNot(contains('alice')));
+      expect(label, isNot(contains('secret')));
+      expect(label, isNot(contains('private-token')));
+      expect(label, isNot(contains('top-secret')));
+    });
+  });
+
   group('direct share URI validation', () {
     test('accepts a complete VLESS link', () {
       expect(
