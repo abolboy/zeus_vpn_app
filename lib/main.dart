@@ -131,6 +131,9 @@ String sanitizeCoreLogLine(String value) {
 /// VMess share URI. This is intentionally local and does not connect to hosts.
 String? directShareUriError(String value) {
   final raw = value.trim();
+  if (raw.length > 65536) {
+    return 'The server link is too large (maximum 64 KiB).';
+  }
   final uri = Uri.tryParse(raw);
   if (uri == null || raw.isEmpty) {
     return 'Enter a valid VLESS, Trojan, or VMess link.';
@@ -174,6 +177,75 @@ String? directShareUriError(String value) {
   }
 
   return 'Only VLESS, Trojan, and VMess links are supported here.';
+}
+
+/// Validates the stored WireGuard profile before it is injected into Xray.
+String? warpConfigurationError(String? value) {
+  if (value == null || value.trim().isEmpty) {
+    return 'Register a WARP device before enabling WARP.';
+  }
+  try {
+    final decoded = jsonDecode(value);
+    if (decoded is! Map || decoded['protocol'] != 'wireguard') {
+      return 'The saved WARP profile is not a WireGuard outbound.';
+    }
+    final settings = decoded['settings'];
+    if (settings is! Map) return 'The saved WARP profile has no settings.';
+
+    bool validKey(String key) {
+      try {
+        final bytes = base64.decode(base64.normalize(key));
+        return bytes.length == 32;
+      } catch (_) {
+        try {
+          final bytes = base64Url.decode(base64Url.normalize(key));
+          return bytes.length == 32;
+        } catch (_) {
+          return false;
+        }
+      }
+    }
+
+    final privateKey = (settings['secretKey'] ?? '').toString().trim();
+    if (!validKey(privateKey)) {
+      return 'The saved WARP private key is invalid. Register WARP again.';
+    }
+
+    final addresses = settings['address'];
+    if (addresses is! List ||
+        addresses.isEmpty ||
+        addresses.any((item) => item is! String || item.trim().isEmpty)) {
+      return 'The saved WARP profile has no valid interface address.';
+    }
+
+    final peers = settings['peers'];
+    if (peers is! List || peers.isEmpty || peers.first is! Map) {
+      return 'The saved WARP profile has no WireGuard peer.';
+    }
+    final peer = peers.first as Map;
+    final publicKey = (peer['publicKey'] ?? '').toString().trim();
+    if (!validKey(publicKey)) {
+      return 'The saved WARP peer public key is invalid.';
+    }
+    final endpoint = (peer['endpoint'] ?? '').toString().trim();
+    final endpointUri = Uri.tryParse('udp://' + endpoint);
+    if (endpointUri == null ||
+        endpointUri.host.isEmpty ||
+        !endpointUri.hasPort ||
+        endpointUri.port < 1 ||
+        endpointUri.port > 65535) {
+      return 'The saved WARP peer endpoint is invalid.';
+    }
+    final allowedIPs = peer['allowedIPs'];
+    if (allowedIPs is! List ||
+        allowedIPs.isEmpty ||
+        allowedIPs.any((item) => item is! String || item.trim().isEmpty)) {
+      return 'The saved WARP peer has no allowed IP ranges.';
+    }
+    return null;
+  } catch (_) {
+    return 'The saved WARP profile is damaged. Register WARP again.';
+  }
 }
 
 /// Checks advanced settings against the selected share profile before the
@@ -1265,9 +1337,12 @@ class _HomePageState extends State<HomePage>
       if (_connected) {
         await _v2ray.stopV2Ray();
       } else {
-        if (_warpOn && (_warpJson == null || _warpJson!.isEmpty)) {
-          _snack('Register the WARP device before connecting.', err: true);
-          return;
+        if (_warpOn) {
+          final warpError = warpConfigurationError(_warpJson);
+          if (warpError != null) {
+            _snack(warpError, err: true);
+            return;
+          }
         }
         final idx = _nodes.indexWhere((n) => n.baseUri == _selUri);
         if (idx < 0) {
