@@ -23,6 +23,14 @@ const FlutterSecureStorage secureStorage = FlutterSecureStorage(
   aOptions: AndroidOptions(encryptedSharedPreferences: true),
 );
 
+String _persianDigits(int value) {
+  const digits = '۰۱۲۳۴۵۶۷۸۹';
+  return value.toString().replaceAllMapped(
+    RegExp(r'[0-9]'),
+    (match) => digits[int.parse(match.group(0)!)],
+  );
+}
+
 class _LiveStats {
   const _LiveStats({
     this.upload = '0 B/s',
@@ -276,7 +284,7 @@ class _SubscriptionSheetState extends State<_SubscriptionSheet> {
                           child: Row(
                             children: [
                               Text(
-                                'اشتراک ${index + 1}',
+                                'اشتراک ${_persianDigits(index + 1)}',
                                 style: const TextStyle(
                                   color: magenta,
                                   fontSize: 10,
@@ -327,7 +335,7 @@ class _SubscriptionSheetState extends State<_SubscriptionSheet> {
                           child: Row(
                             children: [
                               Text(
-                                'سرور ${index + 1}',
+                                'سرور ${_persianDigits(index + 1)}',
                                 style: const TextStyle(
                                   color: green,
                                   fontSize: 10,
