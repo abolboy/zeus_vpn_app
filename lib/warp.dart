@@ -79,21 +79,29 @@ WarpKeys genWarpKeys() {
   return WarpKeys(base64.encode(k), base64.encode(pub));
 }
 
+String warpLastError = '';
+
 Future<Map<String, dynamic>?> registerWarp(WarpKeys kp) async {
+  warpLastError = '';
   try {
     final dio = Dio(BaseOptions(
-      connectTimeout: const Duration(seconds: 10),
-      receiveTimeout: const Duration(seconds: 15),
-      headers: {'User-Agent': 'okhttp/3.12.1', 'Content-Type': 'application/json'},
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: const Duration(seconds: 20),
+      headers: {
+        'User-Agent': '1.1.1.1/6.81',
+        'CF-Client-Version': 'a-6.81-2410012252.0',
+        'Accept': 'application/json; charset=UTF-8',
+        'Content-Type': 'application/json',
+      },
     ));
-    final res = await dio.post('https://api.cloudflareclient.com/v0a2158/reg', data: {
+    final res = await dio.post('https://api.cloudflareclient.com/v0a2483/reg', data: {
       'key': kp.pub,
       'install_id': '',
       'fcm_token': '',
-      'locale': 'en_US',
+      'tos': DateTime.now().toUtc().toIso8601String(),
       'type': 'Android',
-      'model': 'Pixel',
-      'tz': 'UTC',
+      'model': 'PC',
+      'locale': 'en_US',
     });
     final d = res.data as Map<String, dynamic>;
     final cfg = d['config'] as Map<String, dynamic>;
@@ -137,7 +145,12 @@ Future<Map<String, dynamic>?> registerWarp(WarpKeys kp) async {
         'noKernelTun': true,
       },
     };
+  } on DioException catch (e) {
+    final code = e.response?.statusCode;
+    warpLastError = code != null ? 'HTTP $code' : e.type.name;
+    return null;
   } catch (_) {
+    warpLastError = 'unexpected response';
     return null;
   }
 }
