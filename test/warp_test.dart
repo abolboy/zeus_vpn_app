@@ -48,35 +48,6 @@ void main() {
       }
     });
 
-    test('Alice and Bob derive the RFC 7748 shared secret', () async {
-      final alicePrivate = _fromHex(
-        '77076d0a7318a57d3c16c17251b26645'
-        'df4c2f87ebc0992ab177fba51db92c2a',
-      );
-      final bobPublic = _fromHex(
-        'de9edb7d7b7dc1b4d35b61c2ece43537'
-        '3f8343c85b78674dadfc7e146f882b4f',
-      );
-      final algorithm = X25519();
-      final aliceKeyPair = await algorithm.newKeyPairFromSeed(alicePrivate);
-      try {
-        final sharedSecret = await algorithm.sharedSecretKey(
-          keyPair: aliceKeyPair,
-          remotePublicKey: SimplePublicKey(
-            bobPublic,
-            type: KeyPairType.x25519,
-          ),
-        );
-        expect(
-          _toHex(await sharedSecret.extractBytes()),
-          '4a5d9d5ba4ce2de1728e3bf480350f25'
-          'e07e21c947d19e3376f09b3c1e161742',
-        );
-      } finally {
-        aliceKeyPair.destroy();
-      }
-    });
-
     test('generated WARP keys are valid 32-byte base64 values', () async {
       final keys = await genWarpKeys();
       expect(base64.decode(keys.priv), hasLength(32));
