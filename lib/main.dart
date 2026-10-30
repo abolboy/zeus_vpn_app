@@ -354,7 +354,7 @@ class _SubscriptionSheetState extends State<_SubscriptionSheet> {
                 onPressed: _saving ? null : _saveAndSync,
                 child: Text(
                   _saving ? 'SAVING...' : 'SAVE & SYNC',
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: cyan,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 2,
@@ -1308,7 +1308,7 @@ class _HomePageState extends State<HomePage>
                 // Earlier add/remove writes are serialized ahead of these final snapshots.
                 final subscriptionsSaved = await _saveSubscriptions();
                 final directUrisSaved = await _saveDirectUris();
-                if (!mounted || !subscriptionsSaved || !directUrisSaved) {
+                if (!mounted || !ctx.mounted || !subscriptionsSaved || !directUrisSaved) {
                   return false;
                 }
                 Navigator.of(ctx).pop();
