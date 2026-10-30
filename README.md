@@ -4,7 +4,7 @@ A Flutter/Android VPN client prototype using `flutter_v2ray_client`, subscriptio
 
 ## Current status
 
-- The current work is isolated on the `audit/hardening-2026-10-29` branch and in [draft pull request #2](https://github.com/abolboy/zeus_vpn_app/pull/2).
+- The current consolidated work is isolated on `design/zeus-neon-command-center-2026-10-30` and tracked by [draft pull request #3](https://github.com/abolboy/zeus_vpn_app/pull/3). The prior audited baseline is preserved on `backup/pre-ui-overhaul-2026-10-30`.
 - CI performs Dart analysis, unit tests, and a **debug verification APK** build. A successful CI build does not prove that VPN traffic, Android background behavior, WARP registration, or all server protocols work on a physical device.
 - The main branch has not been modified by the audit branch.
 - Release publishing is intentionally disabled until release signing is moved to a dedicated, protected key and the upgrade path for existing installations is confirmed.
@@ -42,6 +42,8 @@ The generated APK is uploaded as a workflow artifact for verification only.
 - Physical-device validation is still required for connect/disconnect, network changes, Android foreground-service behavior, battery use, DNS/routing, and recovery after process termination.
 - WARP API registration is an external integration and must be tested against current Cloudflare behavior; successful registration alone does not verify tunnel traffic.
 - Release signing, signing-key rotation, a reproducible release pipeline, and a full upgrade test remain outstanding.
+- Direct VLESS/Trojan/VMess inputs are validated locally before being saved; subscription URL secrets are masked in the visible feed inventory.
+- Animated dashboard effects pause when the app is backgrounded or another workspace is selected.
 - A security review should verify every PATT-NG field against the exact core version embedded by the dependency before presenting those controls as universally supported.
 
 ## Contributing
