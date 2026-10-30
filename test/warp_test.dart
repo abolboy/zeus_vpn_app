@@ -43,7 +43,24 @@ void main() {
       );
     });
 
-    test('generated WARP keys are valid 32-byte base64 values', () {
+    test('Alice and Bob derive the RFC 7748 shared secret', () {
+      final alicePrivate = _fromHex(
+        '77076d0a7318a57d3c16c17251b26645'
+        'df4c2f87ebc0992ab177fba51db92c2a',
+      );
+      final bobPublic = _fromHex(
+        'de9edb7d7b7dc1b4d35b61c2ece43537'
+        '3f8343c85b78674dadfc7e146f882b4f',
+      );
+
+      expect(
+        _toHex(x25519(alicePrivate, bobPublic)),
+        '4a5d9d5ba4ce2de1728e3bf480350f25'
+        'e07e21c947d19e3376f09b3c1e161742',
+      );
+    });
+
+    test('generated WARP keys are valid 32-byte base64 values', {
       final keys = genWarpKeys();
 
       expect(base64.decode(keys.priv), hasLength(32));
