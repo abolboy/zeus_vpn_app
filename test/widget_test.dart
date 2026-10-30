@@ -15,6 +15,43 @@ void main() {
     expect(safe, contains('token=[redacted]'));
   });
 
+  group('WARP profile validation', () {
+    test('accepts a complete WireGuard profile', () {
+      final key = base64.encode(List<int>.filled(32, 9));
+      final config = jsonEncode({
+        'protocol': 'wireguard',
+        'settings': {
+          'secretKey': key,
+          'address': ['172.16.0.2/32'],
+          'peers': [
+            {
+              'publicKey': key,
+              'endpoint': '162.159.192.1:2408',
+              'allowedIPs': ['0.0.0.0/0', '::/0'],
+            },
+          ],
+        },
+      });
+      expect(warpConfigurationError(config), isNull);
+    });
+
+    test('rejects malformed or incomplete WireGuard profiles', () {
+      expect(warpConfigurationError(null), isNotNull);
+      expect(warpConfigurationError('{broken-json'), isNotNull);
+      expect(
+        warpConfigurationError(jsonEncode({
+          'protocol': 'wireguard',
+          'settings': {
+            'secretKey': 'bad-key',
+            'address': ['172.16.0.2/32'],
+            'peers': [],
+          },
+        })),
+        isNotNull,
+      );
+    });
+  });
+
   group('PATT-NG preflight validation', () {
     test('requires valid VLESS TCP REALITY parameters', () {
       final key = base64Url.encode(List<int>.filled(32, 7));
