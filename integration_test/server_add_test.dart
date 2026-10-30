@@ -118,6 +118,12 @@ void main() {
     expect(find.text('ذخیره و همگام‌سازی'), findsNothing);
     expect(tester.takeException(), isNull);
 
+    // Dismiss the software keyboard before using the persistent bottom nav.
+    // On the emulator the keyboard can remain visible after the modal closes,
+    // placing the nav label outside the hit-testable viewport.
+    tester.testTextInput.hide();
+    await tester.pump(const Duration(milliseconds: 600));
+
     await tester.tap(find.text('سرورها').last);
     await tester.pump(const Duration(milliseconds: 500));
     await tester.tap(find.text('مرکز مدیریت سرورها'));
