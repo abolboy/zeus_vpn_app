@@ -39,6 +39,22 @@ def patch_manifest():
         )
     elif "<application" in text:
         text = text.replace("<application", '<application android:label="ZEUS VPN"', 1)
+    # Flutter Secure Storage keeps encrypted values in app preferences,
+    # while the wrapping key is protected by Android Keystore. Do not restore
+    # the ciphertext without its non-backed-up Keystore key.
+    if 'android:allowBackup=' in text:
+        text = re.sub(
+            r'android:allowBackup="[^"]*"',
+            'android:allowBackup="false"',
+            text,
+            count=1,
+        )
+    elif "<application" in text:
+        text = text.replace(
+            "<application",
+            '<application android:allowBackup="false"',
+            1,
+        )
     if 'android:icon=' in text:
         text = re.sub(
             r'android:icon="[^"]*"',
