@@ -18,18 +18,19 @@ jobs:
   verify:
     name: Analyze, test, and build debug APK
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6.1.0
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@v2.23.0
         with:
           channel: stable
 
@@ -63,6 +64,16 @@ jobs:
           assert "android.permission.INTERNET" in permissions, "INTERNET permission missing"
           assert "android.permission.FOREGROUND_SERVICE" in permissions, "Foreground service permission missing"
 
+          gradle_kts = Path("android/app/build.gradle.kts")
+          gradle_file = gradle_kts if gradle_kts.is_file() else Path("android/app/build.gradle")
+          gradle_text = gradle_file.read_text(encoding="utf-8")
+          debug_suffix = (
+              'applicationIdSuffix = ".debug"'
+              if gradle_file.suffix == ".kts"
+              else 'applicationIdSuffix ".debug"'
+          )
+          assert debug_suffix in gradle_text, "Debug APK must use a separate .debug application ID suffix"
+
           tracked = subprocess.run(
               ["git", "ls-files", "-z"],
               check=True,
@@ -86,7 +97,7 @@ jobs:
           assert not signing_files, (
               "Signing material must never be committed: " + ", ".join(signing_files)
           )
-          print("Android manifest, secure-storage backup policy, ZEUS branding, and signing-material exclusion verified.")
+          print("Android manifest, secure-storage backup policy, ZEUS branding, isolated debug package, and signing-material exclusion verified.")
           PY
 
       - name: Resolve dependencies
@@ -104,7 +115,7 @@ jobs:
       # Publish the verification build before emulator testing so the APK
       # remains available even if the emulator infrastructure is unavailable.
       - name: Upload verification APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: zeus-vpn-debug-verification
           path: build/app/outputs/flutter-apk/app-debug.apk
@@ -120,7 +131,7 @@ jobs:
 
       - name: Run Android emulator regression test
         timeout-minutes: 20
-        uses: reactivecircus/android-emulator-runner@v2
+        uses: reactivecircus/android-emulator-runner@v2.38.0
         with:
           api-level: 35
           target: google_apis
