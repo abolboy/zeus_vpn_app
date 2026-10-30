@@ -417,6 +417,38 @@ void main() {
     expect(hasKey(config, 'verifyPeerCertByName'), isTrue);
   });
 
+  test('REALITY override off preserves imported REALITY parameters', () {
+    const original =
+        'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+        '?security=reality&type=tcp&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+        '&sid=abcd&sni=example.com&spx=%2Fedge';
+    final effective = Uri.parse(applyPattQuery(original, Patt()));
+    expect(effective.queryParameters['security'], 'reality');
+    expect(
+      effective.queryParameters['pbk'],
+      'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+    );
+    expect(effective.queryParameters['sid'], 'abcd');
+    expect(effective.queryParameters['sni'], 'example.com');
+    expect(effective.queryParameters['spx'], '/edge');
+  });
+
+  test('REALITY override on preserves imported public key when no override is supplied', () {
+    const original =
+        'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+        '?security=tls&type=tcp&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+        '&sid=abcd&sni=example.com';
+    final patt = Patt()..reality = true;
+    final effective = Uri.parse(applyPattQuery(original, patt));
+    expect(effective.queryParameters['security'], 'reality');
+    expect(
+      effective.queryParameters['pbk'],
+      'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+    );
+    expect(effective.queryParameters['sid'], 'abcd');
+    expect(effective.queryParameters['sni'], 'example.com');
+  });
+
   test('PATT defaults preserve imported flow and ALPN while removing TLS bypass', () {
     const link = 'vless://11111111-1111-4111-8111-111111111111@example.com:443'
         '?security=tls&flow=xtls-rprx-vision&alpn=h2&allowInsecure=1#preserve-test';
