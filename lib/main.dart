@@ -95,6 +95,23 @@ class Patt {
   String network = 'preserve';
 }
 
+/// Shows a safe, non-secret label for a subscription URL in the UI.
+/// Credentials, path tokens, query values, and fragments are never displayed.
+String subscriptionDisplayLabel(String value) {
+  final uri = Uri.tryParse(value.trim());
+  if (uri == null || uri.host.isEmpty) return 'HTTPS subscription';
+
+  final port = uri.hasPort && uri.port != 443 ? ':' + uri.port.toString() : '';
+  final path = uri.path.isEmpty || uri.path == '/' ? '' : '/•••';
+  final hidden = <String>[
+    if (uri.userInfo.isNotEmpty) 'credentials hidden',
+    if (uri.hasQuery) 'query hidden',
+    if (uri.hasFragment) 'fragment hidden',
+  ];
+  final privacyNote = hidden.isEmpty ? '' : '  •  ' + hidden.join(' · ');
+  return 'https://' + uri.host + port + path + privacyNote;
+}
+
 /// Returns a user-facing validation error for a direct VLESS, Trojan, or
 /// VMess share URI. This is intentionally local and does not connect to hosts.
 String? directShareUriError(String value) {
@@ -385,7 +402,7 @@ class _SubscriptionSheetState extends State<_SubscriptionSheet> {
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  value,
+                                  subscriptionDisplayLabel(value),
                                   style: TextStyle(
                                     color: Colors.white.withValues(alpha: 0.6),
                                     fontSize: 11,
@@ -1685,7 +1702,7 @@ class _HomePageState extends State<HomePage>
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('FEED ${entry.key + 1}', style: const TextStyle(color: cyan, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
               const SizedBox(height: 5),
-              Text(entry.value, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white.withValues(alpha: 0.72), fontSize: 10)),
+              Text(subscriptionDisplayLabel(entry.value), maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white.withValues(alpha: 0.72), fontSize: 10)),
             ])),
             Icon(Icons.lock_outline_rounded, color: green.withValues(alpha: 0.8), size: 17),
           ]), accent: cyan))),
