@@ -2282,7 +2282,12 @@ class _HomePageState extends State<HomePage>
         Wrap(spacing: 7, runSpacing: 7, children: [
           _pill(Icons.fingerprint_rounded, 'FP: ${_patt.fp.toUpperCase()}', magenta, _openPatt),
           _pill(Icons.alt_route_rounded, 'NET: ${_patt.network.toUpperCase()}', cyan, _openPatt),
-          _pill(Icons.cloud_outlined, 'WARP: ${_warpOn ? 'ON' : 'OFF'}', green, _openPatt),
+          _pill(
+            Icons.cloud_outlined,
+            'WARP: ${(_connected || _connecting) ? (_activeRouteUsesWarp ? 'ACTIVE' : 'OFF') : (_warpOn ? 'NEXT ON' : 'OFF')}',
+            green,
+            _openPatt,
+          ),
         ]),
       ]),
     );
@@ -2432,15 +2437,30 @@ class _HomePageState extends State<HomePage>
             const Text('CLOUDFLARE WARP', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900)),
             const SizedBox(height: 4),
             Text(
-              _warpOn
-                  ? 'WARP-only egress is active; the selected server outbound is bypassed.'
-                  : (_warpJson != null
-                      ? 'WARP registration is ready; enabling it switches to WARP-only mode.'
-                      : 'No WARP registration detected'),
+              (_connected || _connecting)
+                  ? (_activeRouteUsesWarp
+                      ? 'WARP is carrying the live session.'
+                      : 'WARP is off in the live session; next connection: ${_warpOn ? 'ON' : 'OFF'}.')
+                  : (_warpOn
+                      ? 'WARP-only egress is configured for the next connection.'
+                      : (_warpJson != null
+                          ? 'WARP registration is ready; enabling it switches to WARP-only mode.'
+                          : 'No WARP registration detected')),
               style: TextStyle(color: Colors.white.withValues(alpha: 0.48), fontSize: 10),
             ),
           ])),
-          Text(_warpOn ? 'ENABLED' : 'DISABLED', style: TextStyle(color: _warpOn ? green : amber, fontSize: 8, fontWeight: FontWeight.w900)),
+          Text(
+            (_connected || _connecting)
+                ? (_activeRouteUsesWarp ? 'ACTIVE' : 'INACTIVE')
+                : (_warpOn ? 'NEXT: ON' : 'OFF'),
+            style: TextStyle(
+              color: ((_connected || _connecting) ? _activeRouteUsesWarp : _warpOn)
+                  ? green
+                  : amber,
+              fontSize: 8,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
         ]), accent: cyan),
         const SizedBox(height: 10),
         _quickAction(Icons.tune_rounded, 'Edit engine parameters', 'Open the full PATT-NG configuration', green, _openPatt),
