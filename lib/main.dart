@@ -868,6 +868,9 @@ class _HomePageState extends State<HomePage>
   bool _connected = false;
   bool _connecting = false;
   bool _busy = false;
+  String? _activeRouteLabel;
+  String? _activeRouteBaseUri;
+  bool _activeRouteUsesWarp = false;
   bool _testingDelay = false;
   bool _warpOn = false;
   String? _warpJson;
@@ -900,7 +903,17 @@ class _HomePageState extends State<HomePage>
           _up = _fmt(s.uploadSpeed);
           _down = _fmt(s.downloadSpeed);
           _dur = _connected ? s.duration : '00:00:00';
-          if (!_connected && !_connecting) _coreDelay = '';
+          if (!_connected && !_connecting) {
+            _coreDelay = '';
+            _activeRouteLabel = null;
+            _activeRouteBaseUri = null;
+            _activeRouteUsesWarp = false;
+            if (_selUri != null &&
+                !_nodes.any((node) => node.baseUri == _selUri)) {
+              _selUri = _nodes.isEmpty ? null : _nodes.first.baseUri;
+              if (_selUri != null) _saveSelection(_selUri!);
+            }
+          }
         });
         _syncMotionState();
       }
@@ -1354,7 +1367,9 @@ class _HomePageState extends State<HomePage>
       );
       setState(() {
         _nodes = mergedNodes;
-        if (previousSelection != null &&
+        if ((_connected || _connecting) && previousSelection != null) {
+          _selUri = previousSelection;
+        } else if (previousSelection != null &&
             _nodes.any((node) => node.baseUri == previousSelection)) {
           _selUri = previousSelection;
         } else if (_nodes.isNotEmpty) {
@@ -1385,7 +1400,9 @@ class _HomePageState extends State<HomePage>
     );
     setState(() {
       _nodes = mergedNodes;
-      if (previousSelection != null &&
+      if ((_connected || _connecting) && previousSelection != null) {
+        _selUri = previousSelection;
+      } else if (previousSelection != null &&
           _nodes.any((node) => node.baseUri == previousSelection)) {
         _selUri = previousSelection;
       } else if (_nodes.isNotEmpty) {
@@ -1546,11 +1563,22 @@ class _HomePageState extends State<HomePage>
           _snack('VPN permission denied.', err: true);
           return;
         }
-        final parser = V2ray.parseFromURL(_nodes[idx].rawUri);
+        final selectedNode = _nodes[idx];
+        final parser = V2ray.parseFromURL(selectedNode.rawUri);
         final config = _injectCore(parser.getFullConfiguration());
+        _activeRouteLabel = _warpOn
+            ? 'Cloudflare WARP tunnel'
+            : selectedNode.displayName;
+        _activeRouteBaseUri = selectedNode.baseUri;
+        _activeRouteUsesWarp = _warpOn;
         await _v2ray.startV2Ray(remark: parser.remark, config: config, proxyOnly: false);
       }
     } catch (_) {
+      if (!_connected && !_connecting) {
+        _activeRouteLabel = null;
+        _activeRouteBaseUri = null;
+        _activeRouteUsesWarp = false;
+      }
       _snack('Core error, try again.', err: true);
     } finally {
       _busy = false;
@@ -1653,6 +1681,10 @@ class _HomePageState extends State<HomePage>
           final n = vis[i];
           final sel = n.baseUri == _selUri;
           return GestureDetector(onTap: () {
+            if (_connected || _connecting) {
+              _snack('Disconnect the current tunnel before changing its server.', err: true);
+              return;
+            }
             setState(() => _selUri = n.baseUri);
             _saveSelection(n.baseUri);
             setMs(() {});
@@ -2168,21 +2200,33 @@ class _HomePageState extends State<HomePage>
         ]),
         const SizedBox(height: 20),
         _screenHeader(
-          'ACTIVE ROUTE',
-          _warpOn ? 'Cloudflare WARP' : 'Selected server',
-          _warpOn ? green : cyan,
-          meta: _warpOn ? 'WARP-ONLY EGRESS' : '${_nodes.length} NODES',
+          _connected || _connecting ? 'RUNNING TUNNEL' : 'NEXT CONNECTION',
+          (_connected || _connecting)
+              ? (_activeRouteUsesWarp ? 'Cloudflare WARP' : 'Connected server')
+              : (_warpOn ? 'Cloudflare WARP' : 'Selected server'),
+          ((_connected || _connecting) ? _activeRouteUsesWarp : _warpOn)
+              ? green
+              : cyan,
+          meta: (_connected || _connecting)
+              ? 'LIVE SESSION'
+              : (_warpOn ? 'WARP-ONLY EGRESS' : '${_nodes.length} NODES'),
         ),
         _neonPanel(Row(children: [
           Icon(
-            _warpOn ? Icons.cloud_done_rounded : Icons.dns_rounded,
-            color: _warpOn ? green : cyan,
+            ((_connected || _connecting) ? _activeRouteUsesWarp : _warpOn)
+                ? Icons.cloud_done_rounded
+                : Icons.dns_rounded,
+            color: ((_connected || _connecting) ? _activeRouteUsesWarp : _warpOn)
+                ? green
+                : cyan,
             size: 25,
           ),
           const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(
-              _warpOn ? 'Cloudflare WARP tunnel' : name,
+              (_connected || _connecting)
+                  ? (_activeRouteLabel ?? 'Active tunnel')
+                  : (_warpOn ? 'Cloudflare WARP tunnel' : name),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
@@ -2193,11 +2237,15 @@ class _HomePageState extends State<HomePage>
             ),
             const SizedBox(height: 5),
             Text(
-              _warpOn
-                  ? 'WARP replaces the selected server as the outbound route'
-                  : (_selUri == null
-                      ? 'No server selected — add a feed'
-                      : 'Tap to open node control center'),
+              (_connected || _connecting)
+                  ? (_activeRouteUsesWarp
+                      ? 'WARP is carrying the current session'
+                      : 'Current VPN session — disconnect to change server')
+                  : (_warpOn
+                      ? 'WARP will replace the selected server outbound'
+                      : (_selUri == null
+                          ? 'No server selected — add a feed'
+                          : 'Tap to open node control center')),
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.45),
                 fontSize: 10,
@@ -2206,7 +2254,7 @@ class _HomePageState extends State<HomePage>
           ])),
           if (!_warpOn && ping != '--')
             Text(ping, style: TextStyle(color: pingColor, fontWeight: FontWeight.w900, fontSize: 10)),
-        ]), accent: _warpOn ? green : cyan, onTap: () => _setActiveTab(1)),
+        ]), accent: ((_connected || _connecting) ? _activeRouteUsesWarp : _warpOn) ? green : cyan, onTap: () => _setActiveTab(1)),
         const SizedBox(height: 20),
         _screenHeader('QUICK ACCESS', 'Cyber control deck', magenta),
         _quickAction(Icons.hub_rounded, 'Node control center', 'Search, latency and server selection', cyan, () => _setActiveTab(1)),
@@ -2266,6 +2314,10 @@ class _HomePageState extends State<HomePage>
                 Text(selected ? 'SELECTED' : 'SELECT', style: TextStyle(color: tint, fontSize: 8)),
               ]),
             ]), accent: tint, onTap: () {
+              if (_connected || _connecting) {
+                _snack('Disconnect the current tunnel before changing its server.', err: true);
+                return;
+              }
               setState(() => _selUri = node.baseUri);
               _saveSelection(node.baseUri);
               _snack('Selected ${node.displayName}');
@@ -2465,13 +2517,22 @@ class _HomePageState extends State<HomePage>
     String selName = 'TAP TO SELECT';
     String selPing = '--';
     Color selPingC = Colors.grey;
-    if (_loading) {
+    if (_connected || _connecting) {
+      selName = _activeRouteLabel ?? 'ACTIVE TUNNEL';
+      final activeNode = _nodes.where((node) => node.baseUri == _activeRouteBaseUri);
+      if (activeNode.isNotEmpty) {
+        selPing = activeNode.first.pingText;
+        selPingC = activeNode.first.pingColor;
+      }
+    } else if (_loading) {
       selName = 'SYNCING...';
     } else if (_selUri != null && _nodes.isNotEmpty) {
-      final n = _nodes.firstWhere((e) => e.baseUri == _selUri, orElse: () => _nodes.first);
-      selName = n.displayName;
-      selPing = n.pingText;
-      selPingC = n.pingColor;
+      final selectedNode = _nodes.where((node) => node.baseUri == _selUri);
+      if (selectedNode.isNotEmpty) {
+        selName = selectedNode.first.displayName;
+        selPing = selectedNode.first.pingText;
+        selPingC = selectedNode.first.pingColor;
+      }
     }
     return Scaffold(
       backgroundColor: background,
