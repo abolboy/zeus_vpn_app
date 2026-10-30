@@ -3,6 +3,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zeus_vpn/main.dart';
 
+Future<void> _waitForSubscriptionSheetToClose(WidgetTester tester) async {
+  final sheetTitle = find.text('SUBSCRIPTIONS');
+  for (var attempt = 0; attempt < 60; attempt++) {
+    if (sheetTitle.evaluate().isEmpty) return;
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+  expect(
+    sheetTitle,
+    findsNothing,
+    reason: 'The subscription sheet should close after secure writes complete.',
+  );
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -57,7 +70,7 @@ void main() {
 
     expect(find.text('SUB 1'), findsOneWidget);
     await tester.tap(find.text('SAVE & SYNC'));
-    await tester.pump(const Duration(milliseconds: 500));
+    await _waitForSubscriptionSheetToClose(tester);
 
     // The sheet is dismissed while its input had focus. Its controller must
     // remain alive until the sheet subtree has actually left the widget tree.
@@ -101,7 +114,7 @@ void main() {
 
     expect(find.text('NODE 1'), findsOneWidget);
     await tester.tap(find.text('SAVE & SYNC'));
-    await tester.pump(const Duration(milliseconds: 500));
+    await _waitForSubscriptionSheetToClose(tester);
     expect(find.text('SUBSCRIPTIONS'), findsNothing);
     expect(tester.takeException(), isNull);
 
