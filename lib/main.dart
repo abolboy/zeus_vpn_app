@@ -627,22 +627,33 @@ class _HomePageState extends State<HomePage>
   }
 
   Future<bool> _saveWarp() async {
+    late final SharedPreferences preferences;
     try {
-      final p = await SharedPreferences.getInstance();
-      await p.setBool('warp_on', _warpOn);
+      preferences = await SharedPreferences.getInstance();
+      await preferences.setBool('warp_on', _warpOn);
       final value = _warpJson ?? '';
       if (value.isEmpty) {
         await secureStorage.delete(key: 'warp_json');
       } else {
         await secureStorage.write(key: 'warp_json', value: value);
       }
-      // Remove any legacy plaintext copy only after secure storage succeeds.
-      await p.remove('warp_json');
-      return true;
     } catch (_) {
       _snack('Could not securely save WARP settings.', err: true);
       return false;
     }
+
+    // The encrypted write/delete is the persistence boundary. Cleanup of a
+    // legacy plaintext preference is best-effort and must not report a false
+    // save failure after the secure value has already been committed.
+    try {
+      await preferences.remove('warp_json');
+    } catch (_) {
+      _snack(
+        'WARP settings were saved securely, but legacy plaintext cleanup failed.',
+        err: true,
+      );
+    }
+    return true;
   }
 
   Future<bool> _queueSecureWrite({
