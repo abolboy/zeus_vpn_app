@@ -68,7 +68,7 @@ jobs:
               check=True,
               capture_output=True,
               text=True,
-          ).stdout.split("\\0")
+          ).stdout.split("\0")
           forbidden_exact = {
               "ci/keystore.b64",
               "key.properties",
