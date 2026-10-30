@@ -14,6 +14,7 @@ A Flutter/Android VPN client prototype using `flutter_v2ray_client`, subscriptio
 - VLESS, Trojan, and VMess subscription-link parsing
 - Subscription refresh, node selection, TCP reachability checks, and core-based delay checks
 - V2Ray client connection state and traffic statistics
+- Optional Cloudflare WARP-only egress mode. When enabled, it replaces the selected proxy outbound; it is not currently chained with a selected VLESS/Trojan/VMess server.
 - Optional WARP device registration and configuration injection
 - PATT-NG configuration controls for selected transport and TLS-related settings
 - Local settings persistence
@@ -43,8 +44,10 @@ The generated APK is uploaded as a workflow artifact for verification only.
 - WARP API registration is an external integration and must be tested against current Cloudflare behavior; successful registration alone does not verify tunnel traffic.
 - Release signing, signing-key rotation, a reproducible release pipeline, and a full upgrade test remain outstanding.
 - Direct VLESS/Trojan/VMess inputs are validated locally before being saved; subscription URL secrets are masked in the visible feed inventory.
-- The Tools workspace includes a searchable Xray log console with common credential and share-URI redaction, plus explicit confirmation before clearing the local diagnostic buffer.
+- The Tools workspace includes a searchable Xray log console with subscription/share-URI and common credential redaction, plus explicit confirmation before clearing the local diagnostic buffer.
+- WARP key generation uses the maintained `cryptography` X25519 API and is tested with RFC 7748 vectors.
 - Animated dashboard effects pause when the app is backgrounded or another workspace is selected.
+- This repository currently ships a single Xray/V2Ray core through `flutter_v2ray_client 3.5.0`; it is not a multi-engine client yet. Sing-box is a separate architecture/licensing decision and is not silently bundled.
 - A security review should verify every PATT-NG field against the exact core version embedded by the dependency before presenting those controls as universally supported.
 
 ## Contributing
