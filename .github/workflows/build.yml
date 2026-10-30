@@ -51,7 +51,18 @@ jobs:
       - name: Build verification APK
         run: flutter build apk --debug --no-pub
 
+      # Publish the verification build before emulator testing so the APK
+      # remains available even if the emulator infrastructure is unavailable.
+      - name: Upload verification APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: zeus-vpn-debug-verification
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Run Android emulator regression test
+        timeout-minutes: 12
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -59,10 +70,3 @@ jobs:
           arch: x86_64
           profile: pixel_6
           script: flutter test integration_test/server_add_test.dart -d emulator-5554 --no-pub
-
-      - name: Upload verification APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: zeus-vpn-debug-verification
-          path: build/app/outputs/flutter-apk/app-debug.apk
-          if-no-files-found: error
