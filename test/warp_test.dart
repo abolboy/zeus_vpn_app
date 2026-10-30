@@ -60,7 +60,7 @@ void main() {
       );
     });
 
-    test('generated WARP keys are valid 32-byte base64 values', {
+    test('generated WARP keys are valid 32-byte base64 values', () {
       final keys = genWarpKeys();
 
       expect(base64.decode(keys.priv), hasLength(32));
