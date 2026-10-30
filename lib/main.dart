@@ -711,7 +711,7 @@ Map<String, dynamic> withLanBypass(Map<String, dynamic> config) {
       ? List<dynamic>.from(routing['rules'] as List)
       : <dynamic>[];
 
-  final hasValidLanRule = rules.any((rule) {
+  final validLanRuleIndex = rules.indexWhere((rule) {
     if (rule is! Map || rule['type'] != 'field') return false;
     final ips = rule['ip'];
     final tag = rule['outboundTag'];
@@ -720,10 +720,18 @@ Map<String, dynamic> withLanBypass(Map<String, dynamic> config) {
         tag is! String) {
       return false;
     }
-    return outbounds.any((item) => item is Map && item['tag'] == tag);
+    return outbounds.any(
+      (item) => item is Map &&
+          item['tag'] == tag &&
+          item['protocol'] == 'freedom',
+    );
   });
 
-  if (!hasValidLanRule) {
+  if (validLanRuleIndex >= 0) {
+    // A LAN rule must precede catch-all or proxy rules to take effect.
+    final lanRule = rules.removeAt(validLanRuleIndex);
+    rules.insert(0, lanRule);
+  } else {
     var directTag = 'zeus-lan-bypass';
     while (outbounds.any(
       (item) => item is Map && item['tag'] == directTag,
@@ -741,6 +749,21 @@ Map<String, dynamic> withLanBypass(Map<String, dynamic> config) {
   routing.putIfAbsent('domainStrategy', () => 'AsIs');
   routing['rules'] = rules;
   config['routing'] = routing;
+  return config;
+}
+
+/// Replaces all profile outbounds and profile-specific routing rules with
+/// WARP-only egress, optionally retaining an explicit LAN direct route.
+Map<String, dynamic> withWarpOnlyOutbound(
+  Map<String, dynamic> config,
+  Map<String, dynamic> warpOutbound, {
+  required bool bypassLan,
+}) {
+  config['outbounds'] = [Map<String, dynamic>.from(warpOutbound)];
+  // Imported rules may reference the selected proxy, block, or direct tags.
+  // Those outbounds no longer exist in WARP-only mode.
+  config.remove('routing');
+  if (bypassLan) withLanBypass(config);
   return config;
 }
 
@@ -1106,9 +1129,7 @@ class _HomePageState extends State<HomePage>
     }
     if (_warpOn && _warpJson != null && _warpJson!.isNotEmpty) {
       final w = jsonDecode(_warpJson!) as Map<String, dynamic>;
-      final newOuts = <dynamic>[w];
-      json['outbounds'] = newOuts;
-      if (_patt.bypassLan) withLanBypass(json);
+      withWarpOnlyOutbound(json, w, bypassLan: _patt.bypassLan);
       return jsonEncode(json);
     }
     if (_patt.mux) main['mux'] = {'enabled': true, 'concurrency': int.tryParse(_patt.muxConc) ?? 8};
