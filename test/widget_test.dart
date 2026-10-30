@@ -5,6 +5,36 @@ import 'package:flutter_v2ray_client/flutter_v2ray.dart';
 import 'package:zeus_vpn/main.dart';
 
 void main() {
+  test('LAN bypass preserves imported routing rules and domain strategy', () {
+    final config = <String, dynamic>{
+      'outbounds': [
+        {'tag': 'proxy', 'protocol': 'vless'},
+      ],
+      'routing': {
+        'domainStrategy': 'IPIfNonMatch',
+        'rules': [
+          {'type': 'field', 'domain': ['domain:example.com'], 'outboundTag': 'proxy'},
+        ],
+      },
+    };
+
+    final updated = withLanBypass(config);
+    final routing = updated['routing'] as Map<String, dynamic>;
+    final rules = routing['rules'] as List<dynamic>;
+    final outbounds = updated['outbounds'] as List<dynamic>;
+    final lanRule = rules.first as Map;
+
+    expect(routing['domainStrategy'], 'IPIfNonMatch');
+    expect(rules, hasLength(2));
+    expect(lanRule['ip'], contains('geoip:private'));
+    expect(lanRule['outboundTag'], 'zeus-lan-bypass');
+    expect((rules[1] as Map)['outboundTag'], 'proxy');
+    expect(
+      outbounds.any((item) => item is Map && item['tag'] == 'zeus-lan-bypass'),
+      isTrue,
+    );
+  });
+
   test('sanitizes credential-bearing values from core logs', () {
     final safe = sanitizeCoreLogLine(
       'failed vless://user:secret@example.com:443 token=super-secret',
