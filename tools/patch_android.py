@@ -88,16 +88,29 @@ def patch_launcher_assets():
         android:pathData="M29,7 L25,16 L28,16 L24,23 L33,15 L29,15 Z" />
 </vector>
 """
+    values_dir = p("android", "app", "src", "main", "res", "values")
+    os.makedirs(values_dir, exist_ok=True)
+    colors_path = os.path.join(values_dir, "zeus_colors.xml")
+    colors_xml = """<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="zeus_background">#030308</color>
+</resources>
+"""
+
     splash_path = os.path.join(drawable_dir, "launch_background.xml")
     splash_xml = """<?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="#030308" />
+    <item android:drawable="@color/zeus_background" />
     <item
         android:drawable="@drawable/zeus_app_icon"
         android:gravity="center" />
 </layer-list>
 """
-    for path, content in ((icon_path, icon_xml), (splash_path, splash_xml)):
+    for path, content in (
+        (icon_path, icon_xml),
+        (colors_path, colors_xml),
+        (splash_path, splash_xml),
+    ):
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
     print("ZEUS launcher icon and dark splash assets patched")
