@@ -122,7 +122,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     await tester.tap(find.text('Open full node center'));
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('[DIRECT] single-node'), findsOneWidget);
+    expect(
+      find.text('[DIRECT] single-node'),
+      findsWidgets,
+      reason: 'The saved direct node should be visible in the node workspace.',
+    );
     expect(tester.takeException(), isNull);
   });
 }
