@@ -2,7 +2,7 @@
 
 The repository must not contain an Android signing keystore or a base64 export of one.
 
-The CI workflow currently builds a **debug verification APK** for automated analysis and testing. It intentionally does not publish a release APK. Before enabling public release builds:
+The CI workflow currently builds a **debug verification APK** for automated analysis and testing. The debug variant uses an `.debug` application-ID suffix so it can coexist with the stable package without replacing it or sharing its data. It intentionally does not publish a release APK. Before enabling public release builds:
 
 1. Generate a dedicated Android upload/release keystore locally.
 2. Store its base64 contents and credentials in GitHub Actions secrets (never in Git files).
