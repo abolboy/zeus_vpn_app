@@ -129,7 +129,10 @@ String sanitizeCoreLogLine(String value) {
       r'"?(password|secret[_-]?key|private[_-]?key|access[_-]?token|refresh[_-]?token|token|authorization)"?\s*[:=]\s*"?(?:Bearer\s+)?[^"\s,;}]+"?',
       caseSensitive: false,
     ),
-    (match) => (match.group(1) ?? 'credential') + '=[redacted]',
+    (match) {
+      final field = match.group(1) ?? 'credential';
+      return '$field=[redacted]';
+    },
   );
 }
 
@@ -693,6 +696,54 @@ class _SubscriptionSheetState extends State<_SubscriptionSheet> {
   }
 }
 
+/// Adds a LAN-bypass outbound and prepends its rule without discarding
+/// routing rules imported from the selected profile.
+Map<String, dynamic> withLanBypass(Map<String, dynamic> config) {
+  final outbounds = config['outbounds'];
+  if (outbounds is! List) {
+    throw const FormatException('Core configuration has no outbound list.');
+  }
+
+  final routing = config['routing'] is Map
+      ? Map<String, dynamic>.from(config['routing'] as Map)
+      : <String, dynamic>{};
+  final rules = routing['rules'] is List
+      ? List<dynamic>.from(routing['rules'] as List)
+      : <dynamic>[];
+
+  final hasValidLanRule = rules.any((rule) {
+    if (rule is! Map || rule['type'] != 'field') return false;
+    final ips = rule['ip'];
+    final tag = rule['outboundTag'];
+    if (ips is! List ||
+        !ips.contains('geoip:private') ||
+        tag is! String) {
+      return false;
+    }
+    return outbounds.any((item) => item is Map && item['tag'] == tag);
+  });
+
+  if (!hasValidLanRule) {
+    var directTag = 'zeus-lan-bypass';
+    while (outbounds.any(
+      (item) => item is Map && item['tag'] == directTag,
+    )) {
+      directTag = '${directTag}_';
+    }
+    outbounds.add({'tag': directTag, 'protocol': 'freedom'});
+    rules.insert(0, {
+      'type': 'field',
+      'ip': ['geoip:private'],
+      'outboundTag': directTag,
+    });
+  }
+
+  routing.putIfAbsent('domainStrategy', () => 'AsIs');
+  routing['rules'] = rules;
+  config['routing'] = routing;
+  return config;
+}
+
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
   @override
@@ -1039,54 +1090,6 @@ class _HomePageState extends State<HomePage>
   }
 
   String _injectQuery(String uri) => applyPattQuery(uri, _patt);
-
-/// Adds a LAN-bypass outbound and prepends its rule without discarding
-/// routing rules imported from the selected profile.
-Map<String, dynamic> withLanBypass(Map<String, dynamic> config) {
-  final outbounds = config['outbounds'];
-  if (outbounds is! List) {
-    throw const FormatException('Core configuration has no outbound list.');
-  }
-
-  final routing = config['routing'] is Map
-      ? Map<String, dynamic>.from(config['routing'] as Map)
-      : <String, dynamic>{};
-  final rules = routing['rules'] is List
-      ? List<dynamic>.from(routing['rules'] as List)
-      : <dynamic>[];
-
-  final hasValidLanRule = rules.any((rule) {
-    if (rule is! Map || rule['type'] != 'field') return false;
-    final ips = rule['ip'];
-    final tag = rule['outboundTag'];
-    if (ips is! List ||
-        !ips.contains('geoip:private') ||
-        tag is! String) {
-      return false;
-    }
-    return outbounds.any((item) => item is Map && item['tag'] == tag);
-  });
-
-  if (!hasValidLanRule) {
-    var directTag = 'zeus-lan-bypass';
-    while (outbounds.any(
-      (item) => item is Map && item['tag'] == directTag,
-    )) {
-      directTag = '${directTag}_';
-    }
-    outbounds.add({'tag': directTag, 'protocol': 'freedom'});
-    rules.insert(0, {
-      'type': 'field',
-      'ip': ['geoip:private'],
-      'outboundTag': directTag,
-    });
-  }
-
-  routing.putIfAbsent('domainStrategy', () => 'AsIs');
-  routing['rules'] = rules;
-  config['routing'] = routing;
-  return config;
-}
 
   String _injectCore(String config) {
     final json = jsonDecode(config) as Map<String, dynamic>;
