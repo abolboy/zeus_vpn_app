@@ -210,6 +210,47 @@ void main() {
       );
     });
 
+    test('validates Noise payload according to selected encoding', () {
+      const link =
+          'vless://11111111-1111-4111-8111-111111111111@example.com:443';
+
+      final randomNoise = Patt()
+        ..noise = true
+        ..noiseType = 'rand'
+        ..noisePacket = '10-20';
+      expect(pattConfigurationError(link, randomNoise), isNull);
+
+      final stringNoise = Patt()
+        ..noise = true
+        ..noiseType = 'str'
+        ..noisePacket = 'zeus';
+      expect(pattConfigurationError(link, stringNoise), isNull);
+
+      final hexNoise = Patt()
+        ..noise = true
+        ..noiseType = 'hex'
+        ..noisePacket = '0a1b2c';
+      expect(pattConfigurationError(link, hexNoise), isNull);
+
+      final base64Noise = Patt()
+        ..noise = true
+        ..noiseType = 'base64'
+        ..noisePacket = base64.encode([1, 2, 3]);
+      expect(pattConfigurationError(link, base64Noise), isNull);
+
+      final invalidHex = Patt()
+        ..noise = true
+        ..noiseType = 'hex'
+        ..noisePacket = '0xz';
+      expect(pattConfigurationError(link, invalidHex), isNotNull);
+
+      final invalidBase64 = Patt()
+        ..noise = true
+        ..noiseType = 'base64'
+        ..noisePacket = 'not base64';
+      expect(pattConfigurationError(link, invalidBase64), isNotNull);
+    });
+
     test('validates fragmentation and MUX values before connecting', () {
       final badFragment = Patt()
         ..frag = 'tlshello'
