@@ -2095,40 +2095,6 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  Widget _terminalLine(String label, String value, Color tint) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(children: [
-        Expanded(
-          child: Text(
-            '[$label]',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.42),
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.7,
-            ),
-          ),
-        ),
-        Container(
-          width: 5,
-          height: 5,
-          decoration: BoxDecoration(color: tint, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          value,
-          style: TextStyle(
-            color: tint,
-            fontSize: 9,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 0.5,
-          ),
-        ),
-      ]),
-    );
-  }
-
   Widget _diagnosticRow(String label, String value, Color accent) => Row(children: [
     Expanded(child: Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.48), fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 0.8))),
     const SizedBox(width: 10),
@@ -2282,12 +2248,6 @@ class _HomePageState extends State<HomePage>
       ),
     );
   }
-
-  Widget _stat(String t, String v, IconData i, Color c) => Column(children: [
-    Icon(i, color: c, size: 16),
-    const SizedBox(height: 4),
-    Text(v, style: TextStyle(color: c, fontSize: 12, fontWeight: FontWeight.bold)),
-  ]);
 
   Widget _chip(String t, String v, Color c) => Column(children: [
     Text(v, style: TextStyle(color: c, fontSize: 9, fontWeight: FontWeight.bold)),
