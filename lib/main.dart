@@ -42,7 +42,8 @@ class ServerNode {
 class Patt {
   String fp = 'unsafe';
   String cs = '';
-  bool insecure = false;
+  String pcs = '';
+  String vcn = '';
   String frag = 'tlshello';
   String fragLen = '100-200';
   String fragInt = '10-20';
@@ -83,6 +84,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   Patt _patt = Patt();
   bool _ready = false;
   bool _loading = false;
+  int _syncGen = 0;
   bool _connected = false;
   bool _connecting = false;
   bool _busy = false;
@@ -111,12 +113,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _v2ray = V2ray(onStatusChanged: (V2RayStatus s) {
       if (mounted) {
         setState(() {
-          final st = (s.state ?? '').toString().toUpperCase();
+          final st = s.state.toUpperCase();
           _connected = st == 'CONNECTED';
           _connecting = st == 'CONNECTING' || st == 'CONNECT';
           _up = _fmt(s.uploadSpeed);
           _down = _fmt(s.downloadSpeed);
-          _dur = _connected ? (s.duration ?? '00:00:00') : '00:00:00';
+          _dur = _connected ? s.duration : '00:00:00';
           if (!_connected && !_connecting) _speed = '';
         });
       }
@@ -150,7 +152,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   void _loadPatt(SharedPreferences p) {
     _patt.fp = p.getString('p_fp') ?? 'unsafe';
     _patt.cs = p.getString('p_cs') ?? '';
-    _patt.insecure = p.getBool('p_ins') ?? false;
+    _patt.pcs = p.getString('p_pcs') ?? '';
+    _patt.vcn = p.getString('p_vcn') ?? '';
     _patt.frag = p.getString('p_frag') ?? 'tlshello';
     _patt.fragLen = p.getString('p_fl') ?? '100-200';
     _patt.fragInt = p.getString('p_fi') ?? '10-20';
@@ -181,7 +184,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final p = await SharedPreferences.getInstance();
     await p.setString('p_fp', _patt.fp);
     await p.setString('p_cs', _patt.cs);
-    await p.setBool('p_ins', _patt.insecure);
+    await p.setString('p_pcs', _patt.pcs);
+    await p.setString('p_vcn', _patt.vcn);
     await p.setString('p_frag', _patt.frag);
     await p.setString('p_fl', _patt.fragLen);
     await p.setString('p_fi', _patt.fragInt);
@@ -261,31 +265,63 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         }
       }
       final u = Uri.parse(uri);
-      if (u.fragment.isNotEmpty) return Uri.decodeComponent(u.fragment);
+      if (u.fragment.isNotEmpty) {
+        try {
+          return Uri.decodeComponent(u.fragment);
+        } catch (_) {
+          return u.fragment;
+        }
+      }
       return '${u.host}:${u.port}';
     } catch (_) {
       return 'Node';
     }
   }
 
+  static const List<String> _privateCidrs = [
+    '10.0.0.0/8',
+    '172.16.0.0/12',
+    '192.168.0.0/16',
+    '127.0.0.0/8',
+    '169.254.0.0/16',
+    'fc00::/7',
+    'fe80::/10',
+  ];
+
+  // Xray Int32Range text ("100-200" or "50"); malformed or negative values can crash the core.
+  String _range(String v, String fallback, {int min = 0}) {
+    final m = RegExp(r'^(\d+)(?:-(\d+))?$').firstMatch(v.trim());
+    if (m == null) return fallback;
+    final a = int.tryParse(m.group(1)!);
+    final b = m.group(2) == null ? a : int.tryParse(m.group(2)!);
+    if (a == null || b == null || a < min || a > b || b > 2147483647) return fallback;
+    return v.trim();
+  }
+
   String _injectQuery(String uri) {
     try {
       final u = Uri.parse(uri);
       final q = Map<String, String>.from(u.queryParameters);
-      q['fp'] = _patt.fp;
-      if (_patt.cs.isNotEmpty) q['cs'] = _patt.cs;
-      if (_patt.insecure) q['allowInsecure'] = '1';
-      if (_patt.reality) {
+      if (_patt.reality && _patt.pbk.isNotEmpty) {
         q['security'] = 'reality';
         q['pbk'] = _patt.pbk;
         q['sid'] = _patt.sid;
         q['spx'] = _patt.spx;
       }
-      final netNow = _patt.network != 'tcp' ? _patt.network : (q['type'] ?? 'tcp');
       final secNow = q['security'] ?? 'none';
+      // 'unsafe' means "keep the node's own fingerprint"; REALITY always needs a real one.
+      if (_patt.fp != 'unsafe') {
+        q['fp'] = _patt.fp;
+      } else if (secNow == 'reality' && (q['fp'] ?? '').isEmpty) {
+        q['fp'] = 'chrome';
+      }
+      if (_patt.cs.isNotEmpty) q['cs'] = _patt.cs;
+      if (_patt.pcs.isNotEmpty) q['pcs'] = _patt.pcs;
+      if (_patt.vcn.isNotEmpty) q['vcn'] = _patt.vcn;
+      final netNow = _patt.network != 'tcp' ? _patt.network : (q['type'] ?? 'tcp');
       if (u.scheme == 'vless' && netNow == 'tcp' && (secNow == 'tls' || secNow == 'reality') && _patt.flow.isNotEmpty && _patt.flow != 'none') {
         q['flow'] = _patt.flow;
-      } else if (netNow != 'tcp') {
+      } else {
         q.remove('flow');
       }
       if (_patt.alpn.isNotEmpty) q['alpn'] = _patt.alpn;
@@ -298,6 +334,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     } catch (_) {
       return uri;
     }
+  }
+
+  void _addLanBypass(Map<String, dynamic> json, List outs) {
+    if (!outs.any((o) => o is Map && o['tag'] == 'direct')) {
+      outs.add({'tag': 'direct', 'protocol': 'freedom'});
+    }
+    final routing = (json['routing'] as Map<String, dynamic>?) ?? <String, dynamic>{};
+    final rules = (routing['rules'] as List?) ?? <dynamic>[];
+    rules.insert(0, {'type': 'field', 'ip': _privateCidrs, 'outboundTag': 'direct'});
+    routing['rules'] = rules;
+    routing.putIfAbsent('domainStrategy', () => 'AsIs');
+    json['routing'] = routing;
   }
 
   String _injectCore(String config) {
@@ -313,33 +361,51 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         json['dns'] = {'servers': _patt.customDns.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList()};
       }
       if (_warpOn && _warpJson != null && _warpJson!.isNotEmpty) {
+        // WARP replaces the proxy outbound only; direct/block outbounds and routing stay intact.
         final w = jsonDecode(_warpJson!) as Map<String, dynamic>;
-        final newOuts = <dynamic>[w];
-        if (_patt.bypassLan) {
-          newOuts.add({'tag': 'direct', 'protocol': 'freedom'});
-          json['routing'] = {'domainStrategy': 'AsIs', 'rules': [{'type': 'field', 'ip': ['geoip:private'], 'outboundTag': 'direct'}]};
-        }
-        json['outbounds'] = newOuts;
+        w['tag'] = (main['tag'] ?? 'proxy').toString();
+        outs[0] = w;
+        if (_patt.bypassLan) _addLanBypass(json, outs);
+        json['outbounds'] = outs;
         return jsonEncode(json);
       }
-      if (_patt.mux) main['mux'] = {'enabled': true, 'concurrency': int.tryParse(_patt.muxConc) ?? 8};
+      // Xray does not allow Mux together with the XTLS Vision flow.
+      final hasFlow = RegExp(r'"flow":"xtls').hasMatch(jsonEncode(main['settings'] ?? <String, dynamic>{}));
+      if (_patt.mux && !hasFlow) main['mux'] = {'enabled': true, 'concurrency': int.tryParse(_patt.muxConc) ?? 8};
       if (_patt.frag != 'none' || _patt.noise) {
-        final fs = <String, dynamic>{};
-        if (_patt.frag != 'none') {
-          fs['fragment'] = {'packets': _patt.frag.startsWith('tlshello') ? 'tlshello' : _patt.frag, 'length': _patt.fragLen, 'interval': _patt.fragInt};
-        }
-        if (_patt.noise) fs['noises'] = [{'type': _patt.noiseType, 'packet': _patt.noisePacket, 'delay': _patt.noiseDelay}];
+        // Xray 26.x moved fragment/noise out of the freedom outbound into streamSettings.finalmask.
         final stream = (main['streamSettings'] as Map<String, dynamic>?) ?? <String, dynamic>{};
-        final sock = (stream['sockopt'] as Map<String, dynamic>?) ?? <String, dynamic>{};
-        sock['dialerProxy'] = 'zeus-frag';
-        stream['sockopt'] = sock;
+        final fm = (stream['finalmask'] as Map<String, dynamic>?) ?? <String, dynamic>{};
+        if (_patt.frag != 'none') {
+          final tcp = (fm['tcp'] as List?) ?? <dynamic>[];
+          final reality = stream['security'] == 'reality';
+          tcp.insert(0, {
+            'type': 'fragment',
+            'settings': {
+              'packets': reality ? '1-3' : 'tlshello',
+              'lengths': [_range(_patt.fragLen, '100-200', min: 1)],
+              'delays': [_range(_patt.fragInt, '10-20')],
+            },
+          });
+          fm['tcp'] = tcp;
+        }
+        if (_patt.noise) {
+          final udp = (fm['udp'] as List?) ?? <dynamic>[];
+          udp.add({
+            'type': 'noise',
+            'settings': {
+              'reset': '30-60',
+              'noise': [
+                {'rand': _range(_patt.noisePacket, '10-20', min: 1), 'delay': _range(_patt.noiseDelay, '10-20')},
+              ],
+            },
+          });
+          fm['udp'] = udp;
+        }
+        stream['finalmask'] = fm;
         main['streamSettings'] = stream;
-        outs.add({'tag': 'zeus-frag', 'protocol': 'freedom', 'settings': fs});
       }
-      if (_patt.bypassLan) {
-        outs.add({'tag': 'direct', 'protocol': 'freedom'});
-        json['routing'] = {'domainStrategy': 'AsIs', 'rules': [{'type': 'field', 'ip': ['geoip:private'], 'outboundTag': 'direct'}]};
-      }
+      if (_patt.bypassLan) _addLanBypass(json, outs);
       json['outbounds'] = outs;
       return jsonEncode(json);
     } catch (_) {
@@ -348,8 +414,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   Future<void> _syncAll() async {
+    final gen = ++_syncGen;
     if (_subs.isEmpty) {
       setState(() {
+        _loading = false;
         _nodes = [];
         _selUri = null;
       });
@@ -383,7 +451,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         }
       } catch (_) {}
     }
-    if (!mounted) return;
+    if (!mounted || gen != _syncGen) return;
     setState(() {
       _nodes = got;
       if (prev != null && _nodes.any((n) => n.baseUri == prev)) {
@@ -473,10 +541,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       double sec = sw.elapsedMilliseconds / 1000.0;
       if (sec == 0) sec = 0.1;
       final mbps = (res.data.length.toDouble() * 8) / (sec * 1048576);
+      if (!mounted) return;
       setState(() => _speed = '${mbps.toStringAsFixed(1)} Mbps');
     } catch (_) {
+      if (!mounted) return;
       setState(() => _speed = 'FAILED');
     }
+    if (!mounted) return;
     setState(() => _testing = false);
   }
 
@@ -509,8 +580,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         final config = _injectCore(parser.getFullConfiguration());
         await _v2ray.startV2Ray(remark: parser.remark, config: config, proxyOnly: false);
       }
-    } catch (_) {
-      _snack('Core error, try again.', err: true);
+    } catch (e) {
+      final msg = e.toString().split('\n').first;
+      _snack('Core error: ${msg.length > 90 ? msg.substring(0, 90) : msg}', err: true);
     } finally {
       _busy = false;
     }
@@ -561,16 +633,20 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   Widget _dd(String label, List<String> items, String cur, void Function(String) on) {
     return Padding(padding: const EdgeInsets.only(bottom: 14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10, fontWeight: FontWeight.bold)),
-      DropdownButtonFormField<String>(
-        key: ValueKey('dd_$label'),
-        value: items.contains(cur) ? cur : items.first,
-        dropdownColor: GLASS,
-        style: const TextStyle(color: Colors.white, fontSize: 13),
-        decoration: InputDecoration(filled: true, fillColor: Colors.white.withValues(alpha: 0.04), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))),
-        items: items.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
-        onChanged: (v) {
-          if (v != null) on(v);
-        },
+      const SizedBox(height: 4),
+      InputDecorator(
+        decoration: InputDecoration(filled: true, fillColor: Colors.white.withValues(alpha: 0.04), contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))),
+        child: DropdownButtonHideUnderline(child: DropdownButton<String>(
+          key: ValueKey('dd_$label'),
+          value: items.contains(cur) ? cur : items.first,
+          isExpanded: true,
+          dropdownColor: GLASS,
+          style: const TextStyle(color: Colors.white, fontSize: 13),
+          items: items.map((v) => DropdownMenuItem(value: v, child: Text(v.isEmpty ? '(none)' : v))).toList(),
+          onChanged: (v) {
+            if (v != null) on(v);
+          },
+        )),
       ),
     ]));
   }
@@ -594,7 +670,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     String tag = 'ALL';
     int sort = 0;
     showModalBottomSheet(context: context, backgroundColor: Colors.transparent, isScrollControlled: true, builder: (ctx) => StatefulBuilder(builder: (ctx, setMs) {
-      _refreshNodes = () => setMs(() {});
+      _refreshNodes = () {
+        if (ctx.mounted) setMs(() {});
+      };
       var vis = _nodes.where((n) => (tag == 'ALL' || n.subTag == tag) && (q.isEmpty || n.displayName.toLowerCase().contains(q.toLowerCase()))).toList();
       if (sort == 1) vis.sort((a, b) => _ms(a).compareTo(_ms(b)));
       if (sort == 2) vis.sort((a, b) => a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
@@ -705,20 +783,26 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             _saveWarp();
           }),
           if (_warpJson != null) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text('WARP device: REGISTERED', style: TextStyle(color: GREEN, fontSize: 10, fontWeight: FontWeight.bold))),
+          if (_warpJson != null) Padding(padding: const EdgeInsets.only(bottom: 14), child: SizedBox(width: double.infinity, height: 40, child: OutlinedButton(onPressed: () {
+            setState(() => _warpJson = null);
+            _saveWarp();
+            setMs(() {});
+          }, child: const Text('RESET WARP DEVICE', style: TextStyle(color: AMBER, fontWeight: FontWeight.bold, letterSpacing: 1))))),
           if (_warpOn && _warpJson == null) Padding(padding: const EdgeInsets.only(bottom: 14), child: SizedBox(width: double.infinity, height: 44, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: CYAN.withValues(alpha: 0.1), side: const BorderSide(color: CYAN)), onPressed: () async {
             _snack('Registering WARP device...');
             final kp = genWarpKeys();
             final out = await registerWarp(kp);
+            if (!mounted) return;
             if (out == null) {
-              _snack('WARP registration failed!', err: true);
+              _snack('WARP registration failed! $warpLastError', err: true);
             } else {
               setState(() => _warpJson = jsonEncode(out));
               _saveWarp();
               _snack('WARP registered!');
             }
-            setMs(() {});
+            if (ctx.mounted) setMs(() {});
           }, child: const Text('REGISTER WARP DEVICE', style: TextStyle(color: CYAN, fontWeight: FontWeight.bold, letterSpacing: 1))))),
-          _dd('FINGERPRINT', ['unsafe', 'chrome', 'firefox', 'safari', 'randomized', 'randomizednoalpn'], _patt.fp, (v) {
+          _dd('FINGERPRINT (unsafe = keep node value)', ['unsafe', 'chrome', 'firefox', 'safari', 'randomized', 'randomizednoalpn'], _patt.fp, (v) {
             setMs(() => _patt.fp = v);
             _savePatt();
           }),
@@ -726,8 +810,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             _patt.cs = v;
             _savePatt();
           }),
-          _sw('ALLOW INSECURE', _patt.insecure, (v) {
-            setMs(() => _patt.insecure = v);
+          _tf('PINNED CERT SHA256 (pcs)', _patt.pcs, (v) {
+            _patt.pcs = v.trim();
+            _savePatt();
+          }),
+          _tf('VERIFY CERT NAME (vcn)', _patt.vcn, (v) {
+            _patt.vcn = v.trim();
             _savePatt();
           }),
           _dd('FRAGMENT', ['tlshello', 'none'], _patt.frag, (v) {
@@ -744,15 +832,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               _savePatt();
             }),
           ],
-          _sw('NOISE', _patt.noise, (v) {
+          _sw('NOISE (UDP ONLY)', _patt.noise, (v) {
             setMs(() => _patt.noise = v);
             _savePatt();
           }),
           if (_patt.noise) ...[
-            _dd('NOISE TYPE', ['rand', 'base64', 'str', 'hex'], _patt.noiseType, (v) {
-              setMs(() => _patt.noiseType = v);
-              _savePatt();
-            }),
             _tf('NOISE PACKET', _patt.noisePacket, (v) {
               _patt.noisePacket = v;
               _savePatt();
@@ -909,7 +993,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ]), color: AMBER)),
           const SizedBox(height: 14),
           Padding(padding: const EdgeInsets.symmetric(horizontal: 24), child: _box(Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-            _chip('FP', _patt.fp.toUpperCase(), MAGENTA),
+            _chip('FP', _patt.fp == 'unsafe' ? 'AUTO' : _patt.fp.toUpperCase(), MAGENTA),
             _chip('FRAG', _patt.frag.toUpperCase(), CYAN),
             _chip('WARP', _warpOn ? 'ON' : 'OFF', GREEN),
             _chip('NET', _patt.network.toUpperCase(), AMBER),
