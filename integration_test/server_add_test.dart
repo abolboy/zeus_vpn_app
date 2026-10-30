@@ -68,7 +68,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.add_circle));
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('SUB 1'), findsOneWidget);
+    expect(find.text('اشتراک ۱'), findsOneWidget);
     await tester.tap(find.text('ذخیره و همگام‌سازی'));
     await _waitForSubscriptionSheetToClose(tester);
 
@@ -112,7 +112,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.add_circle));
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('NODE 1'), findsOneWidget);
+    expect(find.text('سرور ۱'), findsOneWidget);
     await tester.tap(find.text('ذخیره و همگام‌سازی'));
     await _waitForSubscriptionSheetToClose(tester);
     expect(find.text('ذخیره و همگام‌سازی'), findsNothing);
