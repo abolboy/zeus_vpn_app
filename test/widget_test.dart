@@ -5,6 +5,37 @@ import 'package:flutter_v2ray_client/flutter_v2ray.dart';
 import 'package:zeus_vpn/main.dart';
 
 void main() {
+  group('direct share URI validation', () {
+    test('accepts a complete VLESS link', () {
+      expect(
+        directShareUriError(
+          'vless://11111111-1111-4111-8111-111111111111@example.com:443?security=tls',
+        ),
+        isNull,
+      );
+    });
+
+    test('accepts a complete Trojan link', () {
+      expect(directShareUriError('trojan://secret@example.com:443'), isNull);
+    });
+
+    test('rejects missing host, port, or credentials', () {
+      expect(directShareUriError('vless://user@:443'), isNotNull);
+      expect(directShareUriError('vless://user@example.com'), isNotNull);
+      expect(directShareUriError('trojan://@example.com:443'), isNotNull);
+    });
+
+    test('accepts a decoded VMess profile and rejects malformed payloads', () {
+      final profile = base64.encode(utf8.encode(jsonEncode({
+        'add': 'node.example.com',
+        'port': '443',
+        'id': '11111111-1111-4111-8111-111111111111',
+      })));
+      expect(directShareUriError('vmess://$profile#test'), isNull);
+      expect(directShareUriError('vmess://not-base64-json'), isNotNull);
+    });
+  });
+
   test('ServerNode keeps source and effective URIs separate', () {
     const sourceUri = 'vless://user@example.com:443?security=tls#source';
     const effectiveUri = 'vless://user@example.com:443?security=tls&fp=chrome#source';
