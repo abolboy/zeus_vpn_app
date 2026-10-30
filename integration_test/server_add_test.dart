@@ -36,6 +36,12 @@ void main() {
     await tester.tap(find.text('SAVE & SYNC'));
     await tester.pump(const Duration(milliseconds: 500));
 
+    // The sheet is dismissed while its input had focus. Its controller must
+    // remain alive until the sheet subtree has actually left the widget tree.
+    expect(find.text('SUBSCRIPTIONS'), findsNothing);
+    expect(tester.takeException(), isNull,
+        reason: 'Closing the subscription sheet must not use a disposed controller.');
+
     // Let the local connection-refused path complete without depending on
     // a public subscription provider or external network availability.
     for (var i = 0; i < 12; i++) {
