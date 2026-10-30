@@ -1,67 +1,6 @@
 import 'dart:convert';
-import 'dart:math';
-import 'dart:typed_data';
 import 'package:dio/dio.dart';
-
-final BigInt _p255 = (BigInt.one << 255) - BigInt.from(19);
-final BigInt _a24 = BigInt.from(121665);
-
-BigInt _le2int(Uint8List b) {
-  BigInt r = BigInt.zero;
-  for (int i = b.length - 1; i >= 0; i--) {
-    r = (r << 8) | BigInt.from(b[i]);
-  }
-  return r;
-}
-
-Uint8List _int2le(BigInt v, int len) {
-  final out = Uint8List(len);
-  for (int i = 0; i < len; i++) {
-    out[i] = (v & BigInt.from(255)).toInt();
-    v = v >> 8;
-  }
-  return out;
-}
-
-Uint8List x25519(Uint8List kIn, Uint8List uIn) {
-  final k = Uint8List.fromList(kIn);
-  k[0] &= 248;
-  k[31] &= 127;
-  k[31] |= 64;
-  final e = _le2int(k);
-  final u = (_le2int(uIn) & ((BigInt.one << 255) - BigInt.one)) % _p255;
-  BigInt x1 = u, x2 = BigInt.one, z2 = BigInt.zero, x3 = u, z3 = BigInt.one;
-  int swap = 0;
-  for (int t = 254; t >= 0; t--) {
-    final b = ((e >> t) & BigInt.one).toInt();
-    if (swap != b) {
-      BigInt tx = x2; x2 = x3; x3 = tx;
-      BigInt tz = z2; z2 = z3; z3 = tz;
-    }
-    swap = b;
-    final A = (x2 + z2) % _p255;
-    final aa = A.modPow(BigInt.two, _p255);
-    final B = (x2 - z2) % _p255;
-    final bb = B.modPow(BigInt.two, _p255);
-    final E = (aa - bb) % _p255;
-    final C = (x3 + z3) % _p255;
-    final D = (x3 - z3) % _p255;
-    final da = (D * A) % _p255;
-    final cb = (C * B) % _p255;
-    x3 = (da + cb) % _p255;
-    x3 = x3.modPow(BigInt.two, _p255);
-    z3 = (da - cb) % _p255;
-    z3 = (x1 * z3.modPow(BigInt.two, _p255)) % _p255;
-    x2 = (aa * bb) % _p255;
-    z2 = (E * ((aa + _a24 * E) % _p255)) % _p255;
-  }
-  if (swap == 1) {
-    BigInt tx = x2; x2 = x3; x3 = tx;
-    BigInt tz = z2; z2 = z3; z3 = tz;
-  }
-  final inv = z2.modPow(_p255 - BigInt.two, _p255);
-  return _int2le((x2 * inv) % _p255, 32);
-}
+import 'package:cryptography/cryptography.dart';
 
 /// Ensures a WireGuard interface address has exactly one CIDR suffix.
 /// Cloudflare responses may already include the prefix.
@@ -77,14 +16,22 @@ class WarpKeys {
   WarpKeys(this.priv, this.pub);
 }
 
-WarpKeys genWarpKeys() {
-  final rnd = Random.secure();
-  final k = Uint8List(32);
-  for (int i = 0; i < 32; i++) {
-    k[i] = rnd.nextInt(256);
+Future<WarpKeys> genWarpKeys() async {
+  final algorithm = X25519();
+  final keyPair = await algorithm.newKeyPair();
+  try {
+    final privateKey = await keyPair.extractPrivateKeyBytes();
+    final publicKey = await keyPair.extractPublicKey();
+    if (privateKey.length != 32 || publicKey.bytes.length != 32) {
+      throw StateError('X25519 must return 32-byte private and public keys.');
+    }
+    return WarpKeys(
+      base64.encode(privateKey),
+      base64.encode(publicKey.bytes),
+    );
+  } finally {
+    keyPair.destroy();
   }
-  final pub = x25519(k, Uint8List(32)..[0] = 9);
-  return WarpKeys(base64.encode(k), base64.encode(pub));
 }
 
 Future<Map<String, dynamic>?> registerWarp(WarpKeys kp) async {
