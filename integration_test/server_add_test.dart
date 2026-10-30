@@ -76,4 +76,40 @@ void main() {
     expect(find.text('FEEDS'), findsWidgets,
         reason: 'The app should remain navigable after a failed sync.');
   });
+
+  testWidgets('adding a single VLESS link saves it as a direct node', (tester) async {
+    await tester.pumpWidget(const ZeusApp());
+    await tester.pump(const Duration(seconds: 2));
+
+    await tester.tap(find.text('FEEDS').last);
+    await tester.pump(const Duration(milliseconds: 500));
+
+    final addFeed = find.text('ADD FIRST FEED');
+    if (addFeed.evaluate().isNotEmpty) {
+      await tester.tap(addFeed.first);
+    } else {
+      await tester.tap(find.text('MANAGE FEEDS').first);
+    }
+    await tester.pump(const Duration(milliseconds: 500));
+
+    const singleLink =
+        'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+        '?security=tls&type=tcp#single-node';
+    await tester.enterText(find.byType(TextField).first, singleLink);
+    await tester.tap(find.byIcon(Icons.add_circle));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('NODE 1'), findsOneWidget);
+    await tester.tap(find.text('SAVE & SYNC'));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('SUBSCRIPTIONS'), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.text('NODES').last);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.text('NODE CENTER'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('[DIRECT] single-node'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
