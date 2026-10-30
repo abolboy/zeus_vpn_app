@@ -235,6 +235,66 @@ void main() {
     });
   });
 
+  group('failed subscription cache preservation', () {
+    test('keeps cached nodes only for still-configured failed feeds', () {
+      final freshDirect = ServerNode(
+        subTag: 'DIRECT',
+        rawUri: 'vless://direct@example.com:443',
+        baseUri: 'vless://direct@example.com:443',
+        displayName: 'direct',
+      );
+      final cachedFailedFeed = ServerNode(
+        subTag: 'SUB-1',
+        rawUri: 'vless://cached@example.com:443',
+        baseUri: 'vless://cached@example.com:443',
+        displayName: 'cached',
+        subscriptionUrl: 'https://feed-a.example/sub',
+      );
+      final cachedRemovedFeed = ServerNode(
+        subTag: 'SUB-2',
+        rawUri: 'vless://removed@example.com:443',
+        baseUri: 'vless://removed@example.com:443',
+        displayName: 'removed',
+        subscriptionUrl: 'https://feed-removed.example/sub',
+      );
+
+      final merged = mergeNodesForFailedSubscriptions(
+        freshNodes: [freshDirect],
+        cachedNodes: [cachedFailedFeed, cachedRemovedFeed],
+        failedSubscriptionUrls: {'https://feed-a.example/sub'},
+      );
+
+      expect(merged.map((node) => node.baseUri), [
+        freshDirect.baseUri,
+        cachedFailedFeed.baseUri,
+      ]);
+    });
+
+    test('does not add a cached profile when a fresh copy exists', () {
+      final fresh = ServerNode(
+        subTag: 'SUB-1',
+        rawUri: 'vless://node@example.com:443',
+        baseUri: 'vless://node@example.com:443',
+        displayName: 'fresh',
+      );
+      final cached = ServerNode(
+        subTag: 'SUB-1',
+        rawUri: 'vless://node@example.com:443',
+        baseUri: 'vless://node@example.com:443',
+        displayName: 'cached',
+        subscriptionUrl: 'https://feed-a.example/sub',
+      );
+
+      final merged = mergeNodesForFailedSubscriptions(
+        freshNodes: [fresh],
+        cachedNodes: [cached],
+        failedSubscriptionUrls: {'https://feed-a.example/sub'},
+      );
+      expect(merged, hasLength(1));
+      expect(merged.single.displayName, 'fresh');
+    });
+  });
+
   group('subscription URL display privacy', () {
     test('hides path tokens, credentials, query values and fragments', () {
       const source =
