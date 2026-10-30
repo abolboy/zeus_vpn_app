@@ -1673,6 +1673,69 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     Flexible(child: Text(value, textAlign: TextAlign.end, style: TextStyle(color: accent, fontSize: 10, fontWeight: FontWeight.w900))),
   ]);
 
+  Widget _navItem(int index, IconData icon, String label) {
+    final selected = _activeTab == index;
+    return Expanded(
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: label,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () => setState(() => _activeTab = index),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              margin: const EdgeInsets.symmetric(horizontal: 2),
+              padding: const EdgeInsets.symmetric(vertical: 9),
+              decoration: BoxDecoration(
+                color: selected ? cyan.withValues(alpha: 0.11) : Colors.transparent,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: selected ? cyan.withValues(alpha: 0.42) : Colors.transparent,
+                ),
+                boxShadow: selected
+                    ? [BoxShadow(color: cyan.withValues(alpha: 0.08), blurRadius: 14)]
+                    : const [],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 19, color: selected ? cyan : const Color(0xFF657084)),
+                  const SizedBox(height: 5),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: selected ? cyan : const Color(0xFF657084),
+                      fontSize: 8,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 220),
+                    width: selected ? 13 : 3,
+                    height: 2,
+                    decoration: BoxDecoration(
+                      color: selected ? cyan : Colors.transparent,
+                      borderRadius: BorderRadius.circular(2),
+                      boxShadow: selected
+                          ? [BoxShadow(color: cyan.withValues(alpha: 0.8), blurRadius: 6)]
+                          : const [],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     String selName = 'TAP TO SELECT';
@@ -1715,25 +1778,36 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           })),
         ])),
       ]),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(color: const Color(0xFF060912), border: Border(top: BorderSide(color: cyan.withValues(alpha: 0.2))), boxShadow: [BoxShadow(color: cyan.withValues(alpha: 0.04), blurRadius: 18, offset: const Offset(0, -4))]),
-        child: BottomNavigationBar(
-          currentIndex: _activeTab,
-          onTap: (index) => setState(() => _activeTab = index),
-          type: BottomNavigationBarType.fixed,
-          backgroundColor: const Color(0xFF060912),
-          selectedItemColor: cyan,
-          unselectedItemColor: const Color(0xFF657084),
-          selectedFontSize: 9,
-          unselectedFontSize: 9,
-          showUnselectedLabels: true,
-          elevation: 0,
-          items: const [
-            BottomNavigationBarItem(icon: Icon(Icons.grid_view_rounded), label: 'DASH'),
-            BottomNavigationBarItem(icon: Icon(Icons.hub_outlined), activeIcon: Icon(Icons.hub_rounded), label: 'NODES'),
-            BottomNavigationBarItem(icon: Icon(Icons.rss_feed_rounded), label: 'FEEDS'),
-            BottomNavigationBarItem(icon: Icon(Icons.memory_rounded), label: 'TOOLS'),
-          ],
+      bottomNavigationBar: SafeArea(
+        top: false,
+        minimum: const EdgeInsets.fromLTRB(14, 6, 14, 10),
+        child: Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: const Color(0xF2080D18),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: cyan.withValues(alpha: 0.22)),
+            boxShadow: [
+              BoxShadow(
+                color: cyan.withValues(alpha: 0.07),
+                blurRadius: 24,
+                offset: const Offset(0, -5),
+              ),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              _navItem(0, Icons.grid_view_rounded, 'HOME'),
+              _navItem(1, Icons.hub_rounded, 'NODES'),
+              _navItem(2, Icons.rss_feed_rounded, 'FEEDS'),
+              _navItem(3, Icons.memory_rounded, 'LAB'),
+            ],
+          ),
         ),
       ),
     );
