@@ -1109,10 +1109,21 @@ class _HomePageState extends State<HomePage>
             _patt.customDns = v;
             _savePatt();
           }),
-          _sw('REALITY', _patt.reality, (v) {
+          _sw('FORCE REALITY OVERRIDE', _patt.reality, (v) {
             setMs(() => _patt.reality = v);
             _savePatt();
           }),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+              'OFF preserves the security mode in the imported profile. ON forces REALITY and requires a compatible VLESS/TCP profile with PBK and SNI.',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.42),
+                fontSize: 9,
+                height: 1.4,
+              ),
+            ),
+          ),
           if (_patt.reality) ...[
             _tf('PBK', _patt.pbk, (v) {
               _patt.pbk = v;
