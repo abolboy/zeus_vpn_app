@@ -5,6 +5,69 @@ import 'package:flutter_v2ray_client/flutter_v2ray.dart';
 import 'package:zeus_vpn/main.dart';
 
 void main() {
+  group('PATT-NG preflight validation', () {
+    test('requires valid VLESS TCP REALITY parameters', () {
+      final key = base64Url.encode(List<int>.filled(32, 7));
+      final validLink =
+          'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+          '?security=tls&type=tcp&sni=example.com&pbk=$key';
+      final patt = Patt()..reality = true;
+      expect(pattConfigurationError(validLink, patt), isNull);
+
+      expect(
+        pattConfigurationError(
+          'trojan://secret@example.com:443?security=tls',
+          patt,
+        ),
+        isNotNull,
+      );
+      expect(
+        pattConfigurationError(
+          'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+          '?security=tls&type=ws&sni=example.com&pbk=$key',
+          patt,
+        ),
+        isNotNull,
+      );
+    });
+
+    test('rejects Vision flow on incompatible transport or security', () {
+      final patt = Patt()..flow = 'xtls-rprx-vision';
+      expect(
+        pattConfigurationError(
+          'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+          '?security=none&type=tcp',
+          patt,
+        ),
+        isNotNull,
+      );
+    });
+
+    test('validates fragmentation and MUX values before connecting', () {
+      final badFragment = Patt()
+        ..frag = 'tlshello'
+        ..fragLen = '200-100';
+      expect(
+        pattConfigurationError(
+          'vless://11111111-1111-4111-8111-111111111111@example.com:443',
+          badFragment,
+        ),
+        isNotNull,
+      );
+
+      final badMux = Patt()
+        ..mux = true
+        ..muxConc = '0';
+      expect(
+        pattConfigurationError(
+          'vless://11111111-1111-4111-8111-111111111111@example.com:443',
+          badMux,
+        ),
+        isNotNull,
+      );
+    });
+  });
+
   group('subscription URL display privacy', () {
     test('hides path tokens, credentials, query values and fragments', () {
       const source =
