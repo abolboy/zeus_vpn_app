@@ -192,7 +192,12 @@ String? pattConfigurationError(String serverUri, Patt patt) {
     if (publicKey.isEmpty) return 'REALITY public key (PBK) is required.';
     if (serverName.isEmpty) return 'REALITY server name (SNI) is required.';
     try {
-      final decoded = base64Url.decode(base64Url.normalize(publicKey));
+      List<int> decoded;
+      try {
+        decoded = base64.decode(base64.normalize(publicKey));
+      } catch (_) {
+        decoded = base64Url.decode(base64Url.normalize(publicKey));
+      }
       if (decoded.length != 32) {
         return 'REALITY public key must decode to exactly 32 bytes.';
       }
@@ -1013,7 +1018,7 @@ class _HomePageState extends State<HomePage>
     final seenNodeUris = <String>{};
     for (var i = 0; i < directUris.length; i++) {
       final raw = directUris[i];
-      if (!seenNodeUris.add(raw)) continue;
+      if (directShareUriError(raw) != null || !seenNodeUris.add(raw)) continue;
       foundNodes.add(ServerNode(subTag: 'DIRECT', rawUri: raw.startsWith('vmess://') ? raw : _injectQuery(raw), baseUri: raw, displayName: '[DIRECT] ${_name(raw)}'));
     }
     var failedSubscriptions = 0;
@@ -1139,10 +1144,11 @@ class _HomePageState extends State<HomePage>
     }
   }
   Future<void> _pingAll() async {
+    if (!mounted || _nodes.isEmpty) return;
     final c = _delayMode == 1 ? 4 : 20;
     final q = List<ServerNode>.from(_nodes);
     await Future.wait(List.generate(c, (_) async {
-      while (q.isNotEmpty) {
+      while (mounted && q.isNotEmpty) {
         final n = q.removeAt(0);
         await _pingOne(n);
       }
@@ -1150,10 +1156,12 @@ class _HomePageState extends State<HomePage>
   }
 
   Future<void> _pingOne(ServerNode n) async {
+    if (!mounted) return;
     if (_delayMode == 1) {
       try {
         final parser = V2ray.parseFromURL(n.rawUri);
         final ms = await _v2ray.getServerDelay(config: parser.getFullConfiguration());
+        if (!mounted) return;
         if (ms <= 0) throw Exception('timeout');
         if (mounted) {
           setState(() {
@@ -1257,6 +1265,7 @@ class _HomePageState extends State<HomePage>
           return;
         }
         final ok = await _v2ray.requestPermission();
+        if (!mounted) return;
         if (!ok) {
           _snack('VPN permission denied.', err: true);
           return;
