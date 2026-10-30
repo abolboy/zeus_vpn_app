@@ -5,7 +5,7 @@ A Flutter/Android VPN client prototype using `flutter_v2ray_client`, subscriptio
 ## Current status
 
 - The current consolidated work is isolated on `design/zeus-neon-command-center-2026-10-30` and tracked by [draft pull request #3](https://github.com/abolboy/zeus_vpn_app/pull/3). The prior audited baseline is preserved on `backup/pre-ui-overhaul-2026-10-30`.
-- CI performs Dart analysis, unit tests, and a **debug verification APK** build. A successful CI build does not prove that VPN traffic, Android background behavior, WARP registration, or all server protocols work on a physical device.
+- CI performs Dart analysis, unit tests, an Android emulator regression test, and a **debug verification APK** build. The debug variant has a `.debug` application-ID suffix so it can be installed alongside a release installation without uninstalling it or sharing its app data. A successful CI build does not prove that VPN traffic, Android background behavior, WARP registration, or all server protocols work on a physical device.
 - The main branch has not been modified by the audit branch.
 - Release publishing is intentionally disabled until release signing is moved to a dedicated, protected key and the upgrade path for existing installations is confirmed.
 
@@ -37,7 +37,7 @@ flutter test --no-pub
 flutter build apk --debug --no-pub
 ```
 
-The generated APK is uploaded as a workflow artifact for verification only.
+The generated APK is uploaded as a workflow artifact for verification only. It uses a separate `.debug` application ID; it is not a release update and cannot be used to validate release signing or in-place upgrades.
 
 ## Known limitations before production
 
