@@ -1557,7 +1557,7 @@ class _HomePageState extends State<HomePage>
           if (_warpJson != null) const Padding(padding: EdgeInsets.only(bottom: 10), child: Text('WARP device: REGISTERED', style: TextStyle(color: green, fontSize: 10, fontWeight: FontWeight.bold))),
           if (_warpOn && _warpJson == null) Padding(padding: const EdgeInsets.only(bottom: 14), child: SizedBox(width: double.infinity, height: 44, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: cyan.withValues(alpha: 0.1), side: const BorderSide(color: cyan)), onPressed: () async {
             _snack('Registering WARP device...');
-            final kp = genWarpKeys();
+            final kp = await genWarpKeys();
             final out = await registerWarp(kp);
             if (!mounted) return;
             if (out == null) {
