@@ -59,9 +59,39 @@ class ServerNode {
   final String rawUri;
   final String displayName;
   final String baseUri;
+  final String? subscriptionUrl;
   String pingText;
   Color pingColor;
-  ServerNode({required this.subTag, required this.rawUri, required this.displayName, required this.baseUri, this.pingText = '--', this.pingColor = Colors.grey});
+  ServerNode({
+    required this.subTag,
+    required this.rawUri,
+    required this.displayName,
+    required this.baseUri,
+    this.subscriptionUrl,
+    this.pingText = '--',
+    this.pingColor = Colors.grey,
+  });
+}
+
+/// Keeps cached nodes only for feeds that failed in the current sync.
+/// Fresh direct nodes always come from the user's current direct-link list.
+List<ServerNode> mergeNodesForFailedSubscriptions({
+  required List<ServerNode> freshNodes,
+  required List<ServerNode> cachedNodes,
+  required Set<String> failedSubscriptionUrls,
+}) {
+  final merged = List<ServerNode>.from(freshNodes);
+  final seenUris = merged.map((node) => node.baseUri).toSet();
+
+  for (final cached in cachedNodes) {
+    final source = cached.subscriptionUrl;
+    if (source != null &&
+        failedSubscriptionUrls.contains(source) &&
+        seenUris.add(cached.baseUri)) {
+      merged.add(cached);
+    }
+  }
+  return merged;
 }
 
 class Patt {
@@ -1255,6 +1285,7 @@ class _HomePageState extends State<HomePage>
               subTag: tag,
               rawUri: link,
               baseUri: raw,
+              subscriptionUrl: subscriptions[i],
               displayName: '[$tag] ${_name(raw)}',
             ));
           }
@@ -1266,12 +1297,35 @@ class _HomePageState extends State<HomePage>
 
     if (!mounted || syncEpoch != _syncEpoch) return;
 
-    // A transient outage must not erase a previously working server list.
-    // Only replace the inventory after at least one feed completed successfully.
-    if (subscriptions.isNotEmpty && failedSubscriptions == subscriptions.length && directUris.isEmpty) {
-      setState(() => _loading = false);
+    // A total outage must not erase working cached profiles from the feeds
+    // that failed. Keep current direct links and only retain cache entries
+    // whose source URL is still configured; removed feeds are not resurrected.
+    if (subscriptions.isNotEmpty && failedSubscriptions == subscriptions.length) {
+      final mergedNodes = mergeNodesForFailedSubscriptions(
+        freshNodes: foundNodes,
+        cachedNodes: _nodes,
+        failedSubscriptionUrls: subscriptions.toSet(),
+      );
+      setState(() {
+        _nodes = mergedNodes;
+        if (previousSelection != null &&
+            _nodes.any((node) => node.baseUri == previousSelection)) {
+          _selUri = previousSelection;
+        } else if (_nodes.isNotEmpty) {
+          _selUri = _nodes.first.baseUri;
+        } else {
+          _selUri = null;
+        }
+        _loading = false;
+      });
       _refreshNodes?.call();
-      _snack('Unable to load subscriptions. Keeping the previous server list.', err: true);
+      if (mergedNodes.isNotEmpty) _pingAll();
+      _snack(
+        mergedNodes.length > foundNodes.length
+            ? 'All feeds are unavailable. Keeping cached nodes from configured feeds.'
+            : 'Unable to load any subscription feeds.',
+        err: true,
+      );
       return;
     }
 
