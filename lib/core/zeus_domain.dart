@@ -1,5 +1,7 @@
 /// Pure domain models, validation, and Xray configuration helpers for ZEUS VPN.
 /// This library intentionally contains no widget state or platform side effects.
+library;
+
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
