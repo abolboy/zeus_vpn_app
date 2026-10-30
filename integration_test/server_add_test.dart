@@ -6,6 +6,29 @@ import 'package:zeus_vpn/main.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
+  testWidgets('floating command navigation opens every primary workspace',
+      (tester) async {
+    await tester.pumpWidget(const ZeusApp());
+    await tester.pump(const Duration(seconds: 2));
+
+    await tester.tap(find.text('NODES').last);
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('Node control center'), findsOneWidget);
+
+    await tester.tap(find.text('FEEDS').last);
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('Subscriptions'), findsOneWidget);
+
+    await tester.tap(find.text('LAB').last);
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('PATT-NG & WARP'), findsOneWidget);
+
+    await tester.tap(find.text('HOME').last);
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('Selected server'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('adding a failing HTTPS feed and syncing keeps the app alive',
       (tester) async {
     await tester.pumpWidget(const ZeusApp());
