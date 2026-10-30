@@ -57,6 +57,306 @@ class ZeusApp extends StatelessWidget {
   }
 }
 
+class _SubscriptionSheet extends StatefulWidget {
+  final List<String> subscriptions;
+  final List<String> directUris;
+  final String Function(String) displayName;
+  final ValueChanged<String> onAddSubscription;
+  final ValueChanged<String> onAddDirectUri;
+  final ValueChanged<int> onRemoveSubscription;
+  final ValueChanged<int> onRemoveDirectUri;
+  final ValueChanged<String> onValidationError;
+  final VoidCallback onSave;
+
+  const _SubscriptionSheet({
+    required this.subscriptions,
+    required this.directUris,
+    required this.displayName,
+    required this.onAddSubscription,
+    required this.onAddDirectUri,
+    required this.onRemoveSubscription,
+    required this.onRemoveDirectUri,
+    required this.onValidationError,
+    required this.onSave,
+  });
+
+  @override
+  State<_SubscriptionSheet> createState() => _SubscriptionSheetState();
+}
+
+class _SubscriptionSheetState extends State<_SubscriptionSheet> {
+  late final TextEditingController _inputController;
+
+  @override
+  void initState() {
+    super.initState();
+    _inputController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _inputController.dispose();
+    super.dispose();
+  }
+
+  void _addEntry() {
+    final value = _inputController.text.trim();
+    final parsed = Uri.tryParse(value);
+    if (parsed == null || value.isEmpty) {
+      widget.onValidationError(
+        'Enter an HTTPS subscription URL or VLESS/Trojan/VMess link.',
+      );
+      return;
+    }
+
+    final scheme = parsed.scheme.toLowerCase();
+    final isDirect = const ['vless', 'trojan', 'vmess'].contains(scheme);
+    if (isDirect) {
+      final validationError = directShareUriError(value);
+      if (validationError != null) {
+        widget.onValidationError(validationError);
+        return;
+      }
+    } else if (scheme != 'https' || parsed.host.isEmpty) {
+      widget.onValidationError(
+        'Only HTTPS subscriptions or VLESS/Trojan/VMess links are supported.',
+      );
+      return;
+    }
+
+    if (isDirect) {
+      if (widget.directUris.contains(value)) {
+        widget.onValidationError('This server link is already added.');
+        return;
+      }
+      widget.onAddDirectUri(value);
+    } else {
+      if (widget.subscriptions.contains(value)) {
+        widget.onValidationError('This subscription is already added.');
+        return;
+      }
+      widget.onAddSubscription(value);
+    }
+
+    _inputController.clear();
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasEntries =
+        widget.subscriptions.isNotEmpty || widget.directUris.isNotEmpty;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: glass,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+        border: Border(
+          top: BorderSide(color: magenta.withValues(alpha: 0.6), width: 2),
+        ),
+      ),
+      child: Column(
+        children: [
+          const SizedBox(height: 12),
+          Container(
+            width: 54,
+            height: 4,
+            decoration: BoxDecoration(
+              color: magenta.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text(
+              'SUBSCRIPTIONS',
+              style: TextStyle(
+                color: magenta,
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 3,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _inputController,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => _addEntry(),
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                    decoration: InputDecoration(
+                      hintText: 'https://...',
+                      hintStyle: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        fontSize: 11,
+                      ),
+                      filled: true,
+                      fillColor: Colors.white.withValues(alpha: 0.04),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  tooltip: 'Add subscription or server link',
+                  icon: const Icon(Icons.add_circle, color: green, size: 26),
+                  onPressed: _addEntry,
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: !hasEntries
+                ? Center(
+                    child: Text(
+                      'EMPTY',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.3),
+                      ),
+                    ),
+                  )
+                : ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      ...widget.subscriptions.asMap().entries.map((entry) {
+                        final index = entry.key;
+                        final value = entry.value;
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.03),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: cyan.withValues(alpha: 0.2),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Text(
+                                'SUB ${index + 1}',
+                                style: const TextStyle(
+                                  color: magenta,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  subscriptionDisplayLabel(value),
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.6),
+                                    fontSize: 11,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Remove subscription',
+                                icon: const Icon(
+                                  Icons.delete_outline,
+                                  color: magenta,
+                                  size: 20,
+                                ),
+                                onPressed: () {
+                                  widget.onRemoveSubscription(index);
+                                  setState(() {});
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                      ...widget.directUris.asMap().entries.map((entry) {
+                        final index = entry.key;
+                        final value = entry.value;
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.03),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: green.withValues(alpha: 0.25),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Text(
+                                'NODE ${index + 1}',
+                                style: const TextStyle(
+                                  color: green,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  widget.displayName(value),
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.7),
+                                    fontSize: 11,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Remove server link',
+                                icon: const Icon(
+                                  Icons.delete_outline,
+                                  color: magenta,
+                                  size: 20,
+                                ),
+                                onPressed: () {
+                                  widget.onRemoveDirectUri(index);
+                                  setState(() {});
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: cyan.withValues(alpha: 0.1),
+                  side: const BorderSide(color: cyan),
+                ),
+                onPressed: widget.onSave,
+                child: const Text(
+                  'SAVE & SYNC',
+                  style: TextStyle(
+                    color: cyan,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 2,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
   @override
