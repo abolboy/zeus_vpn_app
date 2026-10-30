@@ -1040,6 +1040,52 @@ class _HomePageState extends State<HomePage>
 
   String _injectQuery(String uri) => applyPattQuery(uri, _patt);
 
+/// Adds a LAN-bypass outbound and prepends its rule without discarding
+/// routing rules imported from the selected profile.
+Map<String, dynamic> withLanBypass(Map<String, dynamic> config) {
+  final outbounds = config['outbounds'];
+  if (outbounds is! List) {
+    throw const FormatException('Core configuration has no outbound list.');
+  }
+
+  var directTag = 'zeus-lan-bypass';
+  while (outbounds.any(
+    (item) => item is Map && item['tag'] == directTag,
+  )) {
+    directTag = '${directTag}_';
+  }
+  outbounds.add({'tag': directTag, 'protocol': 'freedom'});
+
+  final routing = config['routing'] is Map
+      ? Map<String, dynamic>.from(config['routing'] as Map)
+      : <String, dynamic>{};
+  final rules = routing['rules'] is List
+      ? List<dynamic>.from(routing['rules'] as List)
+      : <dynamic>[];
+
+  final hasLanRule = rules.any((rule) {
+    if (rule is! Map ||
+        rule['type'] != 'field' ||
+        rule['outboundTag'] != directTag) {
+      return false;
+    }
+    final ips = rule['ip'];
+    return ips is List && ips.contains('geoip:private');
+  });
+  if (!hasLanRule) {
+    rules.insert(0, {
+      'type': 'field',
+      'ip': ['geoip:private'],
+      'outboundTag': directTag,
+    });
+  }
+
+  routing.putIfAbsent('domainStrategy', () => 'AsIs');
+  routing['rules'] = rules;
+  config['routing'] = routing;
+  return config;
+}
+
   String _injectCore(String config) {
     final json = jsonDecode(config) as Map<String, dynamic>;
     final outs = json['outbounds'] as List?;
@@ -1056,11 +1102,8 @@ class _HomePageState extends State<HomePage>
     if (_warpOn && _warpJson != null && _warpJson!.isNotEmpty) {
       final w = jsonDecode(_warpJson!) as Map<String, dynamic>;
       final newOuts = <dynamic>[w];
-      if (_patt.bypassLan) {
-        newOuts.add({'tag': 'direct', 'protocol': 'freedom'});
-        json['routing'] = {'domainStrategy': 'AsIs', 'rules': [{'type': 'field', 'ip': ['geoip:private'], 'outboundTag': 'direct'}]};
-      }
       json['outbounds'] = newOuts;
+      if (_patt.bypassLan) withLanBypass(json);
       return jsonEncode(json);
     }
     if (_patt.mux) main['mux'] = {'enabled': true, 'concurrency': int.tryParse(_patt.muxConc) ?? 8};
@@ -1077,11 +1120,8 @@ class _HomePageState extends State<HomePage>
       main['streamSettings'] = stream;
       outs.add({'tag': 'zeus-frag', 'protocol': 'freedom', 'settings': fs});
     }
-    if (_patt.bypassLan) {
-      outs.add({'tag': 'direct', 'protocol': 'freedom'});
-      json['routing'] = {'domainStrategy': 'AsIs', 'rules': [{'type': 'field', 'ip': ['geoip:private'], 'outboundTag': 'direct'}]};
-    }
     json['outbounds'] = outs;
+    if (_patt.bypassLan) withLanBypass(json);
     return jsonEncode(json);
 
   }
