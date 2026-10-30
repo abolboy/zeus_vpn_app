@@ -793,11 +793,11 @@ class _HomePageState extends State<HomePage>
   bool _connected = false;
   bool _connecting = false;
   bool _busy = false;
-  bool _testing = false;
+  bool _testingDelay = false;
   bool _warpOn = false;
   String? _warpJson;
   int _delayMode = 0;
-  String _speed = '';
+  String _coreDelay = '';
   String _up = '0 B/s';
   String _down = '0 B/s';
   String _dur = '00:00:00';
@@ -825,7 +825,7 @@ class _HomePageState extends State<HomePage>
           _up = _fmt(s.uploadSpeed);
           _down = _fmt(s.downloadSpeed);
           _dur = _connected ? s.duration : '00:00:00';
-          if (!_connected && !_connecting) _speed = '';
+          if (!_connected && !_connecting) _coreDelay = '';
         });
         _syncMotionState();
       }
@@ -1366,31 +1366,35 @@ class _HomePageState extends State<HomePage>
     }
   }
 
-  Future<void> _speedTest() async {
-    if (!mounted || _testing) return;
+  /// Measures the selected profile with the embedded Xray core.
+  /// Live upload/download rates continue to come from V2ray status callbacks.
+  Future<void> _testCoreDelay() async {
+    if (!mounted || _testingDelay) return;
+    final index = _nodes.indexWhere((node) => node.baseUri == _selUri);
+    if (index < 0) {
+      _snack('Select and sync a server before testing core latency.', err: true);
+      return;
+    }
+
     setState(() {
-      _testing = true;
-      _speed = '...';
+      _testingDelay = true;
+      _coreDelay = '...';
     });
     try {
-      final sw = Stopwatch()..start();
-      final res = await _dio.get(
-        'https://speed.cloudflare.com/__down?bytes=10000000',
-        options: Options(
-          responseType: ResponseType.bytes,
-          receiveTimeout: const Duration(seconds: 30),
-        ),
-      );
-      sw.stop();
+      final parser = V2ray.parseFromURL(_nodes[index].rawUri);
+      final config = _injectCore(parser.getFullConfiguration());
+      final milliseconds = await _v2ray.getServerDelay(config: config);
       if (!mounted) return;
-      final seconds = (sw.elapsedMilliseconds / 1000.0).clamp(0.1, double.infinity).toDouble();
-      final mbps = (res.data.length.toDouble() * 8) / (seconds * 1048576);
-      setState(() => _speed = '${mbps.toStringAsFixed(1)} Mbps');
+      if (milliseconds <= 0) {
+        setState(() => _coreDelay = 'TIMEOUT');
+      } else {
+        setState(() => _coreDelay = '$milliseconds ms');
+      }
     } catch (_) {
       if (!mounted) return;
-      setState(() => _speed = 'FAILED');
+      setState(() => _coreDelay = 'FAILED');
     } finally {
-      if (mounted) setState(() => _testing = false);
+      if (mounted) setState(() => _testingDelay = false);
     }
   }
 
@@ -2049,7 +2053,7 @@ class _HomePageState extends State<HomePage>
           const SizedBox(width: 8),
           Expanded(child: _neonPanel(_stat('DOWNLOAD', _down, Icons.south_west_rounded, cyan), accent: cyan)),
           const SizedBox(width: 8),
-          Expanded(child: _neonPanel(_stat('SPEED', _testing ? '...' : (_speed.isEmpty ? 'TEST' : _speed), Icons.speed_rounded, green), accent: green, onTap: _testing ? null : _speedTest)),
+          Expanded(child: _neonPanel(_stat('CORE RTT', _testingDelay ? '...' : (_coreDelay.isEmpty ? 'TEST' : _coreDelay), Icons.network_ping_rounded, green), accent: green, onTap: _testingDelay ? null : _testCoreDelay)),
         ]),
         const SizedBox(height: 20),
         _screenHeader(
