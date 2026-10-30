@@ -2351,7 +2351,7 @@ class _CyberP extends CustomPainter {
         ),
         textDirection: TextDirection.ltr,
       )..layout();
-      final top = (column * 71) % (size.height + 220) - 110.0;
+      final top = ((column * 71) % (size.height + 220)).toDouble() - 110.0;
       painter.paint(canvas, Offset(column * 32.0 + 5, top));
     }
   }
