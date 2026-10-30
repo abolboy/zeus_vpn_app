@@ -14,7 +14,8 @@ PERMS = [
     "android.permission.INTERNET",
     "android.permission.POST_NOTIFICATIONS",
     "android.permission.FOREGROUND_SERVICE",
-    "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
+    # flutter_v2ray_client 3.5.0 already declares FOREGROUND_SERVICE_SPECIAL_USE
+    # with android:minSdkVersion="34" and a VPN subtype property.
 ]
 
 def patch_manifest():
