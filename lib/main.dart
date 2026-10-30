@@ -124,12 +124,12 @@ String sanitizeCoreLogLine(String value) {
           : '[share URI redacted]';
     },
   );
-  return withoutShareUris.replaceAll(
+  return withoutShareUris.replaceAllMapped(
     RegExp(
       r'(password|secret[_-]?key|private[_-]?key|access[_-]?token|refresh[_-]?token|token|authorization)\s*[:=]\s*(?:Bearer\s+)?[^\s,;]+',
       caseSensitive: false,
     ),
-    r'$1=[redacted]',
+    (match) => '\${match.group(1)}=[redacted]',
   );
 }
 
