@@ -43,6 +43,7 @@ The generated APK is uploaded as a workflow artifact for verification only.
 - WARP API registration is an external integration and must be tested against current Cloudflare behavior; successful registration alone does not verify tunnel traffic.
 - Release signing, signing-key rotation, a reproducible release pipeline, and a full upgrade test remain outstanding.
 - Direct VLESS/Trojan/VMess inputs are validated locally before being saved; subscription URL secrets are masked in the visible feed inventory.
+- The Tools workspace includes a searchable Xray log console with common credential and share-URI redaction, plus explicit confirmation before clearing the local diagnostic buffer.
 - Animated dashboard effects pause when the app is backgrounded or another workspace is selected.
 - A security review should verify every PATT-NG field against the exact core version embedded by the dependency before presenting those controls as universally supported.
 
