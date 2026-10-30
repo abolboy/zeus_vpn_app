@@ -402,6 +402,7 @@ class _HomePageState extends State<HomePage>
   bool _activeRouteUsesWarp = false;
   bool _testingDelay = false;
   bool _warpOn = false;
+  bool _registeringWarp = false;
   String? _warpJson;
   int _delayMode = 0;
   String _coreDelay = '';
@@ -1376,31 +1377,45 @@ class _HomePageState extends State<HomePage>
             _saveWarp();
           }),
           if (_warpJson != null) const Padding(padding: EdgeInsets.only(bottom: 10), child: Text('WARP device: REGISTERED', style: TextStyle(color: green, fontSize: 10, fontWeight: FontWeight.bold))),
-          if (_warpOn && _warpJson == null) Padding(padding: const EdgeInsets.only(bottom: 14), child: SizedBox(width: double.infinity, height: 44, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: cyan.withValues(alpha: 0.1), side: const BorderSide(color: cyan)), onPressed: () async {
-            _snack('Registering WARP device...');
-            final kp = await genWarpKeys();
-            final out = await registerWarp(kp);
-            if (!mounted) return;
-            final candidate = out == null ? null : jsonEncode(out);
-            final validationError = candidate == null
-                ? 'Cloudflare returned an empty registration profile.'
-                : warpConfigurationError(candidate);
-            if (validationError != null) {
-              _snack('WARP registration failed: $validationError', err: true);
-            } else {
-              setState(() => _warpJson = candidate);
-              final saved = await _saveWarp();
+          if (_warpOn && _warpJson == null) Padding(padding: const EdgeInsets.only(bottom: 14), child: SizedBox(width: double.infinity, height: 44, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: cyan.withValues(alpha: 0.1), side: const BorderSide(color: cyan)), onPressed: _registeringWarp ? null : () async {
+            if (_registeringWarp) return;
+            setState(() => _registeringWarp = true);
+            if (ctx.mounted) setMs(() {});
+            try {
+              _snack('Registering WARP device...');
+              final kp = await genWarpKeys();
+              final out = await registerWarp(kp);
               if (!mounted) return;
-              if (saved) {
-                _snack('WARP registered!');
+              final candidate = out == null ? null : jsonEncode(out);
+              final validationError = candidate == null
+                  ? 'Cloudflare returned an empty registration profile.'
+                  : warpConfigurationError(candidate);
+              if (validationError != null) {
+                _snack('WARP registration failed: $validationError', err: true);
               } else {
-                // Do not keep displaying an in-memory profile as registered
-                // when its private key was not persisted securely.
-                setState(() => _warpJson = null);
+                setState(() => _warpJson = candidate);
+                final saved = await _saveWarp();
+                if (!mounted) return;
+                if (saved) {
+                  _snack('WARP registered!');
+                } else {
+                  // Do not keep displaying an in-memory profile as registered
+                  // when its private key was not persisted securely.
+                  setState(() => _warpJson = null);
+                }
               }
+            } catch (_) {
+              if (mounted) {
+                _snack(
+                  'WARP registration failed while preparing or saving credentials.',
+                  err: true,
+                );
+              }
+            } finally {
+              if (mounted) setState(() => _registeringWarp = false);
+              if (ctx.mounted) setMs(() {});
             }
-            setMs(() {});
-          }, child: const Text('REGISTER WARP DEVICE', style: TextStyle(color: cyan, fontWeight: FontWeight.bold, letterSpacing: 1))))),
+          }, child: Text(_registeringWarp ? 'REGISTERING...' : 'REGISTER WARP DEVICE', style: const TextStyle(color: cyan, fontWeight: FontWeight.bold, letterSpacing: 1))))),
           _dd('FINGERPRINT', ['chrome', 'firefox', 'safari', 'randomized', 'randomizednoalpn'], _patt.fp, (v) {
             setMs(() => _patt.fp = v);
             _savePatt();
