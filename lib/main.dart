@@ -1201,7 +1201,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         final media = MediaQuery.of(ctx);
         final bottomInset = media.viewInsets.bottom;
         final availableHeight =
-            (media.size.height - bottomInset).clamp(0.0, media.size.height);
+            (media.size.height - bottomInset).clamp(0.0, media.size.height).toDouble();
 
         return AnimatedPadding(
           duration: const Duration(milliseconds: 180),
