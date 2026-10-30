@@ -5,6 +5,81 @@ import 'package:flutter_v2ray_client/flutter_v2ray.dart';
 import 'package:zeus_vpn/main.dart';
 
 void main() {
+  test('LAN bypass moves an existing valid direct rule ahead of catch-all rules', () {
+    final config = <String, dynamic>{
+      'outbounds': [
+        {'tag': 'proxy', 'protocol': 'vless'},
+        {'tag': 'direct', 'protocol': 'freedom'},
+      ],
+      'routing': {
+        'rules': [
+          {'type': 'field', 'domain': ['domain:example.com'], 'outboundTag': 'proxy'},
+          {'type': 'field', 'ip': ['geoip:private'], 'outboundTag': 'direct'},
+        ],
+      },
+    };
+
+    final updated = withLanBypass(config);
+    final rules = (updated['routing'] as Map<String, dynamic>)['rules'] as List;
+    expect((rules.first as Map)['ip'], contains('geoip:private'));
+    expect((updated['outbounds'] as List), hasLength(2));
+  });
+
+  group('WARP-only outbound routing', () {
+    test('drops imported routes that reference replaced proxy outbounds', () {
+      final config = <String, dynamic>{
+        'outbounds': [
+          {'tag': 'proxy', 'protocol': 'vless'},
+          {'tag': 'direct', 'protocol': 'freedom'},
+        ],
+        'routing': {
+          'rules': [
+            {'type': 'field', 'domain': ['domain:example.com'], 'outboundTag': 'proxy'},
+            {'type': 'field', 'ip': ['geoip:private'], 'outboundTag': 'direct'},
+          ],
+        },
+      };
+      final warp = {
+        'tag': 'warp',
+        'protocol': 'wireguard',
+        'settings': {'secretKey': 'test'},
+      };
+
+      final updated = withWarpOnlyOutbound(config, warp, bypassLan: false);
+      expect(updated.containsKey('routing'), isFalse);
+      expect((updated['outbounds'] as List), hasLength(1));
+      expect(((updated['outbounds'] as List).first as Map)['tag'], 'warp');
+    });
+
+    test('adds only the explicit LAN direct route in WARP-only mode', () {
+      final config = <String, dynamic>{
+        'outbounds': [
+          {'tag': 'proxy', 'protocol': 'vless'},
+        ],
+        'routing': {
+          'rules': [
+            {'type': 'field', 'domain': ['domain:example.com'], 'outboundTag': 'proxy'},
+          ],
+        },
+      };
+      final warp = {
+        'tag': 'warp',
+        'protocol': 'wireguard',
+        'settings': {'secretKey': 'test'},
+      };
+
+      final updated = withWarpOnlyOutbound(config, warp, bypassLan: true);
+      final outbounds = updated['outbounds'] as List;
+      final rules = (updated['routing'] as Map<String, dynamic>)['rules'] as List;
+      expect(outbounds.map((item) => (item as Map)['tag']).toList(), [
+        'warp',
+        'zeus-lan-bypass',
+      ]);
+      expect((rules.first as Map)['ip'], contains('geoip:private'));
+      expect(rules, hasLength(1));
+    });
+  });
+
   test('LAN bypass preserves imported routing rules and domain strategy', () {
     final config = <String, dynamic>{
       'outbounds': [
