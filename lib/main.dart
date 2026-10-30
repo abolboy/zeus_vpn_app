@@ -626,7 +626,7 @@ class _HomePageState extends State<HomePage>
     await p.setBool('p_net_v2', true);
   }
 
-  Future<void> _saveWarp() async {
+  Future<bool> _saveWarp() async {
     try {
       final p = await SharedPreferences.getInstance();
       await p.setBool('warp_on', _warpOn);
@@ -638,8 +638,10 @@ class _HomePageState extends State<HomePage>
       }
       // Remove any legacy plaintext copy only after secure storage succeeds.
       await p.remove('warp_json');
+      return true;
     } catch (_) {
       _snack('Could not securely save WARP settings.', err: true);
+      return false;
     }
   }
 
@@ -1368,12 +1370,23 @@ class _HomePageState extends State<HomePage>
             final kp = await genWarpKeys();
             final out = await registerWarp(kp);
             if (!mounted) return;
-            if (out == null) {
-              _snack('WARP registration failed!', err: true);
+            final candidate = out == null ? null : jsonEncode(out);
+            final validationError = candidate == null
+                ? 'Cloudflare returned an empty registration profile.'
+                : warpConfigurationError(candidate);
+            if (validationError != null) {
+              _snack('WARP registration failed: $validationError', err: true);
             } else {
-              setState(() => _warpJson = jsonEncode(out));
-              _saveWarp();
-              _snack('WARP registered!');
+              setState(() => _warpJson = candidate);
+              final saved = await _saveWarp();
+              if (!mounted) return;
+              if (saved) {
+                _snack('WARP registered!');
+              } else {
+                // Do not keep displaying an in-memory profile as registered
+                // when its private key was not persisted securely.
+                setState(() => _warpJson = null);
+              }
             }
             setMs(() {});
           }, child: const Text('REGISTER WARP DEVICE', style: TextStyle(color: cyan, fontWeight: FontWeight.bold, letterSpacing: 1))))),
