@@ -1255,7 +1255,7 @@ class _HomePageState extends State<HomePage>
       if (directShareUriError(raw) != null || !seenNodeUris.add(raw)) continue;
       foundNodes.add(ServerNode(subTag: 'DIRECT', rawUri: raw.startsWith('vmess://') ? raw : _injectQuery(raw), baseUri: raw, displayName: '[DIRECT] ${_name(raw)}'));
     }
-    var failedSubscriptions = 0;
+    final failedSubscriptionUrls = <String>{};
 
     for (var i = 0; i < subscriptions.length; i++) {
       final tag = 'SUB-${i + 1}';
@@ -1264,7 +1264,7 @@ class _HomePageState extends State<HomePage>
         if (subscriptionUri == null ||
             subscriptionUri.scheme != 'https' ||
             subscriptionUri.host.isEmpty) {
-          failedSubscriptions++;
+          failedSubscriptionUrls.add(subscriptions[i]);
           continue;
         }
         final response = await _dio.get<ResponseBody>(
@@ -1279,7 +1279,7 @@ class _HomePageState extends State<HomePage>
         );
         final responseBody = response.data;
         if (responseBody == null) {
-          failedSubscriptions++;
+          failedSubscriptionUrls.add(subscriptions[i]);
           continue;
         }
         // Redirects are intentionally not followed. This rejects HTTPS-to-HTTP
@@ -1287,12 +1287,12 @@ class _HomePageState extends State<HomePage>
         final statusCode = response.statusCode;
         if (statusCode == null || statusCode < 200 || statusCode >= 300) {
           await responseBody.stream.drain<void>();
-          failedSubscriptions++;
+          failedSubscriptionUrls.add(subscriptions[i]);
           continue;
         }
         if (response.realUri.scheme != 'https') {
           await responseBody.stream.drain<void>();
-          failedSubscriptions++;
+          failedSubscriptionUrls.add(subscriptions[i]);
           continue;
         }
 
@@ -1336,11 +1336,12 @@ class _HomePageState extends State<HomePage>
           }
         }
       } catch (_) {
-        failedSubscriptions++;
+        failedSubscriptionUrls.add(subscriptions[i]);
       }
     }
 
     if (!mounted || syncEpoch != _syncEpoch) return;
+    final failedSubscriptions = failedSubscriptionUrls.length;
 
     // A total outage must not erase working cached profiles from the feeds
     // that failed. Keep current direct links and only retain cache entries
@@ -1349,7 +1350,7 @@ class _HomePageState extends State<HomePage>
       final mergedNodes = mergeNodesForFailedSubscriptions(
         freshNodes: foundNodes,
         cachedNodes: _nodes,
-        failedSubscriptionUrls: subscriptions.toSet(),
+        failedSubscriptionUrls: failedSubscriptionUrls,
       );
       setState(() {
         _nodes = mergedNodes;
@@ -1374,8 +1375,16 @@ class _HomePageState extends State<HomePage>
       return;
     }
 
+    // Even when some feeds succeed, retain cached profiles from the
+    // specific feeds that failed. Healthy feeds are fully refreshed and
+    // removed feeds are never reintroduced from cache.
+    final mergedNodes = mergeNodesForFailedSubscriptions(
+      freshNodes: foundNodes,
+      cachedNodes: _nodes,
+      failedSubscriptionUrls: failedSubscriptionUrls,
+    );
     setState(() {
-      _nodes = foundNodes;
+      _nodes = mergedNodes;
       if (previousSelection != null &&
           _nodes.any((node) => node.baseUri == previousSelection)) {
         _selUri = previousSelection;
@@ -1388,7 +1397,7 @@ class _HomePageState extends State<HomePage>
     });
     _refreshNodes?.call();
 
-    if (foundNodes.isNotEmpty) {
+    if (mergedNodes.isNotEmpty) {
       _pingAll();
     }
 
