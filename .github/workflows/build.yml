@@ -2,7 +2,7 @@
 
   on:
     push:
-      branches: [main]
+      branches: [main, master]
     workflow_dispatch:
 
   permissions:
@@ -33,7 +33,9 @@
           run: flutter create --platforms=android --project-name zeus_vpn --org ir.zeus .
 
         - name: Patch Android files
-          run: python3 tools/patch_android.py
+          run: |
+            sed -i 's/^[[:space:]]*//' tools/patch_android.py
+            python3 tools/patch_android.py
 
         - name: Pub get
           run: flutter pub get
@@ -50,72 +52,12 @@
           run: |
             set -euo pipefail
             if [ -z "${KEYSTORE_B64:-}" ]; then
-              echo "No KEYSTORE_B64 secret -> building with debug signing"
+              echo "::warning::No KEYSTORE_B64 secret -> building with debug signing"
               exit 0
             fi
             echo "$KEYSTORE_B64" | base64 -d > android/app/zeus.jks
-            cat > android/key.properties <<EOF
-            storePassword=$KEYSTORE_PASSWORD
-            keyPassword=$KEY_PASSWORD
-            keyAlias=$KEY_ALIAS
-            storeFile=zeus.jks
-            EOF
-            python3 - <<'PY'
-            import re, os
-            kts = "android/app/build.gradle.kts"
-            groovy = "android/app/build.gradle"
-            path = kts if os.path.exists(kts) else groovy
-            s = open(path, encoding="utf-8").read()
-            if "key.properties" in s:
-                print("signing already configured"); raise SystemExit
-            if path.endswith(".kts"):
-                head = (
-                  'import java.util.Properties\n'
-                  'import java.io.FileInputStream\n'
-                  'val keystoreProperties = Properties()\n'
-                  'val keystorePropertiesFile = rootProject.file("key.properties")\n'
-                  'if (keystorePropertiesFile.exists()) {\n'
-                  '    keystoreProperties.load(FileInputStream(keystorePropertiesFile))\n'
-                  '}\n'
-                )
-                signing = (
-                  '    signingConfigs {\n'
-                  '        create("release") {\n'
-                  '            keyAlias = keystoreProperties["keyAlias"] as String?\n'
-                  '            keyPassword = keystoreProperties["keyPassword"] as String?\n'
-                  '            storeFile = keystoreProperties["storeFile"]?.let { file(it as String) }\n'
-                  '            storePassword = keystoreProperties["storePassword"] as String?\n'
-                  '        }\n'
-                  '    }\n'
-                )
-                s = head + s
-                s = s.replace("android {", "android {\n" + signing, 1)
-                s = re.sub(r'signingConfig\s*=\s*signingConfigs\.getByName\("debug"\)',
-                           'signingConfig = signingConfigs.getByName("release")', s)
-            else:
-                head = (
-                  'def keystoreProperties = new Properties()\n'
-                  'def keystorePropertiesFile = rootProject.file("key.properties")\n'
-                  'if (keystorePropertiesFile.exists()) {\n'
-                  '    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))\n'
-                  '}\n'
-                )
-                signing = (
-                  '    signingConfigs {\n'
-                  '        release {\n'
-                  '            keyAlias keystoreProperties["keyAlias"]\n'
-                  '            keyPassword keystoreProperties["keyPassword"]\n'
-                  '            storeFile keystoreProperties["storeFile"] ? file(keystoreProperties["storeFile"]) : null\n'
-                  '            storePassword keystoreProperties["storePassword"]\n'
-                  '        }\n'
-                  '    }\n'
-                )
-                s = head + s
-                s = s.replace("android {", "android {\n" + signing, 1)
-                s = re.sub(r'signingConfig\s+signingConfigs\.debug', 'signingConfig signingConfigs.release', s)
-            open(path, "w", encoding="utf-8").write(s)
-            print("signing configured in", path)
-            PY
+            printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=zeus.jks\n' "$KEYSTORE_PASSWORD" "$KEY_PASSWORD" "$KEY_ALIAS" > android/key.properties
+            python3 tools/patch_signing.py
 
         - name: Build APK
           run: flutter build apk --release --split-per-abi
@@ -128,7 +70,6 @@
             if-no-files-found: error
 
         - name: Publish to Releases
-          if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
           env:
             GH_TOKEN: ${{ github.token }}
           run: |
