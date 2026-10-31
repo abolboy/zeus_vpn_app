@@ -1,9 +1,7 @@
 import os
 import sys
-
-  def p(*parts):
-      return os.path.join(os.getcwd(), *parts)
-
+def p(*parts):
+return os.path.join(os.getcwd(), *parts)
   MANIFEST = p("android", "app", "src", "main", "AndroidManifest.xml")
   GRADLE_KTS = p("android", "app", "build.gradle.kts")
   GRADLE_GROOVY = p("android", "app", "build.gradle")
