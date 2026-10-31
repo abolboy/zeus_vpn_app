@@ -7,7 +7,8 @@
   import 'package:flutter/foundation.dart';
 
   // ============================================================
-  //  X25519 (RFC 7748) — پیاده‌سازی صحیح، فقط به isolate منتقل شد
+  //  X25519 (RFC 7748)
+  //  همهٔ ورودی‌های modPow قبل از فراخوانی به [0, p) کاهش می‌یابند.
   // ============================================================
   final BigInt _p255 = (BigInt.one << 255) - BigInt.from(19);
   final BigInt _a24 = BigInt.from(121665);
@@ -58,8 +59,10 @@
       final D = (x3 - z3) % _p255;
       final DA = (D * A) % _p255;
       final CB = (C * B) % _p255;
-      x3 = (DA + CB).modPow(BigInt.two, _p255);
-      z3 = (x1 * (DA - CB).modPow(BigInt.two, _p255)) % _p255;
+      x3 = (DA + CB) % _p255;
+      x3 = x3.modPow(BigInt.two, _p255);
+      z3 = (DA - CB) % _p255;
+      z3 = (x1 * z3.modPow(BigInt.two, _p255)) % _p255;
       x2 = (AA * BB) % _p255;
       z2 = (E * ((AA + _a24 * E) % _p255)) % _p255;
     }
@@ -77,7 +80,6 @@
     const WarpKeys(this.priv, this.pub);
   }
 
-  // top-level تا با compute() قابل‌اجرا باشد
   WarpKeys _genKeysSync(int _) {
     final rnd = Random.secure();
     final k = clampKey(Uint8List.fromList(List.generate(32, (_) => rnd.nextInt(256))));
@@ -85,7 +87,7 @@
     return WarpKeys(base64.encode(k), base64.encode(pub));
   }
 
-  /// تولید کلید در isolate جدا → UI فریز نمی‌شود (فیکس #4)
+  /// تولید کلید در isolate جدا → UI فریز نمی‌شود
   Future<WarpKeys> genWarpKeys() => compute(_genKeysSync, 0);
 
   // ============================================================
@@ -98,7 +100,6 @@
     String toString() => message;
   }
 
-  /// endpoint های جایگزین که در ایران معمولاً بهتر جواب می‌دهند (فیکس #3)
   const List<String> warpEndpoints = [
     'engage.cloudflareclient.com:2408',
     '188.114.97.1:2408',
@@ -108,7 +109,6 @@
     '162.159.192.1:2408',
   ];
 
-  /// [proxyPort]: اگر VPN وصل است، پورت HTTP proxy محلی هسته (مثلاً 10809) را بدهید (فیکس #7)
   Future<Map<String, dynamic>> registerWarp(
     WarpKeys kp, {
     String endpoint = 'engage.cloudflareclient.com:2408',
@@ -127,7 +127,7 @@
     ));
     if (proxyPort != null) {
       dio.httpClientAdapter = IOHttpClientAdapter(
-        createHttpClient: () => HttpClient()..findProxy = (_) => 'PROXY 127.0.0.1:$proxyPort';
+        createHttpClient: () => HttpClient()..findProxy = (_) => 'PROXY 127.0.0.1:$proxyPort',
       );
     }
 
@@ -141,27 +141,25 @@
         'type': 'Android',
         'model': 'PC',
         'locale': 'en_US',
-        'warp_enabled': true,
       });
-      d = res.data is String ? jsonDecode(res.data as String) : res.data as Map<String, dynamic>;
+      d = res.data is String ? jsonDecode(res.data as String) as Map<String, dynamic> : res.data as Map<String, dynamic>;
     } on DioException catch (e) {
       final code = e.response?.statusCode;
       if (code == 403) throw const WarpException('Cloudflare blocked this IP (403). Connect to a node first, then register.');
-      if (code == 429) throw const WarpException('Rate limited by Cloudflare (429). Try again in a few minutes.');
+      if (code == 429) throw const WarpException('Rate limited (429). Try again in a few minutes.');
       throw WarpException(code != null ? 'HTTP $code' : 'Network: ${e.type.name}');
+    } finally {
+      dio.close(force: true);
     }
 
-    // ---- WARP+ license (اختیاری) ----
     if (licenseKey != null && licenseKey.isNotEmpty) {
       try {
         final id = d['id'] as String;
         final token = d['token'] as String;
-        await dio.put(
-          'https://api.cloudflareclient.com/v0a2483/reg/$id/account',
-          data: {'license': licenseKey},
-          options: Options(headers: {'Authorization': 'Bearer $token'}),
-        );
-      } catch (_) {/* لایسنس اختیاری است؛ خطا را نادیده بگیر */}
+        final dio2 = Dio(BaseOptions(headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'}));
+        await dio2.put('https://api.cloudflareclient.com/v0a2483/reg/$id/account', data: {'license': licenseKey});
+        dio2.close();
+      } catch (_) {}
     }
 
     try {
@@ -175,7 +173,6 @@
       final peer = (cfg['peers'] as List)[0] as Map<String, dynamic>;
       final peerPub = peer['public_key'] as String;
 
-      // ---- reserved: دقیقاً ۳ بایت از client_id (فیکس #2) ----
       String? cid = cfg['client_id'] as String?;
       if (cid == null || cid.isEmpty) {
         final ids = cfg['client_ids'];
@@ -192,14 +189,14 @@
           'secretKey': kp.priv,
           'address': [
             '$v4/32',
-            if (v6 != null && v6.isNotEmpty) '$v6/128', // فیکس #1
+            if (v6 != null && v6.isNotEmpty) '$v6/128',
           ],
           'peers': [
             {
               'publicKey': peerPub,
               'endpoint': endpoint,
               'allowedIPs': ['0.0.0.0/0', '::/0'],
-              'keepAlive': 25, // فیکس #9
+              'keepAlive': 25,
             }
           ],
           'reserved': reserved,
