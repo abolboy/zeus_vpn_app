@@ -1,108 +1,141 @@
-  // ============================================================
-  //  CONFIG BUILDING — TLS extras / Fragment / Noise
-  //  جایگزین کامل از _applyTlsExtras تا _applyLegacyFragment
-  // ============================================================
+  name: Build ZEUS VPN
 
-  /// cs / pcs / vcn پارامتر share-link نیستند؛ باید مستقیم در tlsSettings بروند
-  void _applyTlsExtras(Map<String, dynamic> main) {
-    final stream = main['streamSettings'] as Map<String, dynamic>?;
-    if (stream == null || stream['security'] != 'tls') return;
-    final tls = (stream['tlsSettings'] as Map<String, dynamic>?) ?? <String, dynamic>{};
-    if (_patt.cs.isNotEmpty) tls['cipherSuites'] = _patt.cs;
-    if (_patt.pcs.isNotEmpty) tls['pinnedPeerCertificateChainSha256'] = [_patt.pcs];
-    if (_patt.vcn.isNotEmpty) tls['verifyPeerCertInNames'] = [_patt.vcn];
-    stream['tlsSettings'] = tls;
-  }
+  on:
+    push:
+      branches: [main]
+    workflow_dispatch:
 
-  /// بلوک fragment برای finalmask (Xray >= 25.10)
-  Map<String, dynamic> _fragmentMask(bool reality) {
-    return {
-      'type': 'fragment',
-      'settings': {
-        'packets': reality ? '1-3' : _patt.frag,
-        'lengths': [_range(_patt.fragLen, '100-200', min: 1)],
-        'delays': [_range(_patt.fragInt, '10-20')],
-      },
-    };
-  }
+  permissions:
+    contents: write
 
-  /// بلوک noise برای finalmask (Xray >= 25.10)
-  /// 'rand' = بازهٔ عددی (طول بایت‌های تصادفی)، 'str' = رشتهٔ ثابت
-  Map<String, dynamic> _noiseMask() {
-    final isStr = _patt.noiseType == 'str';
-    final entry = <String, dynamic>{
-      if (isStr) 'str': _patt.noisePacket else 'rand': _range(_patt.noisePacket, '10-20', min: 1),
-      'delay': _range(_patt.noiseDelay, '10-20'),
-    };
-    return {
-      'type': 'noise',
-      'settings': {
-        'reset': '30-60',
-        'noise': [entry],
-      },
-    };
-  }
+  jobs:
+    build:
+      runs-on: ubuntu-latest
+      timeout-minutes: 40
 
-  /// اعمال finalmask روی یک outbound
-  /// tcp=false برای WARP (WireGuard فقط UDP است)
-  void _applyFinalmask(Map<String, dynamic> ob, {bool tcp = true, bool udp = true}) {
-    final stream = (ob['streamSettings'] as Map<String, dynamic>?) ?? <String, dynamic>{};
-    final fm = (stream['finalmask'] as Map<String, dynamic>?) ?? <String, dynamic>{};
-    if (tcp && _patt.frag != 'none') {
-      final l = (fm['tcp'] as List?) ?? <dynamic>[];
-      l.insert(0, _fragmentMask(stream['security'] == 'reality'));
-      fm['tcp'] = l;
-    }
-    if (udp && _patt.noise) {
-      final l = (fm['udp'] as List?) ?? <dynamic>[];
-      l.add(_noiseMask());
-      fm['udp'] = l;
-    }
-    if (fm.isNotEmpty) {
-      stream['finalmask'] = fm;
-      ob['streamSettings'] = stream;
-    }
-  }
+      steps:
+        - name: Checkout
+          uses: actions/checkout@v4
 
-  /// Fallback برای هسته‌های قدیمی (Xray < 25.10):
-  /// outbound اصلی از طریق sockopt.dialerProxy به یک freedom با fragment/noises وصل می‌شود
-  void _applyLegacyFragment(Map<String, dynamic> main, List outs) {
-    if (_patt.frag == 'none' && !_patt.noise) return;
+        - name: Setup Java
+          uses: actions/setup-java@v4
+          with:
+            distribution: temurin
+            java-version: "17"
 
-    final stream = (main['streamSettings'] as Map<String, dynamic>?) ?? <String, dynamic>{};
-    final sockopt = (stream['sockopt'] as Map<String, dynamic>?) ?? <String, dynamic>{};
-    sockopt['dialerProxy'] = 'fragment';
-    stream['sockopt'] = sockopt;
-    main['streamSettings'] = stream;
+        - name: Setup Flutter
+          uses: subosito/flutter-action@v2
+          with:
+            channel: stable
+            cache: true
 
-    final isStr = _patt.noiseType == 'str';
-    final settings = <String, dynamic>{};
+        - name: Create Android folder
+          run: flutter create --platforms=android --project-name zeus_vpn --org ir.zeus .
 
-    if (_patt.frag != 'none') {
-      settings['fragment'] = {
-        'packets': stream['security'] == 'reality' ? '1-3' : _patt.frag,
-        'length': _range(_patt.fragLen, '100-200', min: 1),
-        'interval': _range(_patt.fragInt, '10-20'),
-      };
-    }
+        - name: Patch Android files
+          run: python3 tools/patch_android.py
 
-    if (_patt.noise) {
-      settings['noises'] = [
-        {
-          'type': isStr ? 'str' : 'rand',
-          'packet': isStr ? _patt.noisePacket : _range(_patt.noisePacket, '10-20', min: 1),
-          'delay': _range(_patt.noiseDelay, '10-20'),
-        }
-      ];
-    }
+        - name: Pub get
+          run: flutter pub get
 
-    outs.removeWhere((o) => o is Map && o['tag'] == 'fragment');
-    outs.add({
-      'tag': 'fragment',
-      'protocol': 'freedom',
-      'settings': settings,
-      'streamSettings': {
-        'sockopt': {'tcpNoDelay': true},
-      },
-    });
-  }
+        - name: Analyze
+          run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+        - name: Setup signing
+          env:
+            KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+            KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+            KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+            KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          run: |
+            set -euo pipefail
+            if [ -z "${KEYSTORE_B64:-}" ]; then
+              echo "No KEYSTORE_B64 secret -> building with debug signing"
+              exit 0
+            fi
+            echo "$KEYSTORE_B64" | base64 -d > android/app/zeus.jks
+            cat > android/key.properties <<EOF
+            storePassword=$KEYSTORE_PASSWORD
+            keyPassword=$KEY_PASSWORD
+            keyAlias=$KEY_ALIAS
+            storeFile=zeus.jks
+            EOF
+            python3 - <<'PY'
+            import re, os
+            kts = "android/app/build.gradle.kts"
+            groovy = "android/app/build.gradle"
+            path = kts if os.path.exists(kts) else groovy
+            s = open(path, encoding="utf-8").read()
+            if "key.properties" in s:
+                print("signing already configured"); raise SystemExit
+            if path.endswith(".kts"):
+                head = (
+                  'import java.util.Properties\n'
+                  'import java.io.FileInputStream\n'
+                  'val keystoreProperties = Properties()\n'
+                  'val keystorePropertiesFile = rootProject.file("key.properties")\n'
+                  'if (keystorePropertiesFile.exists()) {\n'
+                  '    keystoreProperties.load(FileInputStream(keystorePropertiesFile))\n'
+                  '}\n'
+                )
+                signing = (
+                  '    signingConfigs {\n'
+                  '        create("release") {\n'
+                  '            keyAlias = keystoreProperties["keyAlias"] as String?\n'
+                  '            keyPassword = keystoreProperties["keyPassword"] as String?\n'
+                  '            storeFile = keystoreProperties["storeFile"]?.let { file(it as String) }\n'
+                  '            storePassword = keystoreProperties["storePassword"] as String?\n'
+                  '        }\n'
+                  '    }\n'
+                )
+                s = head + s
+                s = s.replace("android {", "android {\n" + signing, 1)
+                s = re.sub(r'signingConfig\s*=\s*signingConfigs\.getByName\("debug"\)',
+                           'signingConfig = signingConfigs.getByName("release")', s)
+            else:
+                head = (
+                  'def keystoreProperties = new Properties()\n'
+                  'def keystorePropertiesFile = rootProject.file("key.properties")\n'
+                  'if (keystorePropertiesFile.exists()) {\n'
+                  '    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))\n'
+                  '}\n'
+                )
+                signing = (
+                  '    signingConfigs {\n'
+                  '        release {\n'
+                  '            keyAlias keystoreProperties["keyAlias"]\n'
+                  '            keyPassword keystoreProperties["keyPassword"]\n'
+                  '            storeFile keystoreProperties["storeFile"] ? file(keystoreProperties["storeFile"]) : null\n'
+                  '            storePassword keystoreProperties["storePassword"]\n'
+                  '        }\n'
+                  '    }\n'
+                )
+                s = head + s
+                s = s.replace("android {", "android {\n" + signing, 1)
+                s = re.sub(r'signingConfig\s+signingConfigs\.debug', 'signingConfig signingConfigs.release', s)
+            open(path, "w", encoding="utf-8").write(s)
+            print("signing configured in", path)
+            PY
+
+        - name: Build APK
+          run: flutter build apk --release --split-per-abi
+
+        - name: Upload artifacts
+          uses: actions/upload-artifact@v4
+          with:
+            name: zeus-vpn-apks
+            path: build/app/outputs/flutter-apk/*.apk
+            if-no-files-found: error
+
+        - name: Publish to Releases
+          if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+          env:
+            GH_TOKEN: ${{ github.token }}
+          run: |
+            set -euo pipefail
+            TAG="build-${{ github.run_number }}-${{ github.run_attempt }}"
+            gh release create "$TAG" \
+              build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+              build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk \
+              --title "ZEUS VPN Build ${{ github.run_number }}" \
+              --generate-notes
