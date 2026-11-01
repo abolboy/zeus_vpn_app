@@ -31,7 +31,7 @@
       connectTimeout: const Duration(seconds: 10),
       receiveTimeout: const Duration(seconds: 30),
     ));
-    /// Dio که از پروکسی محلی HTTP هسته رد می‌شود (برای تست سرعت/IP/WARP در حالت متصل)
+    /// Dio که از پروکسی محلی HTTP هسته رد می‌شود (برای تست سرعت/IP در حالت متصل)
     late final Dio _proxyDio = _makeProxyDio();
 
     // ───────── state ─────────
@@ -74,7 +74,9 @@
     bool get connected => conn == ConnState.connected;
     bool get connecting => conn == ConnState.connecting;
     bool get warpReady => warpOn && (warp?.isValid ?? false);
-    ServerNode? get selected => selUri == null ? null : nodes.cast<ServerNode?>().firstWhere((n) => n!.rawUri == selUri, orElse: () => null);
+    ServerNode? get selected => selUri == null
+        ? null
+        : nodes.cast<ServerNode?>().firstWhere((n) => n!.rawUri == selUri, orElse: () => null);
     int get countryCount => nodes.map((n) => n.flag).toSet().length;
     int get avgPing {
       final ok = nodes.where((n) => n.pingMs >= 0).map((n) => n.pingMs).toList();
@@ -124,7 +126,10 @@
         if (sj != null) settings.loadJson(jsonDecode(sj) as Map);
         final nc = p.getString('nodes_cache');
         if (nc != null) {
-          nodes = (jsonDecode(nc) as List).map((e) => ServerNode.fromJson(e as Map)).whereType<ServerNode>().toList();
+          nodes = (jsonDecode(nc) as List)
+              .map((e) => ServerNode.fromJson(e as Map))
+              .whereType<ServerNode>()
+              .toList();
         }
       } catch (e) {
         log(LogKind.system, 'Prefs load error: $e', LogLevel.warn);
@@ -134,8 +139,10 @@
     Future<SharedPreferences> get _p => SharedPreferences.getInstance();
     Future<void> savePatt() async => (await _p).setString('patt_json', jsonEncode(patt.toJson()));
     Future<void> saveSettings() async => (await _p).setString('settings_json', jsonEncode(settings.toJson()));
-    Future<void> _saveSubs() async => (await _p).setString('subs_v2', jsonEncode(subs.map((s) => s.toJson()).toList()));
-    Future<void> _saveNodes() async => (await _p).setString('nodes_cache', jsonEncode(nodes.map((n) => n.toJson()).toList()));
+    Future<void> _saveSubs() async =>
+        (await _p).setString('subs_v2', jsonEncode(subs.map((s) => s.toJson()).toList()));
+    Future<void> _saveNodes() async =>
+        (await _p).setString('nodes_cache', jsonEncode(nodes.map((n) => n.toJson()).toList()));
     Future<void> _saveSel() async {
       final p = await _p;
       selUri == null ? await p.remove('sel') : await p.setString('sel', selUri!);
@@ -145,6 +152,9 @@
       await p.setBool('warp_on', warpOn);
       await p.setString('warp_json', warp?.encode() ?? '');
     }
+
+    /// برای صفحاتی که فیلدهای patt/settings را مستقیم تغییر می‌دهند
+    void refresh() => notifyListeners();
 
     // ───────── logs ─────────
     void log(LogKind kind, String text, [LogLevel level = LogLevel.info]) {
@@ -236,8 +246,18 @@
         conn = ConnState.connecting;
         notifyListeners();
         log(LogKind.connection, 'Connecting to $remark');
-        log(LogKind.core, 'Loading config (${patt.frag != 'none' ? 'fragment ' : ''}${warpReady ? 'warp ' : ''}${patt.mux ? 'mux' : ''})'.trim());
-        await _v2ray.startV2Ray(remark: remark, config: jsonEncode(cfg), proxyOnly: false, notificationDisconnectButtonName: 'قطع');
+        final feats = [
+          if (patt.frag != 'none') 'fragment',
+          if (warpReady) 'warp',
+          if (patt.mux) 'mux',
+        ].join(' ');
+        log(LogKind.core, 'Loading config${feats.isEmpty ? '' : ' ($feats)'}');
+        await _v2ray.startV2Ray(
+          remark: remark,
+          config: jsonEncode(cfg),
+          proxyOnly: false,
+          notificationDisconnectButtonName: 'قطع',
+        );
         // ✅ رفع باگ: اگر هسته جواب نداد، بعد از ۲۰ ثانیه برگرد
         _connectTimeout?.cancel();
         _connectTimeout = Timer(const Duration(seconds: 20), () async {
@@ -307,7 +327,6 @@
       final idx = subs.indexOf(s);
       subs.remove(s);
       nodes.removeWhere((n) => n.subTag == 'S${idx + 1}');
-      // تگ‌ها را دوباره شماره‌گذاری کن
       await _saveSubs();
       await _saveNodes();
       notifyListeners();
@@ -315,8 +334,10 @@
     }
 
     Future<List<String>> _fetchSub(String url) async {
-      final r = await _dio.get<String>(url,
-          options: Options(responseType: ResponseType.plain, headers: {'User-Agent': 'v2rayNG/1.8.0'}));
+      final r = await _dio.get<String>(
+        url,
+        options: Options(responseType: ResponseType.plain, headers: {'User-Agent': 'v2rayNG/1.8.0'}),
+      );
       return parseSubscriptionBody(r.data ?? '');
     }
 
@@ -426,17 +447,24 @@
 
     /// بهترین سرور (کمترین پینگ)
     ServerNode? bestNode() {
-      final ok = nodes.where((n) => n.pingMs >= 0).toList()..sort((a, b) => a.pingMs.compareTo(b.pingMs));
+      final ok = nodes.where((n) => n.pingMs >= 0).toList()
+        ..sort((a, b) => a.pingMs.compareTo(b.pingMs));
       return ok.isEmpty ? null : ok.first;
     }
 
     // ───────── speed test / ip ─────────
     Dio _makeProxyDio() {
-      final d = Dio(BaseOptions(connectTimeout: const Duration(seconds: 10), receiveTimeout: const Duration(seconds: 40)));
+      final d = Dio(BaseOptions(
+        connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 40),
+      ));
       d.httpClientAdapter = IOHttpClientAdapter(
-        createHttpClient: () => HttpClient()
-          ..findProxy = (_) => 'PROXY 127.0.0.1:$kHttpPort'
-          ..badCertificateCallback = (_, __, ___) => false,
+        createHttpClient: () {
+          final hc = HttpClient();
+          hc.findProxy = (_) => 'PROXY 127.0.0.1:$kHttpPort';
+          hc.badCertificateCallback = (_, __, ___) => false;
+          return hc;
+        },
       );
       return d;
     }
@@ -460,8 +488,11 @@
       _speedToken = CancelToken();
       final sw = Stopwatch()..start();
       try {
-        final r = await _proxyDio.get<List<int>>(kSpeedUrl,
-            options: Options(responseType: ResponseType.bytes), cancelToken: _speedToken);
+        final r = await _proxyDio.get<List<int>>(
+          kSpeedUrl,
+          options: Options(responseType: ResponseType.bytes),
+          cancelToken: _speedToken,
+        );
         sw.stop();
         final bytes = r.data?.length ?? 0;
         final mbps = bytes * 8 / (max(sw.elapsedMilliseconds, 1) / 1000) / 1e6;
@@ -477,12 +508,16 @@
     }
 
     // ───────── WARP ─────────
-    Future<String?> registerWarp() async {
+    /// ثبت حساب WARP (نام با تابع سراسری registerWarp در warp.dart متفاوت است)
+    Future<String?> warpRegister() async {
       if (busy) return null;
       busy = true;
       notifyListeners();
       try {
-        warp = await registerWarp(proxyPort: connected ? kHttpPort : null, preferredEndpoint: warp?.endpoint);
+        warp = await registerWarp(
+          proxyPort: connected ? kHttpPort : null,
+          preferredEndpoint: warp?.endpoint,
+        );
         await saveWarp();
         log(LogKind.system, 'WARP registered (${warp?.addressV4})');
         return null;
