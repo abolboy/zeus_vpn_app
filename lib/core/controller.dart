@@ -58,8 +58,12 @@
 
     bool loadingSubs = false;
     bool pinging = false;
+    /// سرورهایی که همین لحظه در حال سنجش‌اند (برای نشانگر «سنجش…» در لیست)
+    final Set<String> pingingUris = {};
     bool testingSpeed = false;
     String speedResult = '';
+    /// علت خوانای شکست آخرین تست سرعت (خالی = بدون خطا)
+    String speedError = '';
 
     // traffic
     int upSpeed = 0, downSpeed = 0; // B/s
@@ -69,6 +73,9 @@
     final List<int> upHistory = List.filled(40, 0, growable: true);
     String publicIp = '--';
     DateTime? connectedAt;
+    // ✅ C1: سرعت از اختلاف حجم محاسبه می‌شود (فیلد سرعت پلاگین صفر می‌دهد)
+    DateTime? _lastStatAt;
+    int _lastUpTotal = 0, _lastDownTotal = 0;
 
     // logs
     final List<LogEntry> logs = [];
@@ -140,6 +147,10 @@
               .map((e) => ServerNode.fromJson(e as Map))
               .whereType<ServerNode>()
               .toList();
+          // ✅ پینگ جلسهٔ قبل معتبر نیست؛ تا سنجش مجدد «تست‌نشده» نمایش داده شود
+          for (final n in nodes) {
+            n.pingMs = -2;
+          }
         }
       } catch (e) {
         log(LogKind.system, 'Prefs load error: $e', LogLevel.warn);
@@ -197,7 +208,7 @@
         _connectTimeout?.cancel();
         connectedAt = DateTime.now();
         log(LogKind.connection, 'VPN service up — verifying tunnel…');
-        _verifyTunnel(++_connGen); // ✅ رفع باگ: به‌جای اعتماد به CONNECTED، تونل را واقعاً تست کن
+        _verifyTunnel(++_connGen); // به‌جای اعتماد به CONNECTED، تونل را واقعاً تست کن
       }
       if (conn == ConnState.disconnected && prev != ConnState.disconnected) {
         _connectTimeout?.cancel();
@@ -205,10 +216,33 @@
         _resetTraffic();
         log(LogKind.connection, 'Disconnected');
       }
-      upSpeed = s.uploadSpeed;
-      downSpeed = s.downloadSpeed;
+
       upTotal = s.upload;
       downTotal = s.download;
+
+      // ✅ C1: سرعت = اختلاف حجم ÷ بازهٔ زمانی (مستقل از فیلد سرعت پلاگین)
+      final now = DateTime.now();
+      if (connected && _lastStatAt != null) {
+        final dt = now.difference(_lastStatAt!).inMilliseconds;
+        if (dt >= 400) {
+          final du = s.upload - _lastUpTotal;
+          final dd = s.download - _lastDownTotal;
+          if (du >= 0 && dd >= 0) {
+            upSpeed = (du * 1000 / dt).round();
+            downSpeed = (dd * 1000 / dt).round();
+          }
+          _lastStatAt = now;
+          _lastUpTotal = s.upload;
+          _lastDownTotal = s.download;
+        }
+      } else {
+        _lastStatAt = now;
+        _lastUpTotal = s.upload;
+        _lastDownTotal = s.download;
+        upSpeed = s.uploadSpeed;
+        downSpeed = s.downloadSpeed;
+      }
+
       duration = connected ? s.duration : '00:00:00';
       if (connected) {
         downHistory
@@ -251,7 +285,7 @@
       notifyListeners();
     }
 
-    /// تست دستی مجدد تونل (برای دکمهٔ «بررسی» در صفحهٔ خانه)
+    /// تست دستی مجدد تونل (برای دکمهٔ «بررسی مجدد» در صفحهٔ خانه)
     Future<void> recheckTunnel() async {
       if (!connected) return;
       await _verifyTunnel(++_connGen);
@@ -259,8 +293,11 @@
 
     void _resetTraffic() {
       upSpeed = downSpeed = upTotal = downTotal = 0;
+      _lastStatAt = null;
+      _lastUpTotal = _lastDownTotal = 0;
       duration = '00:00:00';
       speedResult = '';
+      speedError = '';
       publicIp = '--';
       connectedAt = null;
       tunnel = TunnelState.idle;
@@ -424,6 +461,7 @@
         notifyListeners();
         return 'هیچ سروری دریافت نشد؛ لیست قبلی حفظ شد';
       }
+      // پینگ و علاقه‌مندی همین جلسه حفظ می‌شود
       final old = {for (final n in nodes) n.rawUri: n};
       for (final n in fresh) {
         final o = old[n.rawUri];
@@ -466,10 +504,13 @@
     }
 
     Future<void> pingOne(ServerNode n) async {
+      if (pingingUris.contains(n.rawUri)) return;
+      pingingUris.add(n.rawUri);
+      notifyListeners();
       int ms = -1;
       try {
         if (connected && n.rawUri == selUri) {
-          // ✅ رفع باگ: سرور فعال را از داخل تونل واقعی بسنج (TCP به خودِ سرور از داخل TUN timeout می‌دهد)
+          // سرور فعال را از داخل تونل واقعی بسنج (TCP به خودِ سرور از داخل TUN timeout می‌دهد)
           ms = await _v2ray.getConnectedServerDelay(url: kPingUrl);
         } else if (connected || connecting || settings.delayMode == 1) {
           ms = await _tcpDelay(n);
@@ -478,9 +519,11 @@
         }
       } catch (_) {
         ms = -1;
+      } finally {
+        pingingUris.remove(n.rawUri);
+        n.pingMs = ms < 0 ? -1 : ms;
+        notifyListeners();
       }
-      n.pingMs = ms < 0 ? -1 : ms;
-      notifyListeners();
     }
 
     Future<void> pingAll() async {
@@ -524,7 +567,7 @@
 
     static final RegExp _ipRe = RegExp(r'^(\d{1,3}\.){3}\d{1,3}$|^[0-9a-fA-F:]{3,}$');
 
-    /// ✅ رفع باگ IP = «--»: چند منبع + چند تلاش + fallback مستقیم از داخل TUN
+    /// IP عمومی: چند منبع + چند تلاش + fallback مستقیم از داخل TUN
     Future<void> _fetchIp(int gen) async {
       publicIp = '…';
       notifyListeners();
@@ -566,6 +609,7 @@
       if (!connected || testingSpeed) return;
       testingSpeed = true;
       speedResult = '…';
+      speedError = '';
       notifyListeners();
       _speedToken = CancelToken();
       final sw = Stopwatch()..start();
@@ -581,8 +625,19 @@
         speedResult = '${mbps.toStringAsFixed(1)} Mbps';
         log(LogKind.connection, 'Speed test: $speedResult');
       } catch (e) {
-        speedResult = 'failed';
-        log(LogKind.connection, 'Speed test failed: $e', LogLevel.warn);
+        speedResult = 'ناموفق';
+        // ✅ C2: علت واقعی به کاربر نشان داده می‌شود
+        speedError = e is DioException
+            ? switch (e.type) {
+                DioExceptionType.connectionTimeout => 'اتصال به پروکسی محلی (127.0.0.1:$kHttpPort) برقرار نشد',
+                DioExceptionType.receiveTimeout => 'دریافت داده بیش از ۴۰ ثانیه طول کشید',
+                DioExceptionType.connectionError => 'خطای اتصال: ${e.message ?? 'نامشخص'}',
+                DioExceptionType.badResponse => 'پاسخ نامعتبر: HTTP ${e.response?.statusCode}',
+                DioExceptionType.cancel => 'لغو شد',
+                _ => e.message ?? e.type.name,
+              }
+            : '$e';
+        log(LogKind.connection, 'Speed test failed: $speedError', LogLevel.warn);
       } finally {
         testingSpeed = false;
         notifyListeners();
