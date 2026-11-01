@@ -48,26 +48,34 @@
   }
 
   class _ZeusBackgroundState extends State<ZeusBackground> with SingleTickerProviderStateMixin {
-    late final AnimationController _ctl =
-        AnimationController(vsync: this, duration: const Duration(seconds: 14))..repeat();
+    AnimationController? _ctl;
+
+    @override
+    void initState() {
+      super.initState();
+      if (widget.enabled) {
+        _ctl = AnimationController(vsync: this, duration: const Duration(seconds: 14))..repeat();
+      }
+    }
 
     @override
     void dispose() {
-      _ctl.dispose();
+      _ctl?.dispose();
       super.dispose();
     }
 
     @override
     Widget build(BuildContext context) {
-      if (!widget.enabled) return widget.child;
+      final ctl = _ctl;
+      if (!widget.enabled || ctl == null) return widget.child;
       return Stack(
         fit: StackFit.expand,
         children: [
           const ColoredBox(color: kSurface),
           RepaintBoundary(
             child: AnimatedBuilder(
-              animation: _ctl,
-              builder: (_, __) => CustomPaint(painter: _BgPainter(_ctl.value)),
+              animation: ctl,
+              builder: (_, __) => CustomPaint(painter: _BgPainter(ctl.value)),
             ),
           ),
           widget.child,
@@ -232,6 +240,48 @@
           leading: leading,
           actions: actions,
           title: title.isEmpty ? null : NeonText(title, size: 16),
+        );
+  }
+
+  // ───────────────────────── عنوان بخش ─────────────────────────
+  class SectionLabel extends StatelessWidget {
+    final String text;
+    final IconData? icon;
+    final Color color;
+    const SectionLabel(this.text, {super.key, this.icon, this.color = kCyan});
+
+    @override
+    Widget build(BuildContext context) => Padding(
+          padding: const EdgeInsets.fromLTRB(4, 18, 4, 8),
+          child: Row(
+            children: [
+              Container(
+                width: 3,
+                height: 14,
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.circular(2),
+                  boxShadow: neonGlow(color, blur: 8, alpha: .6),
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (icon != null) ...[
+                Icon(icon, size: 14, color: color),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                text,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.2,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(child: Container(height: 1, color: kBorder)),
+            ],
+          ),
         );
   }
 
