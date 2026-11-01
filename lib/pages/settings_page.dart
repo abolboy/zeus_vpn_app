@@ -38,14 +38,14 @@
       change();
       c.savePatt();
       if (c.connected || c.connecting) _dirty = true;
-      c.notifyListeners();
+      c.refresh();
       setState(() {});
     }
 
     void _app(VoidCallback change) {
       change();
       c.saveSettings();
-      c.notifyListeners();
+      c.refresh();
       setState(() {});
     }
 
@@ -57,7 +57,7 @@
     }
 
     Future<void> _registerWarp() async {
-      final err = await c.registerWarp();
+      final err = await c.warpRegister();
       if (err != null) {
         _snack(err, err: true);
       } else {
