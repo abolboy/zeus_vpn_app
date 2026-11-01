@@ -1,4 +1,4 @@
-  // lib/pages/servers_page.dart — لیست سرورها با جستجو، فیلتر و آمار
+  // lib/pages/servers_page.dart — لیست سرورها با جستجو، فیلتر، آمار و انتخاب صریح
   import 'package:flutter/material.dart';
 
   import '../core/controller.dart';
@@ -18,6 +18,8 @@
     final _search = TextEditingController();
     int _tab = 0; // 0 همه | 1 پیشنهادی | 2 پینگ کمتر | 3 علاقه‌مندی‌ها
     String _proto = 'همه';
+    String? _pendingUri; // سروری که کاربر در این صفحه انتخاب کرده (برای نوار اتصال)
+    bool _acting = false;
 
     static const _tabs = ['همه', 'پیشنهادی', 'پینگ کمتر', 'علاقه‌مندی‌ها'];
 
@@ -47,13 +49,17 @@
       final q = _search.text.trim().toLowerCase();
       var list = c.nodes.where((n) {
         if (_proto != 'همه' && n.protocol != _proto) return false;
-        if (q.isNotEmpty && !n.displayName.toLowerCase().contains(q) && !n.host.toLowerCase().contains(q)) return false;
+        if (q.isNotEmpty && !n.displayName.toLowerCase().contains(q) && !n.host.toLowerCase().contains(q)) {
+          return false;
+        }
         return true;
       }).toList();
 
       switch (_tab) {
         case 1: // پیشنهادی: REALITY/TLS با پینگ خوب یا تست‌نشده
-          list = list.where((n) => n.security != 'NONE' && (n.pingMs == -2 || (n.pingMs >= 0 && n.pingMs < 400))).toList();
+          list = list
+              .where((n) => n.security != 'NONE' && (n.pingMs == -2 || (n.pingMs >= 0 && n.pingMs < 400)))
+              .toList();
           list.sort(_byPing);
           break;
         case 2:
@@ -71,13 +77,29 @@
       return k(a).compareTo(k(b));
     }
 
+    // ───────── actions ─────────
+
+    /// ✅ A3: لمس کارت فقط «انتخاب» می‌کند؛ هیچ ناوبری/اتصال خودکاری انجام نمی‌شود.
     Future<void> _select(ServerNode n) async {
-      final wasConnected = c.connected || c.connecting;
-      final err = await c.selectNode(n);
-      if (err != null) {
-        _snack(err, err: true);
-      } else if (!wasConnected) {
-        widget.onBack();
+      await c.selectNode(n, reconnect: false);
+      setState(() => _pendingUri = n.rawUri);
+    }
+
+    /// اتصال/اتصال مجدد صریح با دکمهٔ نوار پایین؛ فقط بعد از موفقیت به خانه برمی‌گردد.
+    Future<void> _connectSelected() async {
+      if (_acting || c.busy) return;
+      setState(() => _acting = true);
+      try {
+        if (c.connected || c.connecting) await c.disconnect();
+        final err = await c.connect();
+        if (!mounted) return;
+        if (err != null) {
+          _snack(err, err: true);
+        } else {
+          widget.onBack();
+        }
+      } finally {
+        if (mounted) setState(() => _acting = false);
       }
     }
 
@@ -86,6 +108,7 @@
       if (msg != null) _snack(msg, err: true);
     }
 
+    // ───────── build ─────────
     @override
     Widget build(BuildContext context) {
       return ListenableBuilder(
@@ -93,6 +116,7 @@
         builder: (_, __) {
           final list = _filtered;
           final avg = c.avgPing;
+          final pending = _pendingUri != null && _pendingUri == c.selUri ? c.selected : null;
           return ZeusBackground(
             child: Scaffold(
               backgroundColor: Colors.transparent,
@@ -104,14 +128,16 @@
                     tooltip: 'پینگ همه',
                     onPressed: c.pinging || c.nodes.isEmpty ? null : c.pingAll,
                     icon: c.pinging
-                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: kGreen))
+                        ? const SizedBox(
+                            width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: kGreen))
                         : const Icon(Icons.network_check),
                   ),
                   IconButton(
                     tooltip: 'به‌روزرسانی',
                     onPressed: c.loadingSubs ? null : _refresh,
                     icon: c.loadingSubs
-                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: kGreen))
+                        ? const SizedBox(
+                            width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: kGreen))
                         : const Icon(Icons.refresh),
                   ),
                 ],
@@ -144,9 +170,13 @@
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Row(
                       children: [
-                        StatBox(value: avg < 0 ? '--' : '${avg}ms', label: 'میانگین پینگ', color: avg < 0 ? kMuted : pingColor(avg)),
+                        StatBox(
+                          value: avg < 0 ? '--' : '${avg}ms',
+                          label: 'میانگین پینگ',
+                          color: avg < 0 ? kMuted : pingColor(avg),
+                        ),
                         const SizedBox(width: 8),
-                        StatBox(value: '${c.countryCount}', label: 'کشورها'),
+                        StatBox(value: '${c.countryCount}', label: 'کشورها', color: kBlue),
                         const SizedBox(width: 8),
                         StatBox(value: '${c.nodes.length}', label: 'کل سرورها'),
                       ],
@@ -163,11 +193,58 @@
                   ),
                   const SizedBox(height: 8),
                   Expanded(child: _list(list)),
+                  // ✅ نوار اتصال صریح — فقط بعد از انتخاب در همین صفحه
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 260),
+                    curve: Curves.easeOutCubic,
+                    child: pending == null ? const SizedBox(width: double.infinity) : _connectBar(pending),
+                  ),
                 ],
               ),
             ),
           );
         },
+      );
+    }
+
+    Widget _connectBar(ServerNode n) {
+      final reconnect = c.connected || c.connecting;
+      return SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+          child: GlassCard(
+            margin: EdgeInsets.zero,
+            glow: true,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                _flag(n, size: 32),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(n.displayName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                      Text(reconnect ? 'اتصال فعلی قطع و با این سرور برقرار می‌شود' : 'آمادهٔ اتصال',
+                          style: const TextStyle(color: kMuted, fontSize: 10.5)),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                NeonButton(
+                  label: reconnect ? 'اتصال مجدد' : 'اتصال',
+                  icon: _acting ? null : (reconnect ? Icons.sync : Icons.bolt),
+                  color: reconnect ? kAmber : kGreen,
+                  onTap: _acting || c.busy ? null : _connectSelected,
+                ),
+              ],
+            ),
+          ),
+        ),
       );
     }
 
@@ -184,7 +261,7 @@
               const SizedBox(height: 10),
               const Text('هنوز سروری ندارید', style: TextStyle(color: kMuted)),
               const SizedBox(height: 12),
-              FilledButton.icon(onPressed: widget.onGoSubs, icon: const Icon(Icons.add_link), label: const Text('افزودن اشتراک')),
+              NeonButton(label: 'افزودن اشتراک', icon: Icons.add_link, onTap: widget.onGoSubs),
             ],
           ),
         );
@@ -192,7 +269,9 @@
       if (list.isEmpty) {
         return Center(
           child: Text(
-            _tab == 3 ? 'هنوز سروری را ستاره نکرده‌اید' : (_tab == 2 ? 'ابتدا «پینگ همه» را بزنید' : 'نتیجه‌ای یافت نشد'),
+            _tab == 3
+                ? 'هنوز سروری را ستاره نکرده‌اید'
+                : (_tab == 2 ? 'ابتدا «پینگ همه» را بزنید' : 'نتیجه‌ای یافت نشد'),
             style: const TextStyle(color: kMuted),
           ),
         );
@@ -202,30 +281,39 @@
         backgroundColor: kSurface,
         onRefresh: _refresh,
         child: ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
           itemCount: list.length,
-          itemBuilder: (_, i) => _tile(list[i]),
+          itemBuilder: (_, i) => _Appear(index: i, child: _tile(list[i])),
         ),
       );
     }
 
     Widget _tile(ServerNode n) {
       final sel = n.rawUri == c.selUri;
+      final probing = c.pingingUris.contains(n.rawUri);
       final pc = n.pingMs == -2 ? kMuted : pingColor(n.pingMs);
+
+      // وضعیت واقعی فقط برای سرور فعال
+      Widget? status;
+      if (sel && c.connected) {
+        if (c.tunnel == TunnelState.ok) {
+          status = const Icon(Icons.check_circle, color: kGreen, size: 16);
+        } else if (c.tunnel == TunnelState.failed) {
+          status = const Icon(Icons.warning_amber_rounded, color: kRed, size: 16);
+        } else {
+          status = const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: kAmber));
+        }
+      }
+
       return GlassCard(
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        borderColor: sel ? kGreen.withValues(alpha: 0.6) : null,
+        borderColor: sel ? kGreen.withValues(alpha: 0.7) : null,
+        glow: sel,
         onTap: () => _select(n),
         child: Row(
           children: [
-            Container(
-              width: 40,
-              height: 40,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(color: kSurface2, shape: BoxShape.circle, border: Border.all(color: kBorder)),
-              child: Text(n.flag, style: const TextStyle(fontSize: 20)),
-            ),
+            _flag(n),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -234,24 +322,30 @@
                   Row(
                     children: [
                       Expanded(
-                        child: Text(n.displayName, maxLines: 1, overflow: TextOverflow.ellipsis,
+                        child: Text(n.displayName.isEmpty ? (n.host.isEmpty ? 'سرور بی‌نام' : n.host) : n.displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: sel ? kGreen : kText)),
                       ),
-                      if (sel && c.connected)
-                        const Padding(
-                          padding: EdgeInsets.only(left: 6),
-                          child: Icon(Icons.check_circle, color: kGreen, size: 16),
-                        ),
+                      if (status != null) Padding(padding: const EdgeInsets.only(left: 6), child: status),
                     ],
                   ),
                   const SizedBox(height: 3),
                   Row(
                     children: [
-                      Text(n.subtitle, style: const TextStyle(color: kMuted, fontSize: 11)),
+                      Text(n.subtitle.isEmpty ? '--' : n.subtitle, style: const TextStyle(color: kMuted, fontSize: 11)),
                       const SizedBox(width: 10),
+                      // لمس اینجا فقط همین سرور را می‌سنجد (انتخاب نمی‌کند)
                       InkWell(
-                        onTap: () => c.pingOne(n),
-                        child: Text('Ping: ${n.pingText}', style: TextStyle(color: pc, fontSize: 11, fontWeight: FontWeight.w600)),
+                        onTap: probing ? null : () => c.pingOne(n),
+                        borderRadius: BorderRadius.circular(6),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                          child: probing
+                              ? const Text('سنجش…', style: TextStyle(color: kAmber, fontSize: 11, fontWeight: FontWeight.w600))
+                              : Text('Ping: ${n.pingText}',
+                                  style: TextStyle(color: pc, fontSize: 11, fontWeight: FontWeight.w600)),
+                        ),
                       ),
                       const Spacer(),
                       Text(n.subTag, style: const TextStyle(color: kMuted, fontSize: 10)),
@@ -272,21 +366,59 @@
       );
     }
 
+    /// پرچم؛ اگر parse نشده بود آیکون جایگزین (بخش UI از D2)
+    Widget _flag(ServerNode n, {double size = 40}) => Container(
+          width: size,
+          height: size,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: kSurface2,
+            shape: BoxShape.circle,
+            border: Border.all(color: kBorder),
+          ),
+          child: n.flag.trim().isEmpty
+              ? Icon(Icons.public, color: kMuted, size: size * .5)
+              : Text(n.flag, style: TextStyle(fontSize: size * .5)),
+        );
+
     Widget _signal(int ms) {
-      final level = ms == -2 ? 0 : (ms < 0 ? 0 : (ms < 150 ? 4 : (ms < 300 ? 3 : (ms < 600 ? 2 : 1))));
+      final level = ms < 0 ? 0 : (ms < 150 ? 4 : (ms < 300 ? 3 : (ms < 600 ? 2 : 1)));
       final col = ms == -2 ? kMuted : pingColor(ms);
       return Row(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.end,
-        children: List.generate(4, (i) => Container(
-          width: 3,
-          height: 6 + i * 3.0,
-          margin: const EdgeInsets.only(left: 2),
-          decoration: BoxDecoration(
-            color: i < level ? col : kBorder,
-            borderRadius: BorderRadius.circular(1),
+        children: List.generate(
+          4,
+          (i) => AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            width: 3,
+            height: 6 + i * 3.0,
+            margin: const EdgeInsets.only(left: 2),
+            decoration: BoxDecoration(
+              color: i < level ? col : kBorder,
+              borderRadius: BorderRadius.circular(1),
+              boxShadow: i < level ? [BoxShadow(color: col.withValues(alpha: .6), blurRadius: 4)] : null,
+            ),
           ),
-        )),
+        ),
       );
     }
+  }
+
+  /// ورود پلکانی آیتم‌های لیست (فقط یک‌بار؛ در rebuildهای بعدی تکرار نمی‌شود)
+  class _Appear extends StatelessWidget {
+    final int index;
+    final Widget child;
+    const _Appear({required this.index, required this.child});
+    @override
+    Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: 1),
+          duration: Duration(milliseconds: 260 + (index.clamp(0, 8)) * 45),
+          curve: Curves.easeOutCubic,
+          builder: (_, v, w) => Opacity(
+            opacity: v,
+            child: Transform.translate(offset: Offset(0, (1 - v) * 14), child: w),
+          ),
+          child: child,
+        );
   }
