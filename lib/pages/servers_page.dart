@@ -18,7 +18,10 @@
     final _search = TextEditingController();
     int _tab = 0; // 0 همه | 1 پیشنهادی | 2 پینگ کمتر | 3 علاقه‌مندی‌ها
     String _proto = 'همه';
-    String? _pendingUri; // سروری که کاربر در این صفحه انتخاب کرده (برای نوار اتصال)
+
+    /// سروری که کاربر در این صفحه لمس کرده. تا دکمهٔ «اتصال» زده نشود،
+    /// در حالت متصل هیچ تغییری در c.selUri داده نمی‌شود (اتصال فعلی دست‌نخورده می‌ماند).
+    String? _pendingUri;
     bool _acting = false;
 
     static const _tabs = ['همه', 'پیشنهادی', 'پینگ کمتر', 'علاقه‌مندی‌ها'];
@@ -36,6 +39,10 @@
         backgroundColor: err ? kRed.withValues(alpha: 0.9) : kSurface2,
       ));
     }
+
+    ServerNode? get _pending => _pendingUri == null
+        ? null
+        : c.nodes.cast<ServerNode?>().firstWhere((n) => n!.rawUri == _pendingUri, orElse: () => null);
 
     List<String> get _protocols {
       final set = <String>{'همه'};
@@ -79,18 +86,24 @@
 
     // ───────── actions ─────────
 
-    /// ✅ A3: لمس کارت فقط «انتخاب» می‌کند؛ هیچ ناوبری/اتصال خودکاری انجام نمی‌شود.
+    /// لمس کارت = فقط انتخاب. در حالت قطع، انتخاب ذخیره می‌شود؛
+    /// در حالت متصل، فقط به‌صورت «در انتظار» نگه داشته می‌شود تا اتصال فعلی نشکند.
     Future<void> _select(ServerNode n) async {
-      await c.selectNode(n, reconnect: false);
+      if (!c.connected && !c.connecting) {
+        await c.selectNode(n, reconnect: false);
+      }
+      if (!mounted) return;
       setState(() => _pendingUri = n.rawUri);
     }
 
-    /// اتصال/اتصال مجدد صریح با دکمهٔ نوار پایین؛ فقط بعد از موفقیت به خانه برمی‌گردد.
+    /// اتصال/اتصال مجدد صریح؛ فقط بعد از موفقیت به خانه برمی‌گردد.
     Future<void> _connectSelected() async {
-      if (_acting || c.busy) return;
+      final n = _pending;
+      if (n == null || _acting || c.busy) return;
       setState(() => _acting = true);
       try {
         if (c.connected || c.connecting) await c.disconnect();
+        await c.selectNode(n, reconnect: false); // حالا که قطع شدیم، انتخاب واقعی
         final err = await c.connect();
         if (!mounted) return;
         if (err != null) {
@@ -116,7 +129,7 @@
         builder: (_, __) {
           final list = _filtered;
           final avg = c.avgPing;
-          final pending = _pendingUri != null && _pendingUri == c.selUri ? c.selected : null;
+          final pending = _pending;
           return ZeusBackground(
             child: Scaffold(
               backgroundColor: Colors.transparent,
@@ -193,7 +206,6 @@
                   ),
                   const SizedBox(height: 8),
                   Expanded(child: _list(list)),
-                  // ✅ نوار اتصال صریح — فقط بعد از انتخاب در همین صفحه
                   AnimatedSize(
                     duration: const Duration(milliseconds: 260),
                     curve: Curves.easeOutCubic,
@@ -209,6 +221,7 @@
 
     Widget _connectBar(ServerNode n) {
       final reconnect = c.connected || c.connecting;
+      final isCurrent = reconnect && n.rawUri == c.selUri;
       return SafeArea(
         top: false,
         child: Padding(
@@ -216,6 +229,7 @@
           child: GlassCard(
             margin: EdgeInsets.zero,
             glow: true,
+            borderColor: (reconnect ? kAmber : kGreen).withValues(alpha: .6),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(
               children: [
@@ -229,8 +243,12 @@
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-                      Text(reconnect ? 'اتصال فعلی قطع و با این سرور برقرار می‌شود' : 'آمادهٔ اتصال',
-                          style: const TextStyle(color: kMuted, fontSize: 10.5)),
+                      Text(
+                        isCurrent
+                            ? 'همین سرور متصل است؛ می‌توانید دوباره وصل شوید'
+                            : (reconnect ? 'اتصال فعلی قطع و با این سرور برقرار می‌شود' : 'آمادهٔ اتصال'),
+                        style: const TextStyle(color: kMuted, fontSize: 10.5),
+                      ),
                     ],
                   ),
                 ),
@@ -289,7 +307,8 @@
     }
 
     Widget _tile(ServerNode n) {
-      final sel = n.rawUri == c.selUri;
+      final sel = n.rawUri == c.selUri; // سرور ذخیره‌شده/متصل
+      final pend = !sel && n.rawUri == _pendingUri; // در انتظار اتصال مجدد
       final probing = c.pingingUris.contains(n.rawUri);
       final pc = n.pingMs == -2 ? kMuted : pingColor(n.pingMs);
 
@@ -305,11 +324,12 @@
         }
       }
 
+      final nameColor = sel ? kGreen : (pend ? kAmber : kText);
       return GlassCard(
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        borderColor: sel ? kGreen.withValues(alpha: 0.7) : null,
-        glow: sel,
+        borderColor: sel ? kGreen.withValues(alpha: 0.7) : (pend ? kAmber.withValues(alpha: .7) : null),
+        glow: sel || pend,
         onTap: () => _select(n),
         child: Row(
           children: [
@@ -325,7 +345,7 @@
                         child: Text(n.displayName.isEmpty ? (n.host.isEmpty ? 'سرور بی‌نام' : n.host) : n.displayName,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: sel ? kGreen : kText)),
+                            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: nameColor)),
                       ),
                       if (status != null) Padding(padding: const EdgeInsets.only(left: 6), child: status),
                     ],
@@ -335,14 +355,14 @@
                     children: [
                       Text(n.subtitle.isEmpty ? '--' : n.subtitle, style: const TextStyle(color: kMuted, fontSize: 11)),
                       const SizedBox(width: 10),
-                      // لمس اینجا فقط همین سرور را می‌سنجد (انتخاب نمی‌کند)
                       InkWell(
                         onTap: probing ? null : () => c.pingOne(n),
                         borderRadius: BorderRadius.circular(6),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                           child: probing
-                              ? const Text('سنجش…', style: TextStyle(color: kAmber, fontSize: 11, fontWeight: FontWeight.w600))
+                              ? const Text('سنجش…',
+                                  style: TextStyle(color: kAmber, fontSize: 11, fontWeight: FontWeight.w600))
                               : Text('Ping: ${n.pingText}',
                                   style: TextStyle(color: pc, fontSize: 11, fontWeight: FontWeight.w600)),
                         ),
@@ -366,7 +386,6 @@
       );
     }
 
-    /// پرچم؛ اگر parse نشده بود آیکون جایگزین (بخش UI از D2)
     Widget _flag(ServerNode n, {double size = 40}) => Container(
           width: size,
           height: size,
