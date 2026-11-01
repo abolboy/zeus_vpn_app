@@ -9,8 +9,9 @@
   import 'pages/settings_page.dart';
   import 'pages/subs_page.dart';
   import 'ui/theme.dart';
+  import 'ui/transitions.dart';
 
-  const String kAppVersion = '2.0.0';
+  const String kAppVersion = '2.1.0';
 
   void main() {
     WidgetsFlutterBinding.ensureInitialized();
@@ -32,8 +33,12 @@
         title: 'ZEUS VPN',
         debugShowCheckedModeBanner: false,
         theme: _buildTheme(),
-        // راست‌چین کل اپ بدون نیاز به flutter_localizations
-        builder: (ctx, child) => Directionality(textDirection: TextDirection.rtl, child: child!),
+        // ✅ D1: یک پس‌زمینهٔ متحرک برای کل اپ، پشت Navigator.
+        // صفحات شفاف‌اند و ZeusBackground داخل آن‌ها (enabled=false) فقط child را برمی‌گرداند.
+        builder: (ctx, child) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: ZeusBackground(enabled: true, child: child!),
+        ),
         home: const ZeusShell(),
       );
     }
@@ -50,7 +55,8 @@
       );
       return base.copyWith(
         colorScheme: scheme,
-        scaffoldBackgroundColor: kSurface,
+        // ✅ شفاف تا پس‌زمینهٔ ریشه در همهٔ صفحات دیده شود
+        scaffoldBackgroundColor: Colors.transparent,
         canvasColor: kSurface,
         dividerColor: kBorder,
         textTheme: base.textTheme.apply(bodyColor: kText, displayColor: kText),
@@ -71,16 +77,16 @@
           fillColor: kSurface2,
           hintStyle: const TextStyle(color: kMuted, fontSize: 13),
           contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: kBorder)),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: kBorder)),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: kGreen)),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: kBorder)),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: kBorder)),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: kGreen)),
         ),
         filledButtonTheme: FilledButtonThemeData(
           style: FilledButton.styleFrom(
             backgroundColor: kGreen,
             foregroundColor: Colors.black,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            textStyle: const TextStyle(fontWeight: FontWeight.w700),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            textStyle: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: .5),
           ),
         ),
         outlinedButtonTheme: OutlinedButtonThemeData(
@@ -88,23 +94,29 @@
             foregroundColor: kGreen,
             side: const BorderSide(color: kBorder),
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         ),
         textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(foregroundColor: kGreen)),
         dialogTheme: DialogThemeData(
           backgroundColor: kSurface2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          titleTextStyle: const TextStyle(color: kText, fontSize: 17, fontWeight: FontWeight.w700),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: kBorder),
+          ),
+          titleTextStyle: const TextStyle(color: kText, fontSize: 17, fontWeight: FontWeight.w800),
           contentTextStyle: const TextStyle(color: kText, fontSize: 14),
         ),
         snackBarTheme: SnackBarThemeData(
           behavior: SnackBarBehavior.floating,
           backgroundColor: kSurface2,
           contentTextStyle: const TextStyle(color: kText),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: kBorder),
+          ),
         ),
-        drawerTheme: const DrawerThemeData(backgroundColor: kSurface, scrimColor: Color(0x99000000)),
+        drawerTheme: const DrawerThemeData(backgroundColor: kSurface, scrimColor: Color(0xAA000000)),
         progressIndicatorTheme: const ProgressIndicatorThemeData(color: kGreen),
         switchTheme: SwitchThemeData(
           trackColor: WidgetStateProperty.resolveWith(
@@ -128,6 +140,7 @@
   class _ZeusShellState extends State<ZeusShell> {
     final c = ZeusController.I;
     final _scaffoldKey = GlobalKey<ScaffoldState>();
+    bool _navigating = false; // جلوگیری از push دوبل با ضربهٔ سریع
 
     @override
     void initState() {
@@ -137,27 +150,20 @@
 
     // ───────── navigation ─────────
     Future<void> _push(Widget page) async {
-      await Navigator.of(context).push(
-        PageRouteBuilder(
-          pageBuilder: (_, __, ___) => page,
-          transitionDuration: const Duration(milliseconds: 260),
-          reverseTransitionDuration: const Duration(milliseconds: 220),
-          transitionsBuilder: (_, anim, __, child) {
-            final curve = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
-            return FadeTransition(
-              opacity: curve,
-              child: SlideTransition(
-                position: Tween(begin: const Offset(-0.06, 0), end: Offset.zero).animate(curve),
-                child: child,
-              ),
-            );
-          },
-        ),
-      );
+      if (_navigating || !mounted) return;
+      _navigating = true;
+      try {
+        // ✅ D1: ZeusRoute → صفحهٔ قبلی اول محو می‌شود، بعد صفحهٔ جدید وارد می‌شود (بدون هم‌پوشانی)
+        await Navigator.of(context).pushZeus(page);
+      } finally {
+        _navigating = false;
+      }
     }
 
+    /// فقط وقتی route‌ای غیر از خانه روی استک باشد pop می‌کند (محافظ در برابر pop دوبل/ناخواسته)
     void _pop() {
-      if (Navigator.of(context).canPop()) Navigator.of(context).pop();
+      final nav = Navigator.of(context);
+      if (nav.canPop()) nav.pop();
     }
 
     void _goServers() => _push(ServersPage(onBack: _pop, onGoSubs: _goSubs));
@@ -168,15 +174,21 @@
     void _openMenu() => _scaffoldKey.currentState?.openDrawer();
 
     void _fromMenu(VoidCallback go) {
-      Navigator.of(context).pop(); // بستن drawer
-      go();
+      // بستن drawer فقط اگر واقعاً باز است (قبلاً pop بی‌قید می‌توانست صفحه را ببندد)
+      if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
+        _scaffoldKey.currentState!.closeDrawer();
+      }
+      // بعد از بسته‌شدن drawer ناوبری کن تا دو انیمیشن متناقض هم‌زمان اجرا نشوند
+      Future.delayed(const Duration(milliseconds: 180), () {
+        if (mounted) go();
+      });
     }
 
     Future<void> _about() async {
       await showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('ZEUS VPN'),
+          title: const NeonText('ZEUS VPN', size: 18),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -185,7 +197,8 @@
               const SizedBox(height: 8),
               const Text('هسته: Xray  •  PattNG  •  Cloudflare WARP'),
               const SizedBox(height: 8),
-              const Text('No logs. No limits. Your rules.', style: TextStyle(color: kGreen, fontSize: 12, letterSpacing: 1)),
+              const Text('No logs. No limits. Your rules.',
+                  style: TextStyle(color: kGreen, fontSize: 12, letterSpacing: 1)),
             ],
           ),
           actions: [FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('باشه'))],
@@ -197,7 +210,7 @@
     Widget build(BuildContext context) {
       return Scaffold(
         key: _scaffoldKey,
-        backgroundColor: kSurface,
+        backgroundColor: Colors.transparent,
         drawer: _drawer(),
         body: HomePage(
           onGoServers: _goServers,
@@ -211,12 +224,29 @@
     Widget _drawer() {
       return Drawer(
         width: 290,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.horizontal(left: Radius.circular(20)),
+          side: BorderSide(color: kBorder),
+        ),
         child: ListenableBuilder(
           listenable: c,
           builder: (_, __) {
             final sel = c.selected;
-            final statusColor = c.connected ? kGreen : (c.connecting ? kAmber : kMuted);
-            final statusText = c.connected ? 'متصل' : (c.connecting ? 'در حال اتصال…' : 'قطع');
+            final Color statusColor;
+            final String statusText;
+            if (c.connected && c.tunnel == TunnelState.ok) {
+              statusColor = kGreen;
+              statusText = 'متصل';
+            } else if (c.connected && c.tunnel == TunnelState.failed) {
+              statusColor = kRed;
+              statusText = 'تونل خراب';
+            } else if (c.connected || c.connecting) {
+              statusColor = kAmber;
+              statusText = c.connecting ? 'در حال اتصال…' : 'تأیید تونل…';
+            } else {
+              statusColor = kMuted;
+              statusText = 'قطع';
+            }
             return SafeArea(
               child: Column(
                 children: [
@@ -231,8 +261,8 @@
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            gradient: const LinearGradient(colors: [kGreen, Color(0xFF8AFFC9)]),
-                            boxShadow: [BoxShadow(color: kGreen.withValues(alpha: 0.35), blurRadius: 16)],
+                            gradient: kNeonGradient,
+                            boxShadow: neonGlow(kGreen, blur: 14, alpha: .5),
                           ),
                           child: const Icon(Icons.bolt, color: Colors.black, size: 28),
                         ),
@@ -241,16 +271,11 @@
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('ZEUS VPN',
-                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
+                              const NeonText('ZEUS VPN', size: 17),
                               Row(
                                 children: [
-                                  Container(
-                                    width: 7,
-                                    height: 7,
-                                    decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle),
-                                  ),
-                                  const SizedBox(width: 6),
+                                  PulseDot(color: statusColor, size: 5),
+                                  const SizedBox(width: 2),
                                   Text(statusText, style: TextStyle(color: statusColor, fontSize: 12)),
                                 ],
                               ),
@@ -272,7 +297,8 @@
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(sel.displayName,
-                                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                             ),
                             Text(sel.pingText, style: TextStyle(color: pingColor(sel.pingMs), fontSize: 12)),
@@ -283,7 +309,7 @@
                   const Divider(height: 16),
 
                   // ───── items ─────
-                  _item(Icons.home_outlined, 'خانه', () => Navigator.of(context).pop()),
+                  _item(Icons.home_outlined, 'خانه', () => _scaffoldKey.currentState?.closeDrawer()),
                   _item(Icons.public, 'سرورها', () => _fromMenu(_goServers),
                       badge: c.nodes.isEmpty ? null : '${c.nodes.length}'),
                   _item(Icons.link, 'اشتراک', () => _fromMenu(_goSubs),
