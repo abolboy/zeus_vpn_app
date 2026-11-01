@@ -16,9 +16,16 @@
 
   const String kPingUrl = 'https://www.gstatic.com/generate_204';
   const String kSpeedUrl = 'https://speed.cloudflare.com/__down?bytes=15000000';
-  const String kIpUrl = 'https://api.ipify.org?format=json';
+  const List<String> kIpUrls = [
+    'https://api.ipify.org?format=text',
+    'https://icanhazip.com',
+    'https://ifconfig.me/ip',
+  ];
 
   enum ConnState { disconnected, connecting, connected, disconnecting }
+
+  /// وضعیت واقعی تونل بعد از این‌که سرویس VPN بالا آمد
+  enum TunnelState { idle, checking, ok, failed }
 
   class ZeusController extends ChangeNotifier {
     // ───────── singleton ─────────
@@ -38,6 +45,7 @@
     bool ready = false;
     bool booted = false;
     ConnState conn = ConnState.disconnected;
+    TunnelState tunnel = TunnelState.idle;
     bool busy = false;
 
     List<SubRecord> subs = [];
@@ -67,12 +75,15 @@
     static const int _maxLogs = 400;
 
     int _syncGen = 0;
+    int _connGen = 0; // برای لغو پروب‌های اتصال قبلی
     Timer? _connectTimeout;
     CancelToken? _speedToken;
 
     // ───────── derived ─────────
     bool get connected => conn == ConnState.connected;
     bool get connecting => conn == ConnState.connecting;
+    /// اتصال واقعاً کار می‌کند (سرویس بالا + تونل تأیید شده)
+    bool get online => connected && tunnel == TunnelState.ok;
     bool get warpReady => warpOn && (warp?.isValid ?? false);
     ServerNode? get selected => selUri == null
         ? null
@@ -109,7 +120,6 @@
     }
 
     void _loadPrefs(SharedPreferences p) {
-      // اشتراک‌ها (سازگار با نسخهٔ قدیمی List<String>)
       final rawSubs = p.getString('subs_v2');
       if (rawSubs != null) {
         subs = (jsonDecode(rawSubs) as List).map(SubRecord.fromJson).whereType<SubRecord>().toList();
@@ -186,11 +196,12 @@
       if (conn == ConnState.connected && prev != ConnState.connected) {
         _connectTimeout?.cancel();
         connectedAt = DateTime.now();
-        log(LogKind.connection, 'Connection established');
-        _fetchIp();
+        log(LogKind.connection, 'VPN service up — verifying tunnel…');
+        _verifyTunnel(++_connGen); // ✅ رفع باگ: به‌جای اعتماد به CONNECTED، تونل را واقعاً تست کن
       }
       if (conn == ConnState.disconnected && prev != ConnState.disconnected) {
         _connectTimeout?.cancel();
+        _connGen++;
         _resetTraffic();
         log(LogKind.connection, 'Disconnected');
       }
@@ -210,12 +221,49 @@
       notifyListeners();
     }
 
+    /// چند بار از داخل تونل به اینترنت می‌زند؛ موفق شد → IP را می‌گیرد
+    Future<void> _verifyTunnel(int gen) async {
+      tunnel = TunnelState.checking;
+      publicIp = '…';
+      notifyListeners();
+      for (var i = 0; i < 4; i++) {
+        await Future.delayed(Duration(milliseconds: 700 * (i + 1)));
+        if (gen != _connGen || !connected) return;
+        try {
+          final d = await _v2ray.getConnectedServerDelay(url: kPingUrl);
+          if (d >= 0) {
+            tunnel = TunnelState.ok;
+            final sel = selected;
+            if (sel != null) sel.pingMs = d;
+            log(LogKind.connection, 'Tunnel OK (${d}ms)');
+            notifyListeners();
+            _fetchIp(gen);
+            return;
+          }
+        } catch (e) {
+          log(LogKind.connection, 'Tunnel probe ${i + 1}: $e', LogLevel.warn);
+        }
+      }
+      if (gen != _connGen || !connected) return;
+      tunnel = TunnelState.failed;
+      publicIp = '--';
+      log(LogKind.connection, 'Tunnel verification failed — server may be dead/blocked', LogLevel.error);
+      notifyListeners();
+    }
+
+    /// تست دستی مجدد تونل (برای دکمهٔ «بررسی» در صفحهٔ خانه)
+    Future<void> recheckTunnel() async {
+      if (!connected) return;
+      await _verifyTunnel(++_connGen);
+    }
+
     void _resetTraffic() {
       upSpeed = downSpeed = upTotal = downTotal = 0;
       duration = '00:00:00';
       speedResult = '';
       publicIp = '--';
       connectedAt = null;
+      tunnel = TunnelState.idle;
       for (var i = 0; i < downHistory.length; i++) {
         downHistory[i] = 0;
         upHistory[i] = 0;
@@ -244,6 +292,7 @@
         final cfg = warpOnly ? _builder.buildWarpOnly() : _builder.build(selUri!);
         final remark = warpOnly ? 'ZEUS • WARP' : (selected?.displayName ?? 'ZEUS');
         conn = ConnState.connecting;
+        tunnel = TunnelState.idle;
         notifyListeners();
         log(LogKind.connection, 'Connecting to $remark');
         final feats = [
@@ -258,7 +307,6 @@
           proxyOnly: false,
           notificationDisconnectButtonName: 'قطع',
         );
-        // ✅ رفع باگ: اگر هسته جواب نداد، بعد از ۲۰ ثانیه برگرد
         _connectTimeout?.cancel();
         _connectTimeout = Timer(const Duration(seconds: 20), () async {
           if (conn == ConnState.connecting) {
@@ -279,6 +327,7 @@
 
     Future<void> disconnect() async {
       _connectTimeout?.cancel();
+      _connGen++;
       busy = true;
       conn = ConnState.disconnecting;
       notifyListeners();
@@ -293,7 +342,6 @@
       notifyListeners();
     }
 
-    /// تغییر سرور حین اتصال → اتصال مجدد
     Future<String?> selectNode(ServerNode n, {bool reconnect = true}) async {
       selUri = n.rawUri;
       await _saveSel();
@@ -376,7 +424,6 @@
         notifyListeners();
         return 'هیچ سروری دریافت نشد؛ لیست قبلی حفظ شد';
       }
-      // حفظ پینگ و علاقه‌مندی قبلی
       final old = {for (final n in nodes) n.rawUri: n};
       for (final n in fresh) {
         final o = old[n.rawUri];
@@ -386,7 +433,6 @@
         }
       }
       nodes = fresh;
-      // ✅ رفع باگ: اگر سرور انتخابی حذف شد ولی متصل هستیم، انتخاب را نگه دار
       if (selUri != null && !nodes.any((n) => n.rawUri == selUri) && !connected && !connecting) {
         selUri = null;
         await _saveSel();
@@ -405,7 +451,10 @@
     }
 
     Future<int> _tcpDelay(ServerNode n) async {
-      if (n.host.isEmpty || n.port == 0) return -1;
+      if (n.host.isEmpty || n.port == 0) {
+        log(LogKind.system, 'TCP ping skipped: no host/port parsed for ${n.displayName}', LogLevel.warn);
+        return -1;
+      }
       final sw = Stopwatch()..start();
       try {
         final s = await Socket.connect(n.host, n.port, timeout: const Duration(seconds: 5));
@@ -417,11 +466,16 @@
     }
 
     Future<void> pingOne(ServerNode n) async {
-      // ✅ رفع باگ: در حالت متصل، پینگ واقعی از داخل تونل غلط است → TCP
-      final useTcp = settings.delayMode == 1 || connected || connecting;
-      int ms;
+      int ms = -1;
       try {
-        ms = useTcp ? await _tcpDelay(n) : await _realDelay(n);
+        if (connected && n.rawUri == selUri) {
+          // ✅ رفع باگ: سرور فعال را از داخل تونل واقعی بسنج (TCP به خودِ سرور از داخل TUN timeout می‌دهد)
+          ms = await _v2ray.getConnectedServerDelay(url: kPingUrl);
+        } else if (connected || connecting || settings.delayMode == 1) {
+          ms = await _tcpDelay(n);
+        } else {
+          ms = await _realDelay(n);
+        }
       } catch (_) {
         ms = -1;
       }
@@ -445,7 +499,6 @@
       notifyListeners();
     }
 
-    /// بهترین سرور (کمترین پینگ)
     ServerNode? bestNode() {
       final ok = nodes.where((n) => n.pingMs >= 0).toList()
         ..sort((a, b) => a.pingMs.compareTo(b.pingMs));
@@ -455,7 +508,7 @@
     // ───────── speed test / ip ─────────
     Dio _makeProxyDio() {
       final d = Dio(BaseOptions(
-        connectTimeout: const Duration(seconds: 10),
+        connectTimeout: const Duration(seconds: 8),
         receiveTimeout: const Duration(seconds: 40),
       ));
       d.httpClientAdapter = IOHttpClientAdapter(
@@ -469,15 +522,44 @@
       return d;
     }
 
-    Future<void> _fetchIp() async {
-      try {
-        final r = await _proxyDio.get<String>(kIpUrl, options: Options(responseType: ResponseType.plain));
-        final m = jsonDecode(r.data ?? '{}');
-        publicIp = (m is Map ? m['ip'] : null)?.toString() ?? '--';
-      } catch (_) {
-        publicIp = '--';
-      }
+    static final RegExp _ipRe = RegExp(r'^(\d{1,3}\.){3}\d{1,3}$|^[0-9a-fA-F:]{3,}$');
+
+    /// ✅ رفع باگ IP = «--»: چند منبع + چند تلاش + fallback مستقیم از داخل TUN
+    Future<void> _fetchIp(int gen) async {
+      publicIp = '…';
       notifyListeners();
+      for (var attempt = 0; attempt < 3; attempt++) {
+        for (final url in kIpUrls) {
+          if (gen != _connGen || !connected) return;
+          final ip = await _tryIp(_proxyDio, url) ?? await _tryIp(_dio, url);
+          if (ip != null) {
+            publicIp = ip;
+            log(LogKind.connection, 'Public IP: $ip');
+            notifyListeners();
+            return;
+          }
+        }
+        await Future.delayed(Duration(seconds: 2 * (attempt + 1)));
+      }
+      if (gen != _connGen || !connected) return;
+      publicIp = '--';
+      log(LogKind.connection, 'Could not fetch public IP', LogLevel.warn);
+      notifyListeners();
+    }
+
+    Future<String?> _tryIp(Dio d, String url) async {
+      try {
+        final r = await d.get<String>(url, options: Options(responseType: ResponseType.plain));
+        final t = (r.data ?? '').trim();
+        return _ipRe.hasMatch(t) ? t : null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    Future<void> refreshIp() async {
+      if (!connected) return;
+      await _fetchIp(_connGen);
     }
 
     Future<void> speedTest() async {
@@ -508,7 +590,6 @@
     }
 
     // ───────── WARP ─────────
-    /// ثبت حساب WARP (نام با تابع سراسری registerWarp در warp.dart متفاوت است)
     Future<String?> warpRegister() async {
       if (busy) return null;
       busy = true;
