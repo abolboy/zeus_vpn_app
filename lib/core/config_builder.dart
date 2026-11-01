@@ -53,7 +53,10 @@
       if (sockopt.isNotEmpty) ss['sockopt'] = sockopt;
       main['streamSettings'] = ss;
 
-      result..add(_directOut())..add(_blockOut());
+      result
+        ..add(_dnsOut())
+        ..add(_directOut())
+        ..add(_blockOut());
       return _wrap(cfg, result);
     }
 
@@ -61,7 +64,7 @@
     Map<String, dynamic> buildWarpOnly() {
       final w = warp;
       if (w == null || !w.isValid) throw Exception('WARP ثبت نشده است');
-      return _wrap(<String, dynamic>{}, [w.toXrayOutbound(tag: 'proxy'), _directOut(), _blockOut()]);
+      return _wrap(<String, dynamic>{}, [w.toXrayOutbound(tag: 'proxy'), _dnsOut(), _directOut(), _blockOut()]);
     }
 
     /// کانفیگ سبک برای تست پینگ (بدون WARP و بدون stats)
@@ -74,18 +77,24 @@
 
     // ───────── wrapper ─────────
     Map<String, dynamic> _wrap(Map<String, dynamic> cfg, List<Map<String, dynamic>> outbounds) {
-      cfg['log'] = {'loglevel': patt.logLevel};
+      cfg['log'] = {'loglevel': _safeLogLevel()};
       cfg['inbounds'] = _inbounds();
       cfg['outbounds'] = outbounds;
       cfg['dns'] = _dns();
       cfg['routing'] = _routing();
-      // ✅ رفع باگ سرعت ۰: پلاگین برای آمار به stats + policy نیاز دارد
+      // پلاگین برای آمار حجم به stats + policy نیاز دارد
       cfg['stats'] = <String, dynamic>{};
       cfg['policy'] = {
-        'levels': {'8': {'handshake': 4, 'connIdle': 300, 'uplinkOnly': 1, 'downlinkOnly': 1}},
+        'levels': {'0': {'handshake': 4, 'connIdle': 300, 'uplinkOnly': 1, 'downlinkOnly': 1}},
         'system': {'statsOutboundUplink': true, 'statsOutboundDownlink': true},
       };
       return cfg;
+    }
+
+    /// سطح debug مقصد همهٔ اتصالات را در Logcat می‌نویسد؛ به‌جای حذف، به info محدود می‌شود
+    String _safeLogLevel() {
+      const allowed = ['none', 'error', 'warning', 'info'];
+      return allowed.contains(patt.logLevel) ? patt.logLevel : 'info';
     }
 
     // ───────── parts ─────────
@@ -107,27 +116,37 @@
           },
         ];
 
+    /// ✅ DNS از طریق ماژول Xray: DoH (TCP) اول، UDP بعد → روی سرورهای بدون UDP هم کار می‌کند
+    /// و همهٔ پرس‌وجوها از تونل عبور می‌کنند (بدون نشت).
     Map<String, dynamic> _dns() {
+      final servers = <dynamic>[];
       switch (patt.dnsMode) {
         case 'custom':
-          final servers = _csv(patt.customDns);
-          return {'servers': servers.isEmpty ? ['1.1.1.1'] : servers};
+          final custom = _csv(patt.customDns);
+          servers.addAll(custom.isEmpty ? ['https://1.1.1.1/dns-query', '1.1.1.1'] : custom);
+          break;
         case 'doh':
-          return {
-            'servers': ['https://1.1.1.1/dns-query', 'https://dns.google/dns-query', '8.8.8.8'],
-            'queryStrategy': 'UseIP',
-          };
-        default:
-          final servers = <dynamic>['1.1.1.1', '8.8.8.8'];
-          if (patt.bypassIran) {
-            servers.add({'address': '78.157.42.100', 'domains': ['geosite:category-ir', 'regexp:.*\\.ir\$']});
-          }
-          return {'servers': servers};
+          servers.addAll(['https://1.1.1.1/dns-query', 'https://dns.google/dns-query']);
+          break;
+        default: // 'default' / 'auto'
+          servers.addAll(['https://1.1.1.1/dns-query', '1.1.1.1', '8.8.8.8']);
       }
+      if (patt.bypassIran) {
+        // DNS ایرانی فقط برای دامنه‌های ایرانی؛ خودِ سرور با geoip:ir مستقیم می‌رود
+        servers.insert(0, {
+          'address': '78.157.42.100',
+          'domains': ['geosite:category-ir', 'regexp:.*\\.ir\$'],
+          'skipFallback': true,
+        });
+      }
+      return {'servers': servers, 'queryStrategy': 'UseIP', 'disableFallbackIfMatch': true};
     }
 
     Map<String, dynamic> _routing() {
-      final rules = <Map<String, dynamic>>[];
+      final rules = <Map<String, dynamic>>[
+        // ✅ همهٔ پرس‌وجوهای DNS دستگاه → ماژول DNS داخلی
+        {'type': 'field', 'inboundTag': ['socks', 'http'], 'port': '53', 'outboundTag': 'dns-out'},
+      ];
       if (patt.bypassLan) {
         rules.add({'type': 'field', 'ip': ['geoip:private'], 'outboundTag': 'direct'});
         rules.add({'type': 'field', 'domain': ['regexp:.*\\.local\$', 'domain:localhost'], 'outboundTag': 'direct'});
@@ -139,6 +158,12 @@
       rules.add({'type': 'field', 'port': '0-65535', 'outboundTag': 'proxy'});
       return {'domainStrategy': 'IPIfNonMatch', 'rules': rules};
     }
+
+    Map<String, dynamic> _dnsOut() => {
+          'tag': 'dns-out',
+          'protocol': 'dns',
+          'settings': {'nonIPQuery': 'skip'},
+        };
 
     Map<String, dynamic> _directOut() => {
           'tag': 'direct',
