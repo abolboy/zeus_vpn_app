@@ -3,7 +3,7 @@
 
   // ───────────── Server node ─────────────
   class ServerNode {
-    final String subTag;      // S1, S2, …
+    String subTag;            // S1, S2, … (با حذف اشتراک دوباره‌شماره می‌شود)
     final String rawUri;
     final String displayName;
     final String protocol;    // VLESS / VMess / Trojan / Shadowsocks / SOCKS
@@ -84,8 +84,11 @@
         final frag = u.fragment.isNotEmpty ? Uri.decodeComponent(u.fragment).trim() : '';
         final sec = (u.queryParameters['security'] ?? 'none').toLowerCase();
         String security = 'NONE';
-        if (sec == 'reality') security = 'REALITY';
-        else if (sec == 'tls' || sec == 'xtls') security = 'TLS';
+        if (sec == 'reality') {
+          security = 'REALITY';
+        } else if (sec == 'tls' || sec == 'xtls') {
+          security = 'TLS';
+        }
         String proto;
         switch (u.scheme.toLowerCase()) {
           case 'vless':
@@ -187,20 +190,23 @@
   };
 
   String flagFromName(String name) {
-    final m = _flagRe.firstMatch(name);
-    if (m != null) return m.group(0)!;
-    final low = ' ${name.toLowerCase().replaceAll(RegExp(r'[_\-\|\[\]\(\)]'), ' ')} ';
-    // ابتدا کلمات بلند، بعد کدهای دو حرفی (برای جلوگیری از تطابق اشتباه)
-    for (final e in _countryWords.entries.where((e) => e.key.length > 2)) {
-      if (low.contains(' ${e.key} ')) return e.value;
-    }
-    for (final e in _countryWords.entries.where((e) => e.key.length == 2)) {
-      if (RegExp(' ${e.key} ').hasMatch(low)) return e.value;
-    }
-    return '🌐';
+  final m = _flagRe.firstMatch(name);
+  if (m != null) return m.group(0)!;
+  final norm = ' ${name.replaceAll(RegExp(r'[_\-\|\[\]\(\),.:/•·]'), ' ')} ';
+  final low = norm.toLowerCase();
+  // ابتدا کلمات بلند
+  for (final e in _countryWords.entries.where((e) => e.key.length > 2)) {
+    if (low.contains(' ${e.key} ')) return e.value;
   }
+  // کدهای دو حرفی فقط وقتی با حروف بزرگ نوشته شده باشند؛ وگرنه کلمات انگلیسی
+  // مثل «in» یا «it» یا «at» به‌اشتباه پرچم هند/ایتالیا/اتریش می‌گیرند.
+  for (final e in _countryWords.entries.where((e) => e.key.length == 2)) {
+    if (norm.contains(' ${e.key.toUpperCase()} ')) return e.value;
+  }
+  return '🌐';
+}
 
-  // ───────────── PattNG settings ─────────────
+// ───────────── PattNG settings ─────────────
   class Patt {
     String fp = 'chrome';
     String cs = '';
@@ -232,6 +238,9 @@
     String path = '/';
     String host = '';
     String headerType = 'none';
+
+    /// بازگشت همهٔ فیلدها به مقادیر پیش‌فرض
+    void resetDefaults() => loadJson(Patt().toJson());
 
     Map<String, dynamic> toJson() => {
           'fp': fp, 'cs': cs, 'pcs': pcs, 'vcn': vcn,
