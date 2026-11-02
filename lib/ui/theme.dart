@@ -4,6 +4,7 @@ import 'dart:ui' show FontFeature, ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart' show Ticker;
+import 'package:flutter/foundation.dart' show ValueListenable;
 
 // ───────────────────────── پالت ─────────────────────────
 const Color kCyan = Color(0xFF00F0FF);
