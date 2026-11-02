@@ -429,17 +429,25 @@ class _SettingsPageState extends State<SettingsPage> {
       ListTile(
         leading: Icon(icon, color: kGreen),
         title: Text(title),
-        trailing: DropdownButton<T>(
-          value: value,
-          underline: const SizedBox(),
-          dropdownColor: kSurface2,
-          style: const TextStyle(color: kText, fontSize: 13),
-          items: items
-              .map((e) => DropdownMenuItem<T>(value: e, child: Text(label == null ? '$e' : label(e))))
-              .toList(),
-          onChanged: (v) {
-            if (v != null) onChanged(v);
-          },
+        // عرض ثابت برای منو: قبلاً Dropdown تمام عرض را می‌گرفت و عنوان حرف‌به‌حرف می‌شکست («DN S»)
+        trailing: SizedBox(
+          width: 150,
+          child: DropdownButton<T>(
+            value: value,
+            isExpanded: true,
+            underline: const SizedBox(),
+            dropdownColor: kSurface2,
+            style: const TextStyle(color: kText, fontSize: 13),
+            items: items
+                .map((e) => DropdownMenuItem<T>(
+                      value: e,
+                      child: Text(label == null ? '$e' : label(e), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ))
+                .toList(),
+            onChanged: (v) {
+              if (v != null) onChanged(v);
+            },
+          ),
         ),
       );
 

@@ -126,6 +126,8 @@ class ZeusApp extends StatelessWidget {
           side: BorderSide(color: kBorder),
         ),
       ),
+      // خط‌های جداکنندهٔ پیش‌فرض سفید بودند و با تم نئونی نمی‌خواندند
+      dividerTheme: const DividerThemeData(color: kBorder, thickness: 1, space: 1),
       drawerTheme: const DrawerThemeData(backgroundColor: kSurface, scrimColor: Color(0xAA000000)),
       progressIndicatorTheme: const ProgressIndicatorThemeData(color: kGreen),
       switchTheme: SwitchThemeData(

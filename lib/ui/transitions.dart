@@ -8,7 +8,9 @@ import 'package:flutter/material.dart';
 class ZeusRoute<T> extends PageRouteBuilder<T> {
   ZeusRoute({required Widget page, super.settings})
       : super(
-          opaque: false, // پس‌زمینهٔ ریشه باید دیده شود
+          // opaque=true: صفحهٔ زیرین دیگر پشت صفحهٔ جدید دیده نمی‌شود (قبلاً خانه از پشت تنظیمات/اشتراک‌ها پیدا بود).
+          // پس‌زمینهٔ متحرک در ریشهٔ اپ است و از Scaffold شفاف همچنان دیده می‌شود.
+          opaque: true,
           barrierColor: Colors.transparent,
           transitionDuration: const Duration(milliseconds: 420),
           reverseTransitionDuration: const Duration(milliseconds: 360),
