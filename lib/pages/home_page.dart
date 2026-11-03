@@ -37,6 +37,34 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     if (err != null) _snack(err, err: true);
   }
 
+  /// اتصال سریع: اگر پینگی گرفته نشده «پینگ همه» می‌زند، سریع‌ترین سرور را انتخاب می‌کند و وصل می‌شود
+  Future<void> _quickConnect() async {
+    if (c.busy || c.pinging) return;
+    if (c.nodes.isEmpty) {
+      _snack('هنوز سروری ندارید؛ از منو «اشتراک» را اضافه کنید', err: true);
+      return;
+    }
+    _snack('در حال یافتن سریع‌ترین سرور…');
+    if (c.nodes.every((n) => n.pingMs < 0)) await c.pingAll();
+    final best = c.bestNode();
+    if (best == null) {
+      _snack('هیچ سروری پاسخ نداد؛ اینترنت را بررسی کنید', err: true);
+      return;
+    }
+    if (c.connected && c.selUri == best.rawUri) {
+      _snack('همین حالا به سریع‌ترین سرور وصل هستید');
+      return;
+    }
+    final String? err;
+    if (c.connected || c.connecting) {
+      err = await c.selectNode(best); // سرور را عوض و دوباره وصل می‌کند
+    } else {
+      await c.selectNode(best, reconnect: false);
+      err = await c.connect();
+    }
+    if (err != null) _snack(err, err: true);
+  }
+
   // ───────── وضعیت واقعی (نه فقط CONNECTED پلاگین) ─────────
   bool get _transition => c.connecting || c.conn == ConnState.disconnecting;
 
@@ -84,7 +112,13 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           appBar: ZeusHeader(
             title: _title,
             leading: IconButton(icon: const Icon(Icons.menu), onPressed: widget.onOpenMenu),
-            actions: [IconButton(icon: const Icon(Icons.settings_outlined), onPressed: widget.onGoSettings)],
+            actions: [
+              IconButton(
+                tooltip: 'اتصال سریع به سریع‌ترین سرور',
+                icon: const Icon(Icons.flash_on),
+                onPressed: c.busy || c.pinging ? null : _quickConnect,
+              ),
+            ],
           ),
           body: AnimatedSwitcher(
             duration: const Duration(milliseconds: 520),
@@ -167,9 +201,26 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           ),
         const SizedBox(height: 20),
         _trafficCard(),
+        _credit(),
       ],
     );
   }
+
+  Widget _credit() => Padding(
+        padding: const EdgeInsets.only(top: 26, bottom: 6),
+        child: Center(
+          child: Text(
+            'abolboy',
+            style: TextStyle(
+              color: kMuted,
+              fontFamily: kMono,
+              fontSize: 12,
+              letterSpacing: 4,
+              shadows: [Shadow(color: kGreen.withValues(alpha: .5), blurRadius: 8)],
+            ),
+          ),
+        ),
+      );
 
   Widget _logo() => const Padding(
         padding: EdgeInsets.only(top: 6),
@@ -365,6 +416,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             label: const Text('قطع اتصال', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
           ),
         ),
+        _credit(),
       ],
     );
   }
