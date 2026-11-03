@@ -1,8 +1,0 @@
-include: package:flutter_lints/flutter.yaml
-
-linter:
-  rules:
-    # ZEUS از استایل کد فشردهٔ تک‌خطی در برخی ویجت‌ها استفاده می‌کند؛ این قوانین
-    # صرفاً سبکی هستند و اجازه می‌دهیم کد موجود بدون نویز اضافه آنالیز شود.
-    always_put_control_body_on_new_line: false
-    prefer_single_quotes: false
