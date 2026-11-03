@@ -358,24 +358,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           ),
         ),
         const SizedBox(height: 14),
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: c.testingSpeed || c.tunnel != TunnelState.ok ? null : c.speedTest,
-                icon: c.testingSpeed
-                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: kGreen))
-                    : const Icon(Icons.speed, size: 18),
-                label: Text(c.speedResult.isEmpty ? 'تست سرعت' : c.speedResult),
-              ),
-            ),
-          ],
-        ),
-        if (c.speedError.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Text(c.speedError, textAlign: TextAlign.center, style: const TextStyle(color: kRed, fontSize: 11)),
-          ),
+        _speedPanel(),
         const SizedBox(height: 12),
         SizedBox(
           height: 50,
@@ -393,6 +376,130 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       ],
     );
   }
+
+  // ───────── پنل تست سرعت حرفه‌ای (پینگ → دانلود → آپلود + نمودار زنده + نمره) ─────────
+  String _mbpsText(double v) => v >= 100 ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
+
+  String _speedPhaseText() => switch (c.speedPhase) {
+        SpeedPhase.ping => 'اندازه‌گیری پینگ سرور تست…',
+        SpeedPhase.download => 'دانلود استریمی… ${_mbpsText(c.speedLiveMbps)} Mbps',
+        SpeedPhase.upload => 'آپلود… ${_mbpsText(c.speedLiveMbps)} Mbps',
+        SpeedPhase.done => 'تست کامل شد',
+        SpeedPhase.failed => 'تست ناموفق بود',
+        SpeedPhase.idle =>
+            c.tunnel == TunnelState.ok ? 'آمادهٔ اندازه‌گیری دانلود و آپلود' : 'برای تست، اتصال باید سالم باشد',
+      };
+
+  Color _gradeColor() {
+    final v = c.speedDownMbps;
+    if (v >= 10) return kGreen;
+    if (v >= 4) return kAmber;
+    return kRed;
+  }
+
+  Widget _speedPanel() {
+    final testing = c.testingSpeed;
+    final hasResult = c.speedPhase == SpeedPhase.done;
+    final ready = c.tunnel == TunnelState.ok;
+    return GlassCard(
+      hud: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              NeonIconBox(Icons.speed, color: ready ? kGreen : kMuted),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('تست سرعت', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                    Text(_speedPhaseText(), style: const TextStyle(color: kMuted, fontSize: 11)),
+                  ],
+                ),
+              ),
+              if (hasResult) ...[
+                StatusBadge(c.speedGrade, color: _gradeColor()),
+                const SizedBox(width: 8),
+              ],
+              NeonButton(
+                label: testing ? 'لغو' : (hasResult ? 'دوباره' : 'شروع'),
+                icon: testing ? Icons.close : Icons.play_arrow,
+                color: testing ? kRed : kGreen,
+                onTap: ready ? (testing ? c.cancelSpeedTest : c.speedTest) : null,
+              ),
+            ],
+          ),
+          if (testing) ...[
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(
+                value: c.speedProgress > 0 ? c.speedProgress : null,
+                minHeight: 5,
+                backgroundColor: kBorder,
+                color: kGreen,
+              ),
+            ),
+          ],
+          if (c.speedSamples.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 64,
+              child: CustomPaint(
+                size: Size.infinite,
+                painter: _SpeedGraph(samples: c.speedSamples, live: c.speedLiveMbps),
+              ),
+            ),
+          ],
+          if (hasResult) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                _chipResult('پینگ', c.speedTtfbMs >= 0 ? '${c.speedTtfbMs.round()} ms' : '--', kAmber),
+                _chipResult('دانلود', '${_mbpsText(c.speedDownMbps)} Mbps', kGreen),
+                if (c.speedUpMbps > 0) _chipResult('آپلود', '${_mbpsText(c.speedUpMbps)} Mbps', kBlue),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              c.speedResult,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: kText, fontFamily: kMono, fontSize: 13, fontWeight: FontWeight.w700),
+            ),
+          ],
+          if (c.speedError.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(c.speedError, textAlign: TextAlign.center, style: const TextStyle(color: kRed, fontSize: 11)),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _chipResult(String label, String value, Color col) => Expanded(
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: col.withValues(alpha: .08),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: col.withValues(alpha: .35)),
+          ),
+          child: Column(
+            children: [
+              Text(value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: col, fontFamily: kMono, fontSize: 13, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 2),
+              Text(label, style: const TextStyle(color: kMuted, fontSize: 10.5)),
+            ],
+          ),
+        ),
+      );
 
   Widget _totalCell(IconData i, String label, int total, int rate, Color col) => Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -464,6 +571,65 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 }
 
 // ───────────── Painters ─────────────
+/// نمودار زندهٔ تست سرعت (نمونه‌های لحظه‌ای Mbps)
+class _SpeedGraph extends CustomPainter {
+  final List<double> samples;
+  final double live;
+  _SpeedGraph({required this.samples, required this.live});
+
+  @override
+  void paint(Canvas canvas, Size s) {
+    if (samples.isEmpty) return;
+    final grid = Paint()
+      ..color = kBorder
+      ..strokeWidth = 1;
+    for (var i = 1; i < 3; i++) {
+      final y = s.height * i / 3;
+      canvas.drawLine(Offset(0, y), Offset(s.width, y), grid);
+    }
+    final maxV = max(1.0, samples.reduce(max));
+    final n = max(1, samples.length - 1);
+    final path = Path();
+    for (var i = 0; i < samples.length; i++) {
+      final x = s.width * i / n;
+      final y = s.height - (samples[i] / maxV) * s.height * .88;
+      i == 0 ? path.moveTo(x, y) : path.lineTo(x, y);
+    }
+    canvas.drawPath(
+        path,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2
+          ..color = kGreen
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2));
+    final fill = Path.from(path)
+      ..lineTo(s.width, s.height)
+      ..lineTo(0, s.height)
+      ..close();
+    canvas.drawPath(
+        fill,
+        Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [kGreen.withValues(alpha: .3), kGreen.withValues(alpha: 0)],
+          ).createShader(Offset.zero & s));
+    if (live > 0) {
+      final tp = TextPainter(
+        text: TextSpan(
+          text: '${live >= 100 ? live.toStringAsFixed(0) : live.toStringAsFixed(1)} Mbps',
+          style: const TextStyle(color: kText, fontSize: 10, fontFamily: kMono),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(s.width - tp.width - 2, 0));
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SpeedGraph o) => true;
+}
+
 class _SparkPainter extends CustomPainter {
   final List<int> down, up;
   _SparkPainter({required this.down, required this.up});

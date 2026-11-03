@@ -12,6 +12,8 @@
     final int port;
     final String flag;        // ایموجی پرچم (اگر از نام قابل‌تشخیص باشد)
     int pingMs;               // -2 = تست‌نشده، -1 = timeout
+    int jitterMs;             // نوسان پینگ (میانگین اختلاف از میانه) — حاصل تست چندنمونه‌ای
+    int lossPct;              // درصد نمونه‌های ناموفق در تست چندنمونه‌ای (۰..۱۰۰)
     bool favorite;
 
     ServerNode({
@@ -24,6 +26,8 @@
       required this.port,
       required this.flag,
       this.pingMs = -2,
+      this.jitterMs = 0,
+      this.lossPct = 0,
       this.favorite = false,
     });
 
@@ -44,7 +48,8 @@
       );
     }
 
-    Map<String, dynamic> toJson() => {'t': subTag, 'u': rawUri, 'f': favorite, 'p': pingMs};
+    Map<String, dynamic> toJson() =>
+        {'t': subTag, 'u': rawUri, 'f': favorite, 'p': pingMs, 'j': jitterMs, 'l': lossPct};
 
     static ServerNode? fromJson(Map m) {
       final u = (m['u'] ?? '').toString();
@@ -53,6 +58,10 @@
       n.favorite = m['f'] == true;
       final p = m['p'];
       if (p is int && p >= 0) n.pingMs = p;
+      final j = m['j'];
+      if (j is int && j >= 0) n.jitterMs = j;
+      final l = m['l'];
+      if (l is int && l >= 0 && l <= 100) n.lossPct = l;
       return n;
     }
   }
@@ -278,13 +287,31 @@
     bool saveLogs = true;
     int delayMode = 0; // 0 = real (core) | 1 = tcp
     bool autoConnect = false;
+    // ── WARP ──
+    String warpMode = 'chain'; // chain = روی سرور فعال | only = فقط WARP بدون سرور
+    int warpMtu = 1280;        // MTU تونل WireGuard (۱۲۸۰ امن‌ترین، ۱۳۸۰/۱۴۲۰ سریع‌تر روی بعضی ISPها)
+    bool warpAutoFix = true;   // وقتی تونل تأیید نشد، endpoint بعدی به‌طور خودکار امتحان شود
 
-    Map<String, dynamic> toJson() => {'notif': notifications, 'logs': saveLogs, 'delay': delayMode, 'auto': autoConnect};
+    Map<String, dynamic> toJson() => {
+          'notif': notifications,
+          'logs': saveLogs,
+          'delay': delayMode,
+          'auto': autoConnect,
+          'wmode': warpMode,
+          'wmtu': warpMtu,
+          'wfix': warpAutoFix,
+        };
+
     void loadJson(Map m) {
       notifications = m['notif'] is bool ? m['notif'] : notifications;
       saveLogs = m['logs'] is bool ? m['logs'] : saveLogs;
       delayMode = m['delay'] is int ? m['delay'] : delayMode;
       autoConnect = m['auto'] is bool ? m['auto'] : autoConnect;
+      final wm = (m['wmode'] ?? '').toString();
+      if (wm == 'chain' || wm == 'only') warpMode = wm;
+      final wmtu = m['wmtu'];
+      if (wmtu is int && const [1280, 1380, 1420].contains(wmtu)) warpMtu = wmtu;
+      if (m['wfix'] is bool) warpAutoFix = m['wfix'] as bool;
     }
   }
 

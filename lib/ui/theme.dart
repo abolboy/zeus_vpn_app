@@ -1,4 +1,4 @@
-// lib/ui/theme.dart — پالت Cyberpunk Neon، پس‌زمینهٔ متحرک و ویجت‌های مشترک
+// lib/ui/theme.dart — پالت Hacker Matrix، پس‌زمینهٔ متحرک و ویجت‌های مشترک
 import 'dart:math';
 import 'dart:ui' show FontFeature, ImageFilter;
 
@@ -6,23 +6,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter/foundation.dart' show ValueListenable;
 
-// ───────────────────────── پالت ─────────────────────────
-const Color kCyan = Color(0xFF00F0FF);
-const Color kMagenta = Color(0xFFFF2E9A);
-const Color kPurple = Color(0xFF8A4DFF);
-const Color kGreen = kCyan; // رنگ اصلی/وضعیت سالم (نام قدیمی برای سازگاری صفحات)
-const Color kBlue = Color(0xFF6C8CFF);
-const Color kAmber = Color(0xFFFCEE0A);
-const Color kRed = Color(0xFFFF3355);
-const Color kSurface = Color(0xFF06050F);
-const Color kSurface2 = Color(0xFF0E0A22);
-const Color kBorder = Color(0x3300F0FF);
-const Color kText = Color(0xFFEAF6FF);
-const Color kMuted = Color(0xFF8089B4);
-const Color kGreenDim = Color(0x2200F0FF);
+// ───────────── پالت Hacker Matrix (سبز روی مشکی) ─────────────
+// ساختار و چیدمان دست‌نخورده ماند؛ فقط رنگ‌ها به سبک ترمینال هکری تغییر کردند.
+// نام‌های قدیمی (kCyan/kMagenta/…) حفظ شده‌اند تا بقیهٔ صفحات بدون تغییر کار کنند.
+const Color kCyan = Color(0xFF00FF66);      // رنگ اصلی — سبز ماتریکس
+const Color kMagenta = Color(0xFFFF2E2E);   // کانال دوم گلیچ / وضعیت قطع — قرمز هکری
+const Color kPurple = Color(0xFF00A86B);    // هالهٔ دوم — سبز یشمی
+const Color kGreen = kCyan;                 // وضعیت سالم (نام قدیمی برای سازگاری صفحات)
+const Color kBlue = Color(0xFF00E5B0);      // نعنایی — رنگ آپلود
+const Color kAmber = Color(0xFFFFC400);     // هشدار ترمینال
+const Color kRed = Color(0xFFFF3131);       // خطا
+const Color kSurface = Color(0xFF030B07);   // مشکیِ ته‌رنگ سبز
+const Color kSurface2 = Color(0xFF0A1A10);  // سطح دوم پنل‌ها
+const Color kBorder = Color(0x3300FF66);    // حاشیهٔ سبز کم‌رنگ
+const Color kText = Color(0xFFD9FFE9);      // متن اصلی — سفیدِ ته‌رنگ سبز
+const Color kMuted = Color(0xFF5F8F73);     // متن کم‌اهمیت
+const Color kGreenDim = Color(0x2200FF66);
 
 const LinearGradient kNeonGradient = LinearGradient(
-  colors: [kCyan, kMagenta],
+  colors: [Color(0xFF00FF66), Color(0xFF00B34A)],
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
 );
@@ -35,8 +37,8 @@ List<BoxShadow> neonGlow(Color c, {double blur = 16, double alpha = .45}) => [
 Color pingColor(int ms) {
   if (ms == -2) return kMuted;
   if (ms < 0) return kRed;
-  if (ms < 200) return kGreen;
-  if (ms < 500) return kAmber;
+  if (ms < 150) return kGreen;
+  if (ms < 400) return kAmber;
   return kRed;
 }
 
@@ -125,14 +127,14 @@ class _BgPainter extends CustomPainter {
     final t = clock.value;
     final rect = Offset.zero & s;
 
-    // پایه
+    // پایه — مشکی ته‌رنگ سبز ماتریکس
     canvas.drawRect(
       rect,
       Paint()
         ..shader = const LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [kSurface, Color(0xFF0C0722), kSurface],
+          colors: [kSurface, Color(0xFF06180E), kSurface],
         ).createShader(rect),
     );
 
@@ -165,17 +167,17 @@ class _BgPainter extends CustomPainter {
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
     );
 
-    // بارش دادهٔ دیجیتال
-    const cell = 14.0;
-    final cols = (s.width / 18).floor();
+    // بارش دادهٔ دیجیتال — متراکم‌تر و سریع‌تر (حس باران ماتریکس)
+    const cell = 12.0;
+    final cols = (s.width / 14).floor();
     final bar = Paint();
     for (var c = 0; c < cols; c++) {
-      if (_h(c, 1) < .35) continue;
-      final speed = .35 + _h(c, 2) * .9;
-      final len = 6 + (_h(c, 3) * 12).floor();
+      if (_h(c, 1) < .14) continue;
+      final speed = .45 + _h(c, 2) * 1.0;
+      final len = 8 + (_h(c, 3) * 16).floor();
       final span = s.height / cell + len + 4;
       final head = (t * speed * 5 + _h(c, 4) * span) % span - len;
-      final x = c * 18.0 + 4;
+      final x = c * 14.0 + 3;
       for (var j = 0; j < len; j++) {
         final row = head - j;
         final y = row * cell;
@@ -232,14 +234,14 @@ class _BgPainter extends CustomPainter {
 }
 
 // ───────────── وضعیت سراسری افکت‌ها (پوستهٔ اپ آن‌ها را بر اساس اتصال تنظیم می‌کند) ─────────────
-/// رنگ لهجهٔ محیط: مجنتا=قطع، زرد=در حال اتصال، سایان=امن، قرمز=خطا
+/// رنگ لهجهٔ محیط: قرمز=قطع، زرد=در حال اتصال، سبز ماتریکس=امن، قرمز=خطا
 final ValueNotifier<Color> zeusAccent = ValueNotifier<Color>(kMagenta);
 
 /// وقتی تونل سالم است بارش سریع‌تر می‌شود
 final ValueNotifier<bool> zeusActive = ValueNotifier<bool>(false);
 
-/// فونت تک‌فاصله برای داده‌ها و برچسب‌های سیستمی (روی اندروید: Droid Sans Mono)
-const String kMono = 'monospace';
+/// فونت تک‌فاصلهٔ داخل اپ (JetBrains Mono در pubspec ثبت شده)
+const String kMono = 'JetBrainsMono';
 
 bool isAscii(String s) => s.isNotEmpty && s.codeUnits.every((u) => u < 128);
 

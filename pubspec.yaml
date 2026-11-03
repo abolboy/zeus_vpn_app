@@ -1,7 +1,7 @@
 name: zeus_vpn
-description: ZEUS VPN with Cyberpunk HUD and PattNG
+description: ZEUS VPN — Hacker Matrix HUD with PattNG
 publish_to: 'none'
-version: 1.0.0+1
+version: 2.2.0+1
 
 environment:
   sdk: '>=3.6.0 <4.0.0'
@@ -24,3 +24,12 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  fonts:
+    - family: JetBrainsMono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono-Regular.ttf
+        - asset: assets/fonts/JetBrainsMono-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/JetBrainsMono-ExtraBold.ttf
+          weight: 800

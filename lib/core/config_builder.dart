@@ -13,7 +13,8 @@ class ConfigBuilder {
   final Patt patt;
   final WarpConfig? warp;
   final bool warpOn;
-  ConfigBuilder({required this.patt, this.warp, this.warpOn = false});
+  final int warpMtu; // MTU تونل WireGuard برای outboundهای WARP
+  ConfigBuilder({required this.patt, this.warp, this.warpOn = false, this.warpMtu = 1280});
 
   bool get _warpReady => warpOn && (warp?.isValid ?? false);
 
@@ -49,7 +50,7 @@ class ConfigBuilder {
     } else if (_warpReady) {
       sockopt['dialerProxy'] = 'warp';
     }
-    if (_warpReady) result.add(warp!.toXrayOutbound(tag: 'warp'));
+    if (_warpReady) result.add(warp!.toXrayOutbound(tag: 'warp', mtu: warpMtu));
     if (sockopt.isNotEmpty) ss['sockopt'] = sockopt;
     main['streamSettings'] = ss;
 
@@ -64,7 +65,8 @@ class ConfigBuilder {
   Map<String, dynamic> buildWarpOnly() {
     final w = warp;
     if (w == null || !w.isValid) throw Exception('WARP ثبت نشده است');
-    return _wrap(<String, dynamic>{}, [w.toXrayOutbound(tag: 'proxy'), _dnsOut(), _directOut(), _blockOut()]);
+    return _wrap(<String, dynamic>{},
+        [w.toXrayOutbound(tag: 'proxy', mtu: warpMtu), _dnsOut(), _directOut(), _blockOut()]);
   }
 
   /// کانفیگ سبک برای تست پینگ (بدون WARP و بدون stats)

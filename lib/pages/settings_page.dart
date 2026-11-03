@@ -126,6 +126,39 @@ class _SettingsPageState extends State<SettingsPage> {
                             if (c.connected) setState(() => _dirty = true);
                           },
                         ),
+                        const Divider(height: 1),
+                        _dropdown<String>(
+                          icon: Icons.alt_route,
+                          title: 'حالت WARP',
+                          value: s.warpMode == 'only' ? 'only' : 'chain',
+                          items: const ['chain', 'only'],
+                          label: (v) => v == 'only' ? 'فقط WARP — بدون سرور' : 'روی سرور فعال (زنجیره)',
+                          onChanged: (v) {
+                            c.setWarpMode(v);
+                            if (c.connected) setState(() => _dirty = true);
+                          },
+                        ),
+                        const Divider(height: 1),
+                        _dropdown<int>(
+                          icon: Icons.settings_ethernet,
+                          title: 'MTU تونل WARP',
+                          value: s.warpMtu,
+                          items: const [1280, 1380, 1420],
+                          // اگر WARP وصل نمی‌شود، ۱۳۸۰ را امتحان کنید
+                          label: (v) => '$v',
+                          onChanged: (v) {
+                            c.setWarpMtu(v);
+                            if (c.connected) setState(() => _dirty = true);
+                          },
+                        ),
+                        const Divider(height: 1),
+                        _switch(
+                          icon: Icons.auto_fix_high,
+                          title: 'تعویض خودکار Endpoint',
+                          subtitle: 'اگر بعد از اتصال تونل تأیید نشد، endpoint بعدی خودکار امتحان می‌شود',
+                          value: s.warpAutoFix,
+                          onChanged: (v) => c.setWarpAutoFix(v),
+                        ),
                       ],
                     ],
                   ),

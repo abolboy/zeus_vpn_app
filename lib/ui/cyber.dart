@@ -146,6 +146,7 @@ class _BootOverlayState extends State<BootOverlay> with SingleTickerProviderStat
   static const _steps = [
     'mount encrypted tunnel',
     'load xray core',
+    'spawn matrix rain',
     'seal dns leaks',
     'randomize tls fingerprint',
     'arm kill-switch',

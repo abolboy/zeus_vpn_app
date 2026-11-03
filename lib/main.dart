@@ -12,7 +12,7 @@ import 'ui/cyber.dart';
 import 'ui/theme.dart';
 import 'ui/transitions.dart';
 
-const String kAppVersion = '2.1.0';
+const String kAppVersion = '2.2.0';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -231,6 +231,9 @@ class _ZeusShellState extends State<ZeusShell> {
             Text('نسخه $kAppVersion', style: TextStyle(color: kMuted)),
             SizedBox(height: 8),
             Text('هسته: Xray  •  PattNG  •  Cloudflare WARP'),
+            SizedBox(height: 8),
+            Text('> matrix_hacker_edition --secure --no-logs',
+                style: TextStyle(color: kGreen, fontFamily: kMono, fontSize: 11, letterSpacing: 1)),
             SizedBox(height: 8),
             Text('No logs. No limits. Your rules.',
                 style: TextStyle(color: kGreen, fontSize: 12, letterSpacing: 1)),

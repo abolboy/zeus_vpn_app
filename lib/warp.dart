@@ -8,18 +8,38 @@ import 'dart:math';
 
 // ───────────────────────── Endpoints ─────────────────────────
 
-/// endpointهای شناخته‌شدهٔ WARP (اولی پیش‌فرض است)
+/// endpointهای شناخته‌شدهٔ WARP؛ IPهای در بازهٔ 162.159.192-195 و 188.114.96-99
+/// روی پورت‌های جایگزین (۵۰۰/۸۹۴/۱۷۰۱/۴۵۰۰/۸۸۵۴/۸۸۸۶/۹۰۸) — چون روی بعضی ISPها
+/// (مخصوصاً ایران) پورت ۲۴۰۸ مسدود یا محدود شده است. اولی پیش‌فرض است.
 const List<String> kWarpEndpoints = <String>[
   'engage.cloudflareclient.com:2408',
   '162.159.192.1:2408',
+  '162.159.193.10:2408',
   '162.159.195.1:2408',
   '188.114.96.1:2408',
   '188.114.97.1:2408',
   '162.159.192.1:500',
   '162.159.192.1:1701',
   '162.159.192.1:4500',
+  '162.159.193.10:894',
+  '162.159.192.23:8854',
+  '162.159.192.123:8886',
+  '188.114.96.183:908',
   '[2606:4700:d0::a29f:c001]:2408',
 ];
+
+/// endpoint بعدی برای چرخش خودکار؛ اگر فعلی در لیست نبود، از اولین آی‌پی لیست شروع می‌شود
+/// (دامنهٔ engage را رد می‌کند چون روی ISPهای سانسورگر معمولاً DNS آن دستکاری می‌شود).
+String nextWarpEndpoint(String current) {
+  var i = kWarpEndpoints.indexOf(current);
+  if (i < 0) i = 0;
+  for (var step = 0; step < kWarpEndpoints.length; step++) {
+    i = (i + 1) % kWarpEndpoints.length;
+    final cand = kWarpEndpoints[i];
+    if (!cand.startsWith('engage.')) return cand; // دامنه را دور بزن
+  }
+  return kWarpEndpoints[1];
+}
 
 const String _kRegUrl = 'https://api.cloudflareclient.com/v0a2158/reg';
 
@@ -242,6 +262,8 @@ class WarpConfig {
         'reserved': reserved,
         'mtu': mtu,
         'workers': workers,
+        // ForceIPv4 برای سازگاری حداکثری: روی خیلی از شبکه‌ها IPv6 نداریم و ForceIPv4v6
+        // هندشیک WireGuard را روی DNS/رزولوشن گیر می‌انداخت.
         'domainStrategy': includeV6 && addressV6.isNotEmpty
             ? 'ForceIPv4v6'
             : 'ForceIPv4',

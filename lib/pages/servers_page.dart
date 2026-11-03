@@ -44,6 +44,8 @@ class _ServersPageState extends State<ServersPage> {
       ? null
       : c.nodes.cast<ServerNode?>().firstWhere((n) => n!.rawUri == _pendingUri, orElse: () => null);
 
+  ServerNode? get _best => c.bestNode();
+
   List<String> get _protocols {
     final set = <String>{'همه'};
     for (final n in c.nodes) {
@@ -197,6 +199,48 @@ class _ServersPageState extends State<ServersPage> {
                   ),
                 ),
                 const SizedBox(height: 12),
+                // نوار پیشرفت «پینگ همه» + شمارنده
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  child: c.pinging
+                      ? Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(3),
+                                child: LinearProgressIndicator(
+                                  value: c.pingTotal > 0 ? c.pingDone / c.pingTotal : null,
+                                  minHeight: 4,
+                                  backgroundColor: kBorder,
+                                  color: kGreen,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'در حال سنجش ${c.pingDone}/${c.pingTotal}…',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(color: kMuted, fontFamily: kMono, fontSize: 10),
+                              ),
+                            ],
+                          ),
+                        )
+                      : const SizedBox(width: double.infinity),
+                ),
+                // نشان بهترین سرور (با کوت‌ترین پینگ)
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  child: (!c.pinging && _best != null)
+                      ? Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                          child: _bestChip(_best!),
+                        )
+                      : const SizedBox(width: double.infinity),
+                ),
+                const SizedBox(height: 8),
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: PillTabs(
@@ -364,8 +408,25 @@ class _ServersPageState extends State<ServersPage> {
                         child: probing
                             ? const Text('سنجش…',
                                 style: TextStyle(color: kAmber, fontSize: 11, fontWeight: FontWeight.w600))
-                            : Text('Ping: ${n.pingText}',
-                                style: TextStyle(color: pc, fontSize: 11, fontWeight: FontWeight.w600)),
+                            : Text.rich(
+                                TextSpan(children: [
+                                  TextSpan(
+                                    text: 'Ping: ${n.pingText}',
+                                    style: TextStyle(color: pc, fontSize: 11, fontWeight: FontWeight.w600),
+                                  ),
+                                  // جیتر و درصد نمونه‌های ناموفق از تست چندنمونه‌ای
+                                  if (n.pingMs >= 0 && n.jitterMs > 0)
+                                    TextSpan(
+                                      text: ' ±${n.jitterMs}',
+                                      style: const TextStyle(color: kMuted, fontSize: 10, fontFamily: kMono),
+                                    ),
+                                  if (n.pingMs >= 0 && n.lossPct > 0)
+                                    TextSpan(
+                                      text: ' · ${n.lossPct}%',
+                                      style: const TextStyle(color: kAmber, fontSize: 10, fontFamily: kMono),
+                                    ),
+                                ]),
+                              ),
                       ),
                     ),
                     const Spacer(),
@@ -386,6 +447,30 @@ class _ServersPageState extends State<ServersPage> {
       ),
     );
   }
+
+  /// نشان «بهترین سرور» با کوتاه‌ترین پینگ — لمس = انتخاب
+  Widget _bestChip(ServerNode n) => GlassCard(
+        margin: EdgeInsets.zero,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        onTap: () => _select(n),
+        borderColor: kGreen.withValues(alpha: .5),
+        glow: true,
+        child: Row(
+          children: [
+            const Text('⌁', style: TextStyle(color: kGreen, fontSize: 15, fontFamily: kMono)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text('بهترین سرور: ${n.displayName}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
+            ),
+            Text('${n.pingMs} ms',
+                style: TextStyle(
+                    color: pingColor(n.pingMs), fontFamily: kMono, fontSize: 12, fontWeight: FontWeight.w700)),
+          ],
+        ),
+      );
 
   Widget _flag(ServerNode n, {double size = 40}) => Container(
         width: size,
