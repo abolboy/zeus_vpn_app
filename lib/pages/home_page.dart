@@ -1,6 +1,7 @@
 // lib/pages/home_page.dart — خانه: حالت قطع / در حال اتصال / متصل (با تأیید واقعی تونل)
 import 'dart:math';
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -19,15 +20,6 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
   final c = ZeusController.I;
-  late final AnimationController _spin =
-      AnimationController(vsync: this, duration: const Duration(seconds: 12))..repeat();
-
-  @override
-  void dispose() {
-    _spin.dispose();
-    super.dispose();
-  }
-
   void _snack(String m, {bool err = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -243,7 +235,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       key: const ValueKey('connected'),
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       children: [
-        SizedBox(height: 120, child: CustomPaint(size: Size.infinite, painter: _MapPainter(_spin, col))),
+        SizedBox(height: 120, child: CustomPaint(size: Size.infinite, painter: _MapPainter(zeusClock, col))),
         Align(
           alignment: Alignment.centerRight,
           child: Container(
@@ -550,19 +542,22 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               HapticFeedback.mediumImpact();
               _toggle();
             },
-      child: AnimatedBuilder(
-        animation: _spin,
-        builder: (_, __) => SizedBox(
-          width: 236,
-          height: 236,
-          child: CustomPaint(
-            painter: ReactorPainter(
-              t: _spin.value,
-              color: _stateColor,
-              spinning: spinning,
-              full: c.connected && c.tunnel == TunnelState.ok,
+      // RepaintBoundary: رسم رآکتور بقیهٔ صفحه را دوباره رسم نمی‌کند
+      child: RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: zeusClock,
+          builder: (_, __) => SizedBox(
+            width: 236,
+            height: 236,
+            child: CustomPaint(
+              painter: ReactorPainter(
+                t: (zeusClock.value % 12) / 12,
+                color: _stateColor,
+                spinning: spinning,
+                full: c.connected && c.tunnel == TunnelState.ok,
+              ),
+              child: Center(child: child),
             ),
-            child: Center(child: child),
           ),
         ),
       ),
@@ -688,7 +683,7 @@ class _SparkPainter extends CustomPainter {
 
 /// نقشهٔ نقطه‌ای تزئینی با یک مسیر درخشان (رنگ = وضعیت تونل)
 class _MapPainter extends CustomPainter {
-  final Animation<double> anim;
+  final ValueListenable<double> anim;
   final Color color;
   _MapPainter(this.anim, this.color) : super(repaint: anim);
 
@@ -721,11 +716,11 @@ class _MapPainter extends CustomPainter {
       canvas.drawCircle(p, 4, Paint()..color = color);
       canvas.drawCircle(
           p,
-          4 + 10 * anim.value,
+          4 + 10 * ((anim.value / 3) % 1.0),
           Paint()
             ..style = PaintingStyle.stroke
             ..strokeWidth = 1.5
-            ..color = color.withValues(alpha: 1 - anim.value));
+            ..color = color.withValues(alpha: 1 - ((anim.value / 3) % 1.0)));
     }
   }
 

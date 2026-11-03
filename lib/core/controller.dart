@@ -114,6 +114,8 @@ class ZeusController extends ChangeNotifier {
   int _syncGen = 0;
   int _connGen = 0; // برای لغو پروب‌های اتصال قبلی
   Timer? _connectTimeout;
+  bool _stopping = false; // بعد از «قطع» دستی، رویدادهای دیرهنگام هسته نادیده گرفته می‌شوند
+  Timer? _stopGrace;
   CancelToken? _speedToken;
   bool _warpAutoTried = false; // چرخش خودکار endpoint فقط یک‌بار در هر اتصال
 
@@ -242,6 +244,9 @@ class ZeusController extends ChangeNotifier {
   // ───────── status from core ─────────
   void _onStatus(V2RayStatus s) {
     final st = s.state.toUpperCase();
+    // بعد از «قطع» دستی، رویدادهای دیرهنگامِ CONNECTING/CONNECTED از هسته نباید صفحه را دوباره به
+    // «در حال اتصال» ببرند (علت رفتار «انگار دوباره وصل می‌شود، بعد خطا می‌دهد»)
+    if (_stopping && (st == 'CONNECTED' || st == 'CONNECTING' || st == 'CONNECT')) return;
     final prev = conn;
     if (st == 'CONNECTED') {
       conn = ConnState.connected;
@@ -391,6 +396,8 @@ class ZeusController extends ChangeNotifier {
     final warpOnly = warpReady && (selUri == null || settings.warpMode == 'only');
     if (selUri == null && !warpReady) return 'اول یک سرور انتخاب کنید';
     busy = true;
+    _stopping = false;
+    _stopGrace?.cancel();
     _warpAutoTried = false;
     notifyListeners();
     try {
@@ -437,6 +444,8 @@ class ZeusController extends ChangeNotifier {
 
   Future<void> disconnect() async {
     _connectTimeout?.cancel();
+    _stopping = true;
+    _stopGrace?.cancel();
     _speedToken?.cancel();
     _connGen++;
     busy = true;
@@ -447,6 +456,8 @@ class ZeusController extends ChangeNotifier {
     } catch (e) {
       log(LogKind.core, 'Stop error: $e', LogLevel.warn);
     }
+    // چند ثانیه رویدادهای اتصالِ دیرهنگام را نادیده بگیر، بعد دوباره به هسته اعتماد کن
+    _stopGrace = Timer(const Duration(seconds: 4), () => _stopping = false);
     conn = ConnState.disconnected;
     _resetTraffic();
     busy = false;

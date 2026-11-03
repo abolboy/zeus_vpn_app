@@ -33,15 +33,8 @@ class GlitchText extends StatefulWidget {
   State<GlitchText> createState() => _GlitchTextState();
 }
 
-class _GlitchTextState extends State<GlitchText> with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 4200))..repeat();
+class _GlitchTextState extends State<GlitchText> {
   static const _junk = '!<>-_/[]{}=+*^?#01';
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
 
   String _scramble(String s, double g, int seed) {
     final r = Random(seed);
@@ -53,41 +46,49 @@ class _GlitchTextState extends State<GlitchText> with SingleTickerProviderStateM
     return b.toString();
   }
 
+  Widget _layers(String shown, double amp, double g, bool ascii) {
+    final base = TextStyle(
+      fontFamily: ascii ? kMono : null,
+      fontSize: widget.size,
+      fontWeight: widget.weight,
+      fontStyle: widget.fontStyle,
+      // letterSpacing روی حروف فارسی اتصال حروف را می‌شکند
+      letterSpacing: ascii ? widget.letterSpacing : 0,
+    );
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Transform.translate(
+          offset: Offset(-amp, -g * 1.5),
+          child: Text(shown, style: base.copyWith(color: widget.colorA.withValues(alpha: .75))),
+        ),
+        Transform.translate(
+          offset: Offset(amp, g * 1.5),
+          child: Text(shown, style: base.copyWith(color: widget.colorB.withValues(alpha: .75))),
+        ),
+        Text(
+          shown,
+          style: base.copyWith(color: kText, shadows: [Shadow(color: widget.colorA.withValues(alpha: .6), blurRadius: 14)]),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ascii = isAscii(widget.text);
+    // حالت عادی یک ویجت ثابت است؛ فقط در لحظهٔ گلیچ دوباره ساخته می‌شود (نه هر فریم)
+    final idle = RepaintBoundary(child: _layers(widget.text, .9, 0, ascii));
     return AnimatedBuilder(
-      animation: _c,
-      builder: (_, __) {
-        final v = _c.value;
+      animation: Listenable.merge([zeusClock, zeusFx]),
+      child: idle,
+      builder: (_, idleChild) {
+        if (zeusFx.value == 0) return idleChild!;
+        final v = (zeusClock.value % 4.2) / 4.2;
         final g = max(_bump(v, .55, .035), max(_bump(v, .62, .02), _bump(v, .90, .03)));
-        final amp = .9 + g * 6;
+        if (g <= 0) return idleChild!;
         final shown = (ascii && g > .25) ? _scramble(widget.text, g, (v * 90).floor()) : widget.text;
-        final base = TextStyle(
-          fontFamily: ascii ? kMono : null,
-          fontSize: widget.size,
-          fontWeight: widget.weight,
-          fontStyle: widget.fontStyle,
-          // letterSpacing روی حروف فارسی اتصال حروف را می‌شکند
-          letterSpacing: ascii ? widget.letterSpacing : 0,
-        );
-        return Stack(
-          alignment: Alignment.center,
-          children: [
-            Transform.translate(
-              offset: Offset(-amp, -g * 1.5),
-              child: Text(shown, style: base.copyWith(color: widget.colorA.withValues(alpha: .75))),
-            ),
-            Transform.translate(
-              offset: Offset(amp, g * 1.5),
-              child: Text(shown, style: base.copyWith(color: widget.colorB.withValues(alpha: .75))),
-            ),
-            Text(
-              shown,
-              style: base.copyWith(color: kText, shadows: [Shadow(color: widget.colorA.withValues(alpha: .6), blurRadius: 14)]),
-            ),
-          ],
-        );
+        return RepaintBoundary(child: _layers(shown, .9 + g * 6, g, ascii));
       },
     );
   }
@@ -331,13 +332,9 @@ class ReactorPainter extends CustomPainter {
     for (var i = 0; i < 3; i++) {
       final a = t * tau * ks[i] + i * 2.1;
       final p = c + Offset(cos(a), sin(a)) * (r - 3);
-      canvas.drawCircle(
-        p,
-        3.4,
-        Paint()
-          ..color = color
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
-      );
+      // هالهٔ ساده (بدون MaskFilter.blur که هر فریم گران است)
+      canvas.drawCircle(p, 5.5, Paint()..color = color.withValues(alpha: .28));
+      canvas.drawCircle(p, 3.2, Paint()..color = color);
       canvas.drawCircle(p, 1.5, Paint()..color = Colors.white);
     }
 
@@ -346,10 +343,15 @@ class ReactorPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 5
       ..strokeCap = StrokeCap.round
-      ..color = color
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
+      ..color = color;
+    final glow = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 11
+      ..strokeCap = StrokeCap.round
+      ..color = color.withValues(alpha: .22);
     final start = spinning ? t * tau * 4 : -pi / 2;
     final sweep = spinning ? pi * .6 : (full ? tau : pi * 1.5);
+    canvas.drawArc(Rect.fromCircle(center: c, radius: r - 26), start, sweep, false, glow);
     canvas.drawArc(Rect.fromCircle(center: c, radius: r - 26), start, sweep, false, arc);
 
     // حلقهٔ خط‌چین داخلی

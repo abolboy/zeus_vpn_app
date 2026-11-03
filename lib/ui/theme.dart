@@ -4,6 +4,7 @@ import 'dart:ui' show FontFeature, ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart' show Ticker;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 
 // ───────────── پالت Hacker Matrix (سبز روی مشکی) ─────────────
@@ -53,28 +54,50 @@ class ZeusBackground extends StatefulWidget {
 }
 
 class _ZeusBackgroundState extends State<ZeusBackground> with SingleTickerProviderStateMixin {
-  final ValueNotifier<double> _clock = ValueNotifier<double>(0);
   Ticker? _ticker;
   Duration _last = Duration.zero;
   double _speed = 1;
+  double _acc = 0;
 
   @override
   void initState() {
     super.initState();
-    if (widget.enabled) _ticker = createTicker(_tick)..start();
+    if (widget.enabled) {
+      zeusFx.addListener(_applyFx);
+      _applyFx();
+    }
   }
 
-  /// زمان را با سرعتی که به وضعیت اتصال بستگی دارد جمع می‌کند (بدون پرش هنگام تغییر سرعت)
+  /// کیفیت ۰ = هیچ Ticker‌ای نیست (صفر مصرف)؛ ۱ و ۲ = یک Ticker با نرخ محدود
+  void _applyFx() {
+    if (zeusFx.value == 0) {
+      _ticker?.stop();
+    } else if (_ticker == null) {
+      _ticker = createTicker(_tick)..start();
+    } else if (!_ticker!.isActive) {
+      _last = Duration.zero;
+      _acc = 0;
+      _ticker!.start();
+    }
+  }
+
+  /// ساعت سراسری فقط ۲۰ یا ۳۰ بار در ثانیه به‌روز می‌شود (نه ۶۰)؛ همهٔ انیمیشن‌های تزئینی
+  /// (پس‌زمینه، رآکتور، گلیچ) از همین یک ساعت می‌خوانند و فقط وقتی تیک بخورد دوباره رسم می‌شوند.
   void _tick(Duration e) {
-    final dt = ((e - _last).inMicroseconds / 1e6).clamp(0.0, 0.1).toDouble();
+    final dt = ((e - _last).inMicroseconds / 1e6).clamp(0.0, 0.25).toDouble();
     _last = e;
     final target = zeusActive.value ? 1.9 : 1.0;
     _speed += (target - _speed) * min(1.0, dt * 2.0);
-    _clock.value += dt * _speed;
+    _acc += dt;
+    final interval = zeusFx.value >= 2 ? 1 / 30 : 1 / 20;
+    if (_acc < interval) return;
+    zeusClock.value += _acc * _speed;
+    _acc = 0;
   }
 
   @override
   void dispose() {
+    if (widget.enabled) zeusFx.removeListener(_applyFx);
     _ticker?.dispose();
     super.dispose();
   }
@@ -92,10 +115,18 @@ class _ZeusBackgroundState extends State<ZeusBackground> with SingleTickerProvid
             builder: (_, accent, __) => TweenAnimationBuilder<Color?>(
               tween: ColorTween(end: accent),
               duration: const Duration(milliseconds: 700),
-              builder: (_, col, __) => CustomPaint(
-                size: Size.infinite,
-                painter: _BgPainter(_clock, col ?? accent),
-              ),
+              builder: (_, col, __) {
+                final a = col ?? accent;
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    // لایهٔ ثابت (گرادیان + هاله): فقط با تغییر رنگ لهجه دوباره رسم می‌شود
+                    RepaintBoundary(child: CustomPaint(size: Size.infinite, painter: _BgStaticPainter(a))),
+                    // لایهٔ پویا (گرید + بارش): فقط با تیک ساعت
+                    RepaintBoundary(child: CustomPaint(size: Size.infinite, painter: _BgPainter(zeusClock, a))),
+                  ],
+                );
+              },
             ),
           ),
         ),
@@ -105,7 +136,37 @@ class _ZeusBackgroundState extends State<ZeusBackground> with SingleTickerProvid
   }
 }
 
-/// بارش دادهٔ دیجیتال + گرید پرسپکتیو + هاله + اسکن + گلیچ، همه به رنگ وضعیت اتصال
+class _BgStaticPainter extends CustomPainter {
+  final Color accent;
+  const _BgStaticPainter(this.accent);
+
+  void _glow(Canvas c, Offset o, double r, Color col) => c.drawCircle(
+        o,
+        r,
+        Paint()..shader = RadialGradient(colors: [col, Colors.transparent]).createShader(Rect.fromCircle(center: o, radius: r)),
+      );
+
+  @override
+  void paint(Canvas canvas, Size s) {
+    final rect = Offset.zero & s;
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [kSurface, Color(0xFF06180E), kSurface],
+        ).createShader(rect),
+    );
+    _glow(canvas, Offset(s.width * .12, s.height * .10), s.width * .7, accent.withValues(alpha: .20));
+    _glow(canvas, Offset(s.width * .92, s.height * .90), s.width * .65, kPurple.withValues(alpha: .18));
+  }
+
+  @override
+  bool shouldRepaint(_BgStaticPainter o) => o.accent != accent;
+}
+
+/// لایهٔ پویا: بدون shader و بدون blur (فقط خط و مستطیل) تا روی گوشی‌های ضعیف هم سبک باشد
 class _BgPainter extends CustomPainter {
   final ValueListenable<double> clock;
   final Color accent;
@@ -116,34 +177,11 @@ class _BgPainter extends CustomPainter {
     return (v - v.floorToDouble()).abs();
   }
 
-  void _glow(Canvas c, Offset o, double r, Color col) => c.drawCircle(
-        o,
-        r,
-        Paint()..shader = RadialGradient(colors: [col, Colors.transparent]).createShader(Rect.fromCircle(center: o, radius: r)),
-      );
-
   @override
   void paint(Canvas canvas, Size s) {
     final t = clock.value;
-    final rect = Offset.zero & s;
 
-    // پایه — مشکی ته‌رنگ سبز ماتریکس
-    canvas.drawRect(
-      rect,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [kSurface, Color(0xFF06180E), kSurface],
-        ).createShader(rect),
-    );
-
-    // هاله‌ها
-    final wob = sin(t * .45);
-    _glow(canvas, Offset(s.width * (.12 + .05 * wob), s.height * .10), s.width * .7, accent.withValues(alpha: .20));
-    _glow(canvas, Offset(s.width * (.92 - .05 * wob), s.height * .90), s.width * .65, kPurple.withValues(alpha: .18));
-
-    // گرید پرسپکتیو (سبک Synthwave)
+    // گرید پرسپکتیو
     final hz = s.height * .62;
     final cx = s.width / 2;
     final gp = Paint()..strokeWidth = 1;
@@ -158,34 +196,28 @@ class _BgPainter extends CustomPainter {
       gp.color = accent.withValues(alpha: .04 + .14 * p);
       canvas.drawLine(Offset(0, y), Offset(s.width, y), gp);
     }
-    canvas.drawLine(
-      Offset(0, hz),
-      Offset(s.width, hz),
-      Paint()
-        ..strokeWidth = 1.5
-        ..color = accent.withValues(alpha: .35)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
-    );
+    gp
+      ..strokeWidth = 2
+      ..color = accent.withValues(alpha: .30);
+    canvas.drawLine(Offset(0, hz), Offset(s.width, hz), gp);
 
-    // بارش دادهٔ دیجیتال — متراکم‌تر و سریع‌تر (حس باران ماتریکس)
+    // بارش دادهٔ دیجیتال
     const cell = 12.0;
-    final cols = (s.width / 14).floor();
+    final cols = (s.width / 16).floor();
     final bar = Paint();
     for (var c = 0; c < cols; c++) {
-      if (_h(c, 1) < .14) continue;
+      if (_h(c, 1) < .22) continue;
       final speed = .45 + _h(c, 2) * 1.0;
-      final len = 8 + (_h(c, 3) * 16).floor();
+      final len = 7 + (_h(c, 3) * 12).floor();
       final span = s.height / cell + len + 4;
       final head = (t * speed * 5 + _h(c, 4) * span) % span - len;
-      final x = c * 14.0 + 3;
+      final x = c * 16.0 + 3;
       for (var j = 0; j < len; j++) {
         final row = head - j;
         final y = row * cell;
         if (y < -cell || y > s.height) continue;
         final w = 3 + _h(c, row.floor()) * 7;
         if (j == 0) {
-          bar.color = accent.withValues(alpha: .22);
-          canvas.drawRect(Rect.fromLTWH(x - 2, y - 2, w + 4, 7), bar);
           bar.color = Colors.white.withValues(alpha: .55);
         } else {
           bar.color = accent.withValues(alpha: .30 * (1 - j / len));
@@ -194,47 +226,54 @@ class _BgPainter extends CustomPainter {
       }
     }
 
-    // پرتو اسکن
+    // پرتو اسکن (چند نوار هم‌پوشان به‌جای shader)
     final sy = ((t * .18) % 1.0) * (s.height + 160) - 80;
-    final beam = Rect.fromLTWH(0, sy - 50, s.width, 100);
-    canvas.drawRect(
-      beam,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Colors.transparent, accent.withValues(alpha: .07), Colors.transparent],
-        ).createShader(beam),
-    );
+    final beam = Paint();
+    for (var k = -2; k <= 2; k++) {
+      beam.color = accent.withValues(alpha: .012 + .03 * (3 - k.abs()) / 3);
+      canvas.drawRect(Rect.fromLTWH(0, sy + k * 14, s.width, 14), beam);
+    }
 
-    // گلیچ لحظه‌ای: نوارهای جابه‌جا شده
+    // گلیچ لحظه‌ای
     final cyc = t / 6.5;
     final ph = cyc - cyc.floorToDouble();
-    if (ph > .985) {
+    if (ph > .97) {
       final n = cyc.floor();
       final gy = _h(n, 9) * s.height;
       final off = (_h(n, 8) - .5) * 24;
       canvas.drawRect(Rect.fromLTWH(off, gy, s.width, 6 + _h(n, 7) * 14), Paint()..color = kMagenta.withValues(alpha: .10));
       canvas.drawRect(Rect.fromLTWH(-off, gy + 4, s.width, 3), Paint()..color = kCyan.withValues(alpha: .10));
     }
-
-    // وینیت
-    canvas.drawRect(
-      rect,
-      Paint()
-        ..shader = RadialGradient(
-          radius: 1.1,
-          colors: [Colors.transparent, kSurface.withValues(alpha: .7)],
-        ).createShader(rect),
-    );
   }
 
   @override
   bool shouldRepaint(_BgPainter o) => o.accent != accent;
 }
 
-// ───────────── وضعیت سراسری افکت‌ها (پوستهٔ اپ آن‌ها را بر اساس اتصال تنظیم می‌کند) ─────────────
-/// رنگ لهجهٔ محیط: قرمز=قطع، زرد=در حال اتصال، سبز ماتریکس=امن، قرمز=خطا
+// ───────────── وضعیت سراسری افکت‌ها ─────────────
+/// ساعت سراسری انیمیشن‌های تزئینی (ثانیه)؛ فقط ZeusBackground آن را به‌روز می‌کند
+final ValueNotifier<double> zeusClock = ValueNotifier<double>(0);
+
+/// کیفیت افکت‌ها: ۰ خاموش (بدون هیچ انیمیشن)، ۱ متعادل (۲۰fps)، ۲ کامل (۳۰fps)
+final ValueNotifier<int> zeusFx = ValueNotifier<int>(1);
+
+Future<void> loadFxLevel() async {
+  try {
+    final p = await SharedPreferences.getInstance();
+    final v = p.getInt('fx_level') ?? 1;
+    zeusFx.value = v < 0 ? 0 : (v > 2 ? 2 : v);
+  } catch (_) {}
+}
+
+Future<void> setFxLevel(int v) async {
+  zeusFx.value = v;
+  try {
+    final p = await SharedPreferences.getInstance();
+    await p.setInt('fx_level', v);
+  } catch (_) {}
+}
+
+/// رنگ لهجهٔ محیط: مجنتا=قطع، زرد=در حال اتصال، سایان=امن، قرمز=خطا
 final ValueNotifier<Color> zeusAccent = ValueNotifier<Color>(kMagenta);
 
 /// وقتی تونل سالم است بارش سریع‌تر می‌شود
@@ -386,10 +425,10 @@ class GlassCard extends StatelessWidget {
         padding: margin,
         child: CyberBox(
           color: borderColor ?? kBorder,
-          fill: kSurface2.withValues(alpha: .62),
+          fill: kSurface2.withValues(alpha: .86),
           cut: min(16.0, max(6.0, radius * .8)),
           glow: glow,
-          blur: true,
+          blur: false, // بلور روی پس‌زمینهٔ متحرک هر فریم دوباره محاسبه می‌شد (سنگین‌ترین بخش)
           brackets: hud || glow,
           onTap: onTap,
           padding: padding,

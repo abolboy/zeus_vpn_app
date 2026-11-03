@@ -12,10 +12,11 @@ import 'ui/cyber.dart';
 import 'ui/theme.dart';
 import 'ui/transitions.dart';
 
-const String kAppVersion = '2.2.0';
+const String kAppVersion = '2.3.0';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await loadFxLevel();
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
@@ -187,12 +188,10 @@ class _ZeusShellState extends State<ZeusShell> {
   Future<void> _push(Widget page) async {
     if (_navigating || !mounted) return;
     _navigating = true;
-    try {
-      // ✅ D1: ZeusRoute → صفحهٔ قبلی اول محو می‌شود، بعد صفحهٔ جدید وارد می‌شود (بدون هم‌پوشانی)
-      await Navigator.of(context).pushZeus(page);
-    } finally {
-      _navigating = false;
-    }
+    // قفل فقط برای ضربهٔ دوبل است. قبلاً تا «بسته‌شدن» صفحهٔ جدید باز می‌ماند و ناوبری تو‌در‌تو
+    // (سرورها←اشتراک، تنظیمات←لاگ‌ها) را بی‌صدا نادیده می‌گرفت.
+    Future.delayed(const Duration(milliseconds: 500), () => _navigating = false);
+    await Navigator.of(context).pushZeus(page);
   }
 
   /// فقط وقتی route‌ای غیر از خانه روی استک باشد pop می‌کند (محافظ در برابر pop دوبل/ناخواسته)

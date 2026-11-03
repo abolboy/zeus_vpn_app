@@ -361,6 +361,18 @@ class _SettingsPageState extends State<SettingsPage> {
                         onChanged: (v) => _patt(() => p.logLevel = v),
                       ),
                       const Divider(height: 1),
+                      _dropdown<int>(
+                        icon: Icons.speed,
+                        title: 'کیفیت افکت‌ها',
+                        value: zeusFx.value,
+                        items: const [0, 1, 2],
+                        label: (v) => const {0: 'خاموش (سبک‌ترین)', 1: 'متعادل', 2: 'کامل'}[v]!,
+                        onChanged: (v) {
+                          setFxLevel(v);
+                          setState(() {});
+                        },
+                      ),
+                      const Divider(height: 1),
                       ListTile(
                         leading: const Icon(Icons.article_outlined, color: kGreen),
                         title: const Text('مشاهدهٔ لاگ‌ها'),
