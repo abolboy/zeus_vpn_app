@@ -1,0 +1,84 @@
+name: Build ZEUS VPN
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Create Android folder
+        run: flutter create --platforms=android --project-name zeus_vpn --org ir.zeus .
+
+      - name: Patch Android files
+        run: python3 tools/patch_android.py
+
+      - name: Pub get
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Test
+        run: flutter test
+
+      - name: Setup signing
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_B64:-}" ]; then
+            echo "::warning::No KEYSTORE_B64 secret -> debug signing: every build gets a DIFFERENT signature, so Android will refuse to update over the previous one. See tools/make_keystore.sh"
+            exit 0
+          fi
+          echo "$KEYSTORE_B64" | base64 -d > android/app/zeus.jks
+          printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=zeus.jks\n' "$KEYSTORE_PASSWORD" "$KEY_PASSWORD" "$KEY_ALIAS" > android/key.properties
+          python3 tools/patch_signing.py
+
+      - name: Build APK
+        run: flutter build apk --release --split-per-abi --build-number=${{ github.run_number }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: zeus-vpn-apks
+          path: build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: error
+
+      - name: Publish to Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="build-${{ github.run_number }}-${{ github.run_attempt }}"
+          gh release create "$TAG" \
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk \
+            build/app/outputs/flutter-apk/app-x86_64-release.apk \
+            --title "ZEUS VPN Build ${{ github.run_number }}" \
+            --generate-notes

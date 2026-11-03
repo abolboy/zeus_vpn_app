@@ -1,0 +1,111 @@
+import 'dart:convert';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:zeus_vpn/core/models.dart';
+import 'package:zeus_vpn/warp.dart';
+
+List<int> _hex(String s) => [for (var i = 0; i < s.length; i += 2) int.parse(s.substring(i, i + 2), radix: 16)];
+String _toHex(List<int> b) => b.map((e) => e.toRadixString(16).padLeft(2, '0')).join();
+
+void main() {
+  group('subscription parsing', () {
+    const plain = 'vless://u@h.example:443?security=tls#A\ntrojan://p@h2.example:443#B\nhttp://ignored.example';
+
+    test('plain text', () => expect(parseSubscriptionBody(plain).length, 2));
+    test('base64', () => expect(parseSubscriptionBody(base64Encode(utf8.encode(plain))).length, 2));
+    test('empty', () => expect(parseSubscriptionBody('  '), isEmpty));
+  });
+
+  group('link parsing', () {
+    test('vless reality', () {
+      final p = ParsedLink.parse('vless://u@h.example:443?security=reality#Node%20A');
+      expect(p.protocol, 'VLESS');
+      expect(p.security, 'REALITY');
+      expect(p.host, 'h.example');
+      expect(p.port, 443);
+      expect(p.name, 'Node A');
+    });
+
+    test('vmess', () {
+      final j = base64Encode(utf8.encode(jsonEncode({'ps': 'X', 'add': '1.2.3.4', 'port': '443', 'tls': 'tls'})));
+      final p = ParsedLink.parse('vmess://$j');
+      expect(p.protocol, 'VMess');
+      expect(p.security, 'TLS');
+      expect(p.host, '1.2.3.4');
+      expect(p.port, 443);
+      expect(p.name, 'X');
+    });
+  });
+
+  group('flagFromName', () {
+    test('emoji in name', () => expect(flagFromName('🇩🇪 Berlin'), '🇩🇪'));
+    test('long country word', () => expect(flagFromName('Germany Frankfurt 01'), '🇩🇪'));
+    test('uppercase code', () => expect(flagFromName('US-East 01'), '🇺🇸'));
+    test('english words are not countries', () => expect(flagFromName('Fast server in it at home'), '🌐'));
+  });
+
+  group('settings models', () {
+    test('Patt.resetDefaults really resets', () {
+      final p = Patt()
+        ..mux = true
+        ..frag = '1-3'
+        ..sni = 'example.com';
+      p.resetDefaults();
+      expect(p.mux, false);
+      expect(p.frag, 'none');
+      expect(p.sni, '');
+    });
+
+    test('SubRecord accepts legacy string format', () {
+      expect(SubRecord.fromJson('https://a.example')?.url, 'https://a.example');
+    });
+  });
+
+  group('WARP', () {
+    test('X25519 matches RFC 7748 section 5.2 vector', () {
+      final out = x25519(
+        _hex('a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4'),
+        _hex('e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c'),
+      );
+      expect(_toHex(out), 'c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552');
+    });
+
+    test('public key derivation matches RFC 7748 section 6.1 (Alice)', () {
+      final base = List<int>.filled(32, 0)..[0] = 9;
+      final pub = x25519(_hex('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a'), base);
+      expect(_toHex(pub), '8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a');
+    });
+
+    test('generated key pair is consistent', () {
+      final kp = generateWarpKeyPair();
+      final priv = base64Decode(kp.privateKey);
+      final base = List<int>.filled(32, 0)..[0] = 9;
+      expect(priv.length, 32);
+      expect(base64Encode(x25519(priv, base)), kp.publicKey);
+    });
+
+    test('config round-trip and xray outbound', () {
+      final cfg = WarpConfig(
+        privateKey: 'k',
+        publicKey: 'p',
+        peerPublicKey: 'peer',
+        addressV4: '172.16.0.2/32',
+        addressV6: '',
+        endpoint: 'engage.cloudflareclient.com:2408',
+        reserved: [1, 2, 3],
+        deviceId: 'd',
+        token: 't',
+        registeredAt: 'now',
+      );
+      final back = WarpConfig.tryDecode(cfg.encode());
+      expect(back?.isValid, true);
+      final out = back!.toXrayOutbound(tag: 'warp');
+      expect(out['protocol'], 'wireguard');
+      expect((out['settings'] as Map)['reserved'], [1, 2, 3]);
+    });
+
+    test('old raw-outbound format is rejected (user must re-register)', () {
+      expect(WarpConfig.tryDecode('{"protocol":"wireguard"}')?.isValid, isNot(true));
+    });
+  });
+}
