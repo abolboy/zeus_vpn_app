@@ -7,28 +7,75 @@ import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 
-// ───────────── پالت Hacker Matrix (سبز روی مشکی) ─────────────
-// ساختار و چیدمان دست‌نخورده ماند؛ فقط رنگ‌ها به سبک ترمینال هکری تغییر کردند.
-// نام‌های قدیمی (kCyan/kMagenta/…) حفظ شده‌اند تا بقیهٔ صفحات بدون تغییر کار کنند.
-const Color kCyan = Color(0xFF00FF66);      // رنگ اصلی — سبز ماتریکس
-const Color kMagenta = Color(0xFFFF2E2E);   // کانال دوم گلیچ / وضعیت قطع — قرمز هکری
-const Color kPurple = Color(0xFF00A86B);    // هالهٔ دوم — سبز یشمی
-const Color kGreen = kCyan;                 // وضعیت سالم (نام قدیمی برای سازگاری صفحات)
-const Color kBlue = Color(0xFF00E5B0);      // نعنایی — رنگ آپلود
-const Color kAmber = Color(0xFFFFC400);     // هشدار ترمینال
-const Color kRed = Color(0xFFFF3131);       // خطا
-const Color kSurface = Color(0xFF030B07);   // مشکیِ ته‌رنگ سبز
-const Color kSurface2 = Color(0xFF0A1A10);  // سطح دوم پنل‌ها
-const Color kBorder = Color(0x3300FF66);    // حاشیهٔ سبز کم‌رنگ
-const Color kText = Color(0xFFD9FFE9);      // متن اصلی — سفیدِ ته‌رنگ سبز
-const Color kMuted = Color(0xFF5F8F73);     // متن کم‌اهمیت
-const Color kGreenDim = Color(0x2200FF66);
+// ───────────── پالت‌های تم (با لمس دکمهٔ گل عوض می‌شوند) ─────────────
+// نام‌های kCyan/kGreen/kBlue/kPurple/kSurface/kText/… حالا getter هستند و رنگ تم فعلی را برمی‌گردانند.
+// رنگ‌های معنایی (قطع=قرمز، هشدار=زرد، خطا) ثابت‌اند.
+class ZeusPalette {
+  final String name;
+  final Color primary; // رنگ اصلی
+  final Color secondary; // رنگ دوم (آپلود/ترافیک)
+  final Color deep; // هالهٔ دوم
+  final Color text;
+  final Color muted;
+  final Color surface;
+  final Color surface2;
+  const ZeusPalette(this.name, this.primary, this.secondary, this.deep, this.text, this.muted, this.surface, this.surface2);
+}
 
-const LinearGradient kNeonGradient = LinearGradient(
-  colors: [Color(0xFF00FF66), Color(0xFF00B34A)],
-  begin: Alignment.topLeft,
-  end: Alignment.bottomRight,
-);
+const List<ZeusPalette> kPalettes = [
+  ZeusPalette('سبز ماتریکس', Color(0xFF00FF66), Color(0xFF00E5B0), Color(0xFF00A86B), Color(0xFFD9FFE9), Color(0xFF5F8F73),
+      Color(0xFF030B07), Color(0xFF0A1A10)),
+  ZeusPalette('نعنایی', Color(0xFF00E5B0), Color(0xFF00FF66), Color(0xFF00967A), Color(0xFFD9FFF5), Color(0xFF5F8F86),
+      Color(0xFF030B0A), Color(0xFF0A1A17)),
+  ZeusPalette('کهربایی', Color(0xFFFFC400), Color(0xFFFF9100), Color(0xFFB37F00), Color(0xFFFFF3D0), Color(0xFF8F7A4A),
+      Color(0xFF0B0803), Color(0xFF1A1405)),
+  ZeusPalette('قرمز هکری', Color(0xFFFF2E2E), Color(0xFFFF6E40), Color(0xFFA81F1F), Color(0xFFFFDADA), Color(0xFF8F5F5F),
+      Color(0xFF0B0303), Color(0xFF1A0A0A)),
+];
+
+/// رنگ نمونهٔ هر تم برای نقطه‌های پالتِ دکمه (همیشه رنگ واقعی، مستقل از تم فعلی)
+const List<Color> kThemeSwatches = [Color(0xFF00FF66), Color(0xFF00E5B0), Color(0xFFFFC400), Color(0xFFFF2E2E)];
+
+final ValueNotifier<int> zeusThemeIdx = ValueNotifier<int>(0);
+
+ZeusPalette get zeusPalette => kPalettes[zeusThemeIdx.value.clamp(0, kPalettes.length - 1).toInt()];
+
+Future<void> loadThemeIdx() async {
+  try {
+    final p = await SharedPreferences.getInstance();
+    final v = p.getInt('theme_idx') ?? 0;
+    zeusThemeIdx.value = v < 0 ? 0 : (v >= kPalettes.length ? 0 : v);
+  } catch (_) {}
+}
+
+Future<void> setThemeIdx(int v) async {
+  zeusThemeIdx.value = v;
+  try {
+    final p = await SharedPreferences.getInstance();
+    await p.setInt('theme_idx', v);
+  } catch (_) {}
+}
+
+Color get kCyan => zeusPalette.primary;
+Color get kGreen => zeusPalette.primary;
+Color get kBlue => zeusPalette.secondary;
+Color get kPurple => zeusPalette.deep;
+Color get kText => zeusPalette.text;
+Color get kMuted => zeusPalette.muted;
+Color get kSurface => zeusPalette.surface;
+Color get kSurface2 => zeusPalette.surface2;
+Color get kBorder => zeusPalette.primary.withValues(alpha: .2);
+Color get kGreenDim => zeusPalette.primary.withValues(alpha: .13);
+
+const Color kMagenta = Color(0xFFFF2E2E); // وضعیت قطع — قرمز (ثابت)
+const Color kAmber = Color(0xFFFFC400); // در حال اتصال / هشدار (ثابت)
+const Color kRed = Color(0xFFFF3131); // خطا (ثابت)
+
+LinearGradient get kNeonGradient => LinearGradient(
+      colors: [kCyan, Color.lerp(kCyan, Colors.black, .3) ?? kCyan],
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+    );
 
 List<BoxShadow> neonGlow(Color c, {double blur = 16, double alpha = .45}) => [
       BoxShadow(color: c.withValues(alpha: alpha), blurRadius: blur, spreadRadius: 0),
@@ -108,7 +155,7 @@ class _ZeusBackgroundState extends State<ZeusBackground> with SingleTickerProvid
     return Stack(
       fit: StackFit.expand,
       children: [
-        const ColoredBox(color: kSurface),
+        ColoredBox(color: kSurface),
         RepaintBoundary(
           child: ValueListenableBuilder<Color>(
             valueListenable: zeusAccent,
@@ -152,10 +199,10 @@ class _BgStaticPainter extends CustomPainter {
     canvas.drawRect(
       rect,
       Paint()
-        ..shader = const LinearGradient(
+        ..shader = LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [kSurface, Color(0xFF06180E), kSurface],
+          colors: [kSurface, Color.lerp(kSurface, kCyan, .09) ?? kSurface, kSurface],
         ).createShader(rect),
     );
     _glow(canvas, Offset(s.width * .12, s.height * .10), s.width * .7, accent.withValues(alpha: .20));
@@ -357,7 +404,8 @@ class _CyberBorderPainter extends CustomPainter {
 /// پایهٔ همهٔ المان‌های «پنل‌مانند» برنامه: گوشه‌های بریده، حاشیهٔ نئونی، بلور اختیاری
 class CyberBox extends StatelessWidget {
   final Widget child;
-  final Color color;
+  final Color? _color;
+  Color get color => _color ?? kBorder;
   final Color? fill;
   final double cut;
   final double borderWidth;
@@ -369,7 +417,7 @@ class CyberBox extends StatelessWidget {
   const CyberBox({
     super.key,
     required this.child,
-    this.color = kBorder,
+    Color? color,
     this.fill,
     this.cut = 12,
     this.borderWidth = 1,
@@ -378,7 +426,7 @@ class CyberBox extends StatelessWidget {
     this.brackets = false,
     this.onTap,
     this.padding = EdgeInsets.zero,
-  });
+  }) : _color = color;
 
   @override
   Widget build(BuildContext context) {
@@ -463,8 +511,9 @@ class ZeusHeader extends StatelessWidget implements PreferredSizeWidget {
 class SectionLabel extends StatelessWidget {
   final String text;
   final IconData? icon;
-  final Color color;
-  const SectionLabel(this.text, {super.key, this.icon, this.color = kCyan});
+  final Color? _color;
+  Color get color => _color ?? kCyan;
+  const SectionLabel(this.text, {super.key, this.icon, Color? color}) : _color = color;
 
   @override
   Widget build(BuildContext context) {
@@ -508,9 +557,10 @@ class SectionLabel extends StatelessWidget {
 class NeonText extends StatelessWidget {
   final String text;
   final double size;
-  final Color color;
+  final Color? _color;
+  Color get color => _color ?? kCyan;
   final FontWeight weight;
-  const NeonText(this.text, {super.key, this.size = 20, this.color = kCyan, this.weight = FontWeight.w900});
+  const NeonText(this.text, {super.key, this.size = 20, Color? color, this.weight = FontWeight.w900}) : _color = color;
 
   @override
   Widget build(BuildContext context) {
@@ -582,17 +632,18 @@ class _PulseDotState extends State<PulseDot> with SingleTickerProviderStateMixin
 class NeonButton extends StatelessWidget {
   final String label;
   final IconData? icon;
-  final Color color;
+  final Color? _color;
+  Color get color => _color ?? kCyan;
   final VoidCallback? onTap;
   final bool outlined;
   const NeonButton({
     super.key,
     required this.label,
     this.icon,
-    this.color = kCyan,
+    Color? color,
     this.onTap,
     this.outlined = false,
-  });
+  }) : _color = color;
 
   @override
   Widget build(BuildContext context) {
@@ -626,9 +677,10 @@ class NeonButton extends StatelessWidget {
 // ───────────────────────── بج وضعیت ─────────────────────────
 class StatusBadge extends StatelessWidget {
   final String text;
-  final Color color;
+  final Color? _color;
+  Color get color => _color ?? kCyan;
   final bool pulse;
-  const StatusBadge(this.text, {super.key, this.color = kCyan, this.pulse = false});
+  const StatusBadge(this.text, {super.key, Color? color, this.pulse = false}) : _color = color;
 
   @override
   Widget build(BuildContext context) => CyberBox(
@@ -658,8 +710,9 @@ class StatusBadge extends StatelessWidget {
 class StatBox extends StatelessWidget {
   final String value;
   final String label;
-  final Color color;
-  const StatBox({super.key, required this.value, required this.label, this.color = kCyan});
+  final Color? _color;
+  Color get color => _color ?? kCyan;
+  const StatBox({super.key, required this.value, required this.label, Color? color}) : _color = color;
 
   @override
   Widget build(BuildContext context) => Expanded(
@@ -679,7 +732,7 @@ class StatBox extends StatelessWidget {
                     shadows: [Shadow(color: color.withValues(alpha: .7), blurRadius: 8)],
                   )),
               const SizedBox(height: 2),
-              Text(label, style: const TextStyle(color: kMuted, fontSize: 10.5)),
+              Text(label, style: TextStyle(color: kMuted, fontSize: 10.5)),
             ],
           ),
         ),
@@ -728,9 +781,10 @@ class PillTabs extends StatelessWidget {
 // ───────────────────────── جعبهٔ آیکون نئونی ─────────────────────────
 class NeonIconBox extends StatelessWidget {
   final IconData icon;
-  final Color color;
+  final Color? _color;
+  Color get color => _color ?? kCyan;
   final double size;
-  const NeonIconBox(this.icon, {super.key, this.color = kCyan, this.size = 40});
+  const NeonIconBox(this.icon, {super.key, Color? color, this.size = 40}) : _color = color;
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -755,7 +809,8 @@ class ZeusTile extends StatelessWidget {
   final Widget? trailing;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
-  final Color color;
+  final Color? _color;
+  Color get color => _color ?? kCyan;
   const ZeusTile({
     super.key,
     required this.title,
@@ -765,8 +820,8 @@ class ZeusTile extends StatelessWidget {
     this.trailing,
     this.onTap,
     this.onLongPress,
-    this.color = kCyan,
-  });
+    Color? color,
+  }) : _color = color;
 
   @override
   Widget build(BuildContext context) => GlassCard(
@@ -791,7 +846,7 @@ class ZeusTile extends StatelessWidget {
                       Text(subtitle!,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: kMuted, fontSize: 11)),
+                          style: TextStyle(color: kMuted, fontSize: 11)),
                   ],
                 ),
               ),

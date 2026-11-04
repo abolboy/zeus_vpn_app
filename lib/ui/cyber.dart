@@ -15,7 +15,8 @@ class GlitchText extends StatefulWidget {
   final double size;
   final FontWeight weight;
   final double letterSpacing;
-  final Color colorA;
+  final Color? _colorA;
+  Color get colorA => _colorA ?? kCyan;
   final Color colorB;
   final FontStyle? fontStyle;
   const GlitchText(
@@ -24,10 +25,10 @@ class GlitchText extends StatefulWidget {
     this.size = 36,
     this.weight = FontWeight.w900,
     this.letterSpacing = 3,
-    this.colorA = kCyan,
+    Color? colorA,
     this.colorB = kMagenta,
     this.fontStyle,
-  });
+  }) : _colorA = colorA;
 
   @override
   State<GlitchText> createState() => _GlitchTextState();
@@ -143,6 +144,8 @@ class BootOverlay extends StatefulWidget {
 class _BootOverlayState extends State<BootOverlay> with SingleTickerProviderStateMixin {
   late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 2800));
   bool _done = false;
+  bool _own = false;
+  static bool _played = false;
 
   static const _steps = [
     'mount encrypted tunnel',
@@ -156,6 +159,12 @@ class _BootOverlayState extends State<BootOverlay> with SingleTickerProviderStat
   @override
   void initState() {
     super.initState();
+    if (_played) {
+      _done = true; // تعویض تم اپ را دوباره می‌سازد؛ ترمینال بوت دوباره پخش نشود
+      return;
+    }
+    _played = true;
+    _own = true;
     _c.addStatusListener((s) {
       if (s == AnimationStatus.completed && mounted) setState(() => _done = true);
     });
@@ -164,7 +173,7 @@ class _BootOverlayState extends State<BootOverlay> with SingleTickerProviderStat
 
   @override
   void dispose() {
-    _c.dispose();
+    if (_own) _c.dispose();
     super.dispose();
   }
 
@@ -240,7 +249,7 @@ class _BootOverlayState extends State<BootOverlay> with SingleTickerProviderStat
                           ),
                         ),
                         const SizedBox(height: 8),
-                        const Text('tap to skip', style: TextStyle(fontFamily: kMono, fontSize: 10, color: kMuted)),
+                        Text('tap to skip', style: TextStyle(fontFamily: kMono, fontSize: 10, color: kMuted)),
                       ],
                     ),
                   ),
@@ -395,36 +404,34 @@ class ReactorPainter extends CustomPainter {
 }
 
 // ───────────────────────── دکمهٔ «پالت تم» (گل نئونی) ─────────────────────────
-/// دکمهٔ گل‌مانند با پالتِ رنگ داخلش؛ گلبرگ‌ها آرام می‌چرخند و نقطه‌های پالت به رنگ‌های تم‌اند.
+/// دکمهٔ گل‌مانند با پالتِ رنگ داخلش؛ گلبرگ‌ها آرام می‌چرخند. نقطه‌ها رنگ‌های واقعی تم‌ها هستند
+/// و حلقهٔ سفید دور تمِ فعلی است. لمس = تم بعدی.
 class PaletteFlower extends StatelessWidget {
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
   final double size;
-  final Color color;
-  final List<Color> dots;
-  const PaletteFlower({
-    super.key,
-    required this.onTap,
-    this.size = 46,
-    this.color = kGreen,
-    this.dots = const [kGreen, kBlue, kAmber, kMagenta],
-  });
+  const PaletteFlower({super.key, required this.onTap, this.onLongPress, this.size = 46});
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: SizedBox(
-          width: size,
-          height: size,
-          child: RepaintBoundary(child: CustomPaint(painter: _FlowerPainter(color, dots))),
+  Widget build(BuildContext context) => ValueListenableBuilder<int>(
+        valueListenable: zeusThemeIdx,
+        builder: (_, idx, __) => GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          onLongPress: onLongPress,
+          child: SizedBox(
+            width: size,
+            height: size,
+            child: RepaintBoundary(child: CustomPaint(painter: _FlowerPainter(kGreen, idx))),
+          ),
         ),
       );
 }
 
 class _FlowerPainter extends CustomPainter {
   final Color color;
-  final List<Color> dots;
-  _FlowerPainter(this.color, this.dots) : super(repaint: zeusClock);
+  final int active;
+  _FlowerPainter(this.color, this.active) : super(repaint: zeusClock);
 
   @override
   void paint(Canvas canvas, Size s) {
@@ -462,13 +469,24 @@ class _FlowerPainter extends CustomPainter {
     body = Path.combine(PathOperation.difference, body, hole);
     canvas.drawPath(body, Paint()..color = kSurface);
 
-    // نقطه‌های رنگی پالت = رنگ‌های تم
+    // نقطه‌های رنگی = رنگ واقعی هر تم؛ حلقه دور تم فعلی
     final pos = [Offset(-.30, -.02), Offset(-.14, -.2), Offset(.14, -.2), Offset(.30, -.02)];
-    for (var i = 0; i < pos.length && i < dots.length; i++) {
-      canvas.drawCircle(c + pos[i] * u, u * .075, Paint()..color = dots[i]);
+    for (var i = 0; i < pos.length && i < kThemeSwatches.length; i++) {
+      final p = c + pos[i] * u;
+      canvas.drawCircle(p, u * .075, Paint()..color = kThemeSwatches[i]);
+      if (i == active) {
+        canvas.drawCircle(
+          p,
+          u * .12,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.3
+            ..color = Colors.white.withValues(alpha: .9),
+        );
+      }
     }
   }
 
   @override
-  bool shouldRepaint(_FlowerPainter o) => o.color != color || o.dots != dots;
+  bool shouldRepaint(_FlowerPainter o) => o.color != color || o.active != active;
 }

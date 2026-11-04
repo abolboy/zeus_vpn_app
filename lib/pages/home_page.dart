@@ -37,6 +37,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     if (err != null) _snack(err, err: true);
   }
 
+  /// لمس دکمهٔ گل: تم رنگیِ بعدی (سبز ← نعنایی ← کهربایی ← قرمز)
+  void _nextTheme() {
+    HapticFeedback.selectionClick();
+    setThemeIdx((zeusThemeIdx.value + 1) % kPalettes.length);
+  }
+
   /// راهنمای رنگ‌های تم (معنی هر رنگ در وضعیت اتصال)
   void _showPalette() {
     Widget row(Color col, String title, String sub) => Padding(
@@ -54,7 +60,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(title, style: TextStyle(color: col, fontWeight: FontWeight.w800, fontSize: 14)),
-                    Text(sub, style: const TextStyle(color: kMuted, fontSize: 12)),
+                    Text(sub, style: TextStyle(color: kMuted, fontSize: 12)),
                   ],
                 ),
               ),
@@ -64,7 +70,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: kSurface2,
-      shape: const BeveledRectangleBorder(
+      shape: BeveledRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
         side: BorderSide(color: kBorder),
       ),
@@ -76,10 +82,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SectionLabel('پالت رنگ تم', icon: Icons.palette_outlined),
-              row(kGreen, 'سبز — امن', 'تونل سالم است و ترافیک رمزگذاری می‌شود'),
+              row(kGreen, 'رنگ اصلی تم — امن', 'تونل سالم است و ترافیک رمزگذاری می‌شود'),
               row(kAmber, 'زرد — در حال اتصال', 'منتظر برقراری یا بررسی تونل'),
               row(kMagenta, 'قرمز — قطع / خطا', 'محافظت فعال نیست یا اتصال مشکل دارد'),
-              row(kBlue, 'نعنایی — ترافیک', 'آپلود و آمار لحظه‌ای'),
+              row(kBlue, 'رنگ دوم تم — ترافیک', 'آپلود و آمار لحظه‌ای'),
             ],
           ),
         ),
@@ -188,7 +194,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             title: _title,
             leading: IconButton(icon: const Icon(Icons.menu), onPressed: widget.onOpenMenu),
             actions: [
-              Center(child: PaletteFlower(onTap: _showPalette)),
+              Center(child: PaletteFlower(onTap: _nextTheme, onLongPress: _showPalette)),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 child: _quickButton(),
@@ -322,7 +328,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         ),
       );
 
-  Widget _logo() => const Padding(
+  Widget _logo() => Padding(
         padding: EdgeInsets.only(top: 6),
         child: Column(
           children: [
@@ -363,7 +369,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: const TextStyle(color: kMuted, fontSize: 11)),
+              Text(label, style: TextStyle(color: kMuted, fontSize: 11)),
               Text(v,
                   style: TextStyle(
                     color: col,
@@ -414,11 +420,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-                    Text('Ping: ${sel?.pingText ?? '--'}', style: const TextStyle(color: kMuted, fontSize: 12)),
+                    Text('Ping: ${sel?.pingText ?? '--'}', style: TextStyle(color: kMuted, fontSize: 12)),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_left, color: kMuted),
+              Icon(Icons.chevron_left, color: kMuted),
             ],
           ),
         ),
@@ -488,10 +494,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   c.publicIp,
                   Icons.location_on_outlined,
                   trailing: c.publicIp == '…'
-                      ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5, color: kMuted))
+                      ? SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5, color: kMuted))
                       : InkWell(
                           onTap: c.refreshIp,
-                          child: const Icon(Icons.refresh, size: 14, color: kMuted),
+                          child: Icon(Icons.refresh, size: 14, color: kMuted),
                         ),
                 ),
               ),
@@ -559,7 +565,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text('تست سرعت', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-                    Text(_speedPhaseText(), style: const TextStyle(color: kMuted, fontSize: 11)),
+                    Text(_speedPhaseText(), style: TextStyle(color: kMuted, fontSize: 11)),
                   ],
                 ),
               ),
@@ -610,7 +616,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             Text(
               c.speedResult,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: kText, fontFamily: kMono, fontSize: 13, fontWeight: FontWeight.w700),
+              style: TextStyle(color: kText, fontFamily: kMono, fontSize: 13, fontWeight: FontWeight.w700),
             ),
           ],
           if (c.speedError.isNotEmpty)
@@ -639,7 +645,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: col, fontFamily: kMono, fontSize: 13, fontWeight: FontWeight.w800)),
               const SizedBox(height: 2),
-              Text(label, style: const TextStyle(color: kMuted, fontSize: 10.5)),
+              Text(label, style: TextStyle(color: kMuted, fontSize: 10.5)),
             ],
           ),
         ),
@@ -652,7 +658,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             Row(mainAxisSize: MainAxisSize.min, children: [
               Icon(i, size: 16, color: col),
               const SizedBox(width: 4),
-              Text(label, style: const TextStyle(color: kMuted, fontSize: 12)),
+              Text(label, style: TextStyle(color: kMuted, fontSize: 12)),
             ]),
             const SizedBox(height: 4),
             Text(fmtSize(total),
@@ -671,7 +677,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             Row(children: [
               Icon(i, size: 12, color: kMuted),
               const SizedBox(width: 4),
-              Text(k, style: const TextStyle(color: kMuted, fontSize: 11)),
+              Text(k, style: TextStyle(color: kMuted, fontSize: 11)),
               if (trailing != null) ...[const Spacer(), trailing],
             ]),
             const SizedBox(height: 3),
@@ -765,7 +771,7 @@ class _SpeedGraph extends CustomPainter {
       final tp = TextPainter(
         text: TextSpan(
           text: '${live >= 100 ? live.toStringAsFixed(0) : live.toStringAsFixed(1)} Mbps',
-          style: const TextStyle(color: kText, fontSize: 10, fontFamily: kMono),
+          style: TextStyle(color: kText, fontSize: 10, fontFamily: kMono),
         ),
         textDirection: TextDirection.ltr,
       )..layout();

@@ -62,7 +62,7 @@ class _SubsPageState extends State<SubsPage> {
           onSubmitted: (v) => Navigator.pop(ctx, v),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('انصراف', style: TextStyle(color: kMuted))),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text('انصراف', style: TextStyle(color: kMuted))),
           FilledButton(onPressed: () => Navigator.pop(ctx, ctl.text), child: const Text('افزودن')),
         ],
       ),
@@ -89,7 +89,7 @@ class _SubsPageState extends State<SubsPage> {
         title: const Text('حذف اشتراک'),
         content: Text('«${s.name.isEmpty ? s.url : s.name}» حذف شود؟ سرورهای آن از لیست پاک می‌شوند.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('انصراف', style: TextStyle(color: kMuted))),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('انصراف', style: TextStyle(color: kMuted))),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: kRed, foregroundColor: Colors.white),
             onPressed: () => Navigator.pop(ctx, true),
@@ -148,7 +148,7 @@ class _SubsPageState extends State<SubsPage> {
                       const SizedBox(height: 4),
                       Text(
                         active ? '${c.subs.length} اشتراک • $okCount سالم' : 'هنوز اشتراکی اضافه نشده',
-                        style: const TextStyle(color: kMuted, fontSize: 12),
+                        style: TextStyle(color: kMuted, fontSize: 12),
                       ),
                       const Divider(height: 22),
                       Row(
@@ -179,8 +179,8 @@ class _SubsPageState extends State<SubsPage> {
                   title: 'به‌روزرسانی اشتراک',
                   subtitle: 'به‌روزرسانی سرورها و تنظیمات',
                   trailing: c.loadingSubs
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: kGreen))
-                      : const Icon(Icons.chevron_left, color: kMuted),
+                      ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: kGreen))
+                      : Icon(Icons.chevron_left, color: kMuted),
                   onTap: (c.loadingSubs || c.subs.isEmpty) ? null : _refresh,
                 ),
 
@@ -199,9 +199,9 @@ class _SubsPageState extends State<SubsPage> {
   Widget _kv(String k, String v) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(k, style: const TextStyle(color: kMuted, fontSize: 11)),
+          Text(k, style: TextStyle(color: kMuted, fontSize: 11)),
           const SizedBox(height: 3),
-          Text(v, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: kGreen)),
+          Text(v, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: kGreen)),
         ],
       );
 
@@ -243,7 +243,7 @@ class _SubsPageState extends State<SubsPage> {
               Clipboard.setData(ClipboardData(text: s.url));
               _snack('لینک کپی شد');
             },
-            icon: const Icon(Icons.copy, color: kMuted, size: 18),
+            icon: Icon(Icons.copy, color: kMuted, size: 18),
           ),
           IconButton(
             visualDensity: VisualDensity.compact,

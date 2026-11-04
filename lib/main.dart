@@ -14,15 +14,21 @@ import 'ui/transitions.dart';
 
 const String kAppVersion = '2.3.0';
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await loadFxLevel();
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+/// رنگ نوار ناوبری سیستم با تم فعلی هماهنگ می‌شود (هنگام شروع و هر بار تعویض تم)
+void _applyChrome() {
+  SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
     systemNavigationBarColor: kSurface,
     systemNavigationBarIconBrightness: Brightness.light,
   ));
+}
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await loadFxLevel();
+  await loadThemeIdx();
+  _applyChrome();
   runApp(const ZeusApp());
 }
 
@@ -30,7 +36,16 @@ class ZeusApp extends StatelessWidget {
   const ZeusApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ValueListenableBuilder<int>(
+        valueListenable: zeusThemeIdx,
+        // رنگ‌ها getter هستند؛ با عوض شدن تم، کل درخت با key جدید دوباره ساخته می‌شود
+        builder: (_, idx, __) {
+          _applyChrome();
+          return KeyedSubtree(key: ValueKey(idx), child: _app());
+        },
+      );
+
+  Widget _app() {
     return MaterialApp(
       title: 'ZEUS VPN',
       debugShowCheckedModeBanner: false,
@@ -71,14 +86,14 @@ class ZeusApp extends StatelessWidget {
       canvasColor: kSurface,
       dividerColor: kBorder,
       textTheme: base.textTheme.apply(bodyColor: kText, displayColor: kText),
-      iconTheme: const IconThemeData(color: kText),
-      appBarTheme: const AppBarTheme(
+      iconTheme: IconThemeData(color: kText),
+      appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
         foregroundColor: kText,
         elevation: 0,
         centerTitle: true,
       ),
-      listTileTheme: const ListTileThemeData(
+      listTileTheme: ListTileThemeData(
         textColor: kText,
         iconColor: kGreen,
         subtitleTextStyle: TextStyle(color: kMuted, fontSize: 11),
@@ -86,11 +101,11 @@ class ZeusApp extends StatelessWidget {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: kSurface2,
-        hintStyle: const TextStyle(color: kMuted, fontSize: 13),
+        hintStyle: TextStyle(color: kMuted, fontSize: 13),
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: kBorder)),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: kBorder)),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: kGreen)),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: kBorder)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: kBorder)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: kGreen)),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
@@ -103,7 +118,7 @@ class ZeusApp extends StatelessWidget {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: kGreen,
-          side: const BorderSide(color: kBorder),
+          side: BorderSide(color: kBorder),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
           shape: const BeveledRectangleBorder(borderRadius: BorderRadius.only(topLeft: Radius.circular(10), bottomRight: Radius.circular(10))),
         ),
@@ -111,33 +126,33 @@ class ZeusApp extends StatelessWidget {
       textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(foregroundColor: kGreen)),
       dialogTheme: DialogThemeData(
         backgroundColor: kSurface2,
-        shape: const BeveledRectangleBorder(
+        shape: BeveledRectangleBorder(
           borderRadius: BorderRadius.only(topLeft: Radius.circular(18), bottomRight: Radius.circular(18)),
           side: BorderSide(color: kBorder),
         ),
-        titleTextStyle: const TextStyle(color: kText, fontSize: 17, fontWeight: FontWeight.w800),
-        contentTextStyle: const TextStyle(color: kText, fontSize: 14),
+        titleTextStyle: TextStyle(color: kText, fontSize: 17, fontWeight: FontWeight.w800),
+        contentTextStyle: TextStyle(color: kText, fontSize: 14),
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         backgroundColor: kSurface2,
-        contentTextStyle: const TextStyle(color: kText),
-        shape: const BeveledRectangleBorder(
+        contentTextStyle: TextStyle(color: kText),
+        shape: BeveledRectangleBorder(
           borderRadius: BorderRadius.only(topLeft: Radius.circular(10), bottomRight: Radius.circular(10)),
           side: BorderSide(color: kBorder),
         ),
       ),
       // خط‌های جداکنندهٔ پیش‌فرض سفید بودند و با تم نئونی نمی‌خواندند
-      dividerTheme: const DividerThemeData(color: kBorder, thickness: 1, space: 1),
-      drawerTheme: const DrawerThemeData(backgroundColor: kSurface, scrimColor: Color(0xAA000000)),
-      progressIndicatorTheme: const ProgressIndicatorThemeData(color: kGreen),
+      dividerTheme: DividerThemeData(color: kBorder, thickness: 1, space: 1),
+      drawerTheme: DrawerThemeData(backgroundColor: kSurface, scrimColor: Color(0xAA000000)),
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: kGreen),
       switchTheme: SwitchThemeData(
         trackColor: WidgetStateProperty.resolveWith(
           (s) => s.contains(WidgetState.selected) ? kGreen.withValues(alpha: 0.35) : kSurface2,
         ),
-        trackOutlineColor: const WidgetStatePropertyAll(kBorder),
+        trackOutlineColor: WidgetStatePropertyAll(kBorder),
       ),
-      expansionTileTheme: const ExpansionTileThemeData(textColor: kText, collapsedTextColor: kText),
+      expansionTileTheme: ExpansionTileThemeData(textColor: kText, collapsedTextColor: kText),
     );
   }
 }
@@ -159,6 +174,8 @@ class _ZeusShellState extends State<ZeusShell> {
   void initState() {
     super.initState();
     c.addListener(_syncFx);
+    // بعد از تعویض تم، رنگ لهجهٔ پس‌زمینه (که از تم قبلی مانده) دوباره محاسبه شود
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncFx());
     c.boot();
   }
 
@@ -223,7 +240,7 @@ class _ZeusShellState extends State<ZeusShell> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const NeonText('ZEUS VPN', size: 18),
-        content: const Column(
+        content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -261,7 +278,7 @@ class _ZeusShellState extends State<ZeusShell> {
   Widget _drawer() {
     return Drawer(
       width: 290,
-      shape: const BeveledRectangleBorder(
+      shape: BeveledRectangleBorder(
         borderRadius: BorderRadius.horizontal(left: Radius.circular(22)),
         side: BorderSide(color: kBorder),
       ),
@@ -368,7 +385,7 @@ class _ZeusShellState extends State<ZeusShell> {
                       Text(c.ready ? 'هسته آماده' : 'هسته آماده نیست',
                           style: TextStyle(color: c.ready ? kMuted : kRed, fontSize: 11)),
                       const Spacer(),
-                      const Text('v$kAppVersion', style: TextStyle(color: kMuted, fontSize: 11)),
+                      Text('v$kAppVersion', style: TextStyle(color: kMuted, fontSize: 11)),
                     ],
                   ),
                 ),

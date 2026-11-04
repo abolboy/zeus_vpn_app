@@ -144,7 +144,7 @@ class _ServersPageState extends State<ServersPage> {
                   tooltip: 'پینگ همه',
                   onPressed: c.pinging || c.nodes.isEmpty ? null : c.pingAll,
                   icon: c.pinging
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: kGreen))
                       : const Icon(Icons.network_check),
                 ),
@@ -152,7 +152,7 @@ class _ServersPageState extends State<ServersPage> {
                   tooltip: 'به‌روزرسانی',
                   onPressed: c.loadingSubs ? null : _refresh,
                   icon: c.loadingSubs
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: kGreen))
                       : const Icon(Icons.refresh),
                 ),
@@ -167,11 +167,11 @@ class _ServersPageState extends State<ServersPage> {
                     onChanged: (_) => setState(() {}),
                     decoration: InputDecoration(
                       hintText: 'جستجوی سرور، کشور یا نام',
-                      prefixIcon: const Icon(Icons.search, color: kMuted, size: 20),
+                      prefixIcon: Icon(Icons.search, color: kMuted, size: 20),
                       suffixIcon: _search.text.isEmpty
-                          ? const Icon(Icons.tune, color: kMuted, size: 18)
+                          ? Icon(Icons.tune, color: kMuted, size: 18)
                           : IconButton(
-                              icon: const Icon(Icons.close, color: kMuted, size: 18),
+                              icon: Icon(Icons.close, color: kMuted, size: 18),
                               onPressed: () => setState(_search.clear),
                             ),
                     ),
@@ -222,7 +222,7 @@ class _ServersPageState extends State<ServersPage> {
                               Text(
                                 'در حال سنجش ${c.pingDone}/${c.pingTotal}…',
                                 textAlign: TextAlign.center,
-                                style: const TextStyle(color: kMuted, fontFamily: kMono, fontSize: 10),
+                                style: TextStyle(color: kMuted, fontFamily: kMono, fontSize: 10),
                               ),
                             ],
                           ),
@@ -292,7 +292,7 @@ class _ServersPageState extends State<ServersPage> {
                       isCurrent
                           ? 'همین سرور متصل است؛ می‌توانید دوباره وصل شوید'
                           : (reconnect ? 'اتصال فعلی قطع و با این سرور برقرار می‌شود' : 'آمادهٔ اتصال'),
-                      style: const TextStyle(color: kMuted, fontSize: 10.5),
+                      style: TextStyle(color: kMuted, fontSize: 10.5),
                     ),
                   ],
                 ),
@@ -313,16 +313,16 @@ class _ServersPageState extends State<ServersPage> {
 
   Widget _list(List<ServerNode> list) {
     if (c.loadingSubs && c.nodes.isEmpty) {
-      return const Center(child: CircularProgressIndicator(color: kGreen));
+      return Center(child: CircularProgressIndicator(color: kGreen));
     }
     if (c.nodes.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.dns_outlined, size: 48, color: kMuted),
+            Icon(Icons.dns_outlined, size: 48, color: kMuted),
             const SizedBox(height: 10),
-            const Text('هنوز سروری ندارید', style: TextStyle(color: kMuted)),
+            Text('هنوز سروری ندارید', style: TextStyle(color: kMuted)),
             const SizedBox(height: 12),
             NeonButton(label: 'افزودن اشتراک', icon: Icons.add_link, onTap: widget.onGoSubs),
           ],
@@ -335,7 +335,7 @@ class _ServersPageState extends State<ServersPage> {
           _tab == 3
               ? 'هنوز سروری را ستاره نکرده‌اید'
               : (_tab == 2 ? 'ابتدا «پینگ همه» را بزنید' : 'نتیجه‌ای یافت نشد'),
-          style: const TextStyle(color: kMuted),
+          style: TextStyle(color: kMuted),
         ),
       );
     }
@@ -361,7 +361,7 @@ class _ServersPageState extends State<ServersPage> {
     Widget? status;
     if (sel && c.connected) {
       if (c.tunnel == TunnelState.ok) {
-        status = const Icon(Icons.check_circle, color: kGreen, size: 16);
+        status = Icon(Icons.check_circle, color: kGreen, size: 16);
       } else if (c.tunnel == TunnelState.failed) {
         status = const Icon(Icons.warning_amber_rounded, color: kRed, size: 16);
       } else {
@@ -398,7 +398,7 @@ class _ServersPageState extends State<ServersPage> {
                 const SizedBox(height: 3),
                 Row(
                   children: [
-                    Text(n.subtitle.isEmpty ? '--' : n.subtitle, style: const TextStyle(color: kMuted, fontSize: 11)),
+                    Text(n.subtitle.isEmpty ? '--' : n.subtitle, style: TextStyle(color: kMuted, fontSize: 11)),
                     const SizedBox(width: 10),
                     InkWell(
                       onTap: probing ? null : () => c.pingOne(n),
@@ -418,7 +418,7 @@ class _ServersPageState extends State<ServersPage> {
                                   if (n.pingMs >= 0 && n.jitterMs > 0)
                                     TextSpan(
                                       text: ' ±${n.jitterMs}',
-                                      style: const TextStyle(color: kMuted, fontSize: 10, fontFamily: kMono),
+                                      style: TextStyle(color: kMuted, fontSize: 10, fontFamily: kMono),
                                     ),
                                   if (n.pingMs >= 0 && n.lossPct > 0)
                                     TextSpan(
@@ -430,7 +430,7 @@ class _ServersPageState extends State<ServersPage> {
                       ),
                     ),
                     const Spacer(),
-                    Text(n.subTag, style: const TextStyle(color: kMuted, fontSize: 10)),
+                    Text(n.subTag, style: TextStyle(color: kMuted, fontSize: 10)),
                   ],
                 ),
               ],
@@ -457,7 +457,7 @@ class _ServersPageState extends State<ServersPage> {
         glow: true,
         child: Row(
           children: [
-            const Text('⌁', style: TextStyle(color: kGreen, fontSize: 15, fontFamily: kMono)),
+            Text('⌁', style: TextStyle(color: kGreen, fontSize: 15, fontFamily: kMono)),
             const SizedBox(width: 8),
             Expanded(
               child: Text('بهترین سرور: ${n.displayName}',

@@ -85,7 +85,7 @@ class _LogsPageState extends State<LogsPage> {
         title: const Text('پاک‌کردن لاگ‌ها'),
         content: const Text('همهٔ رکوردها حذف شوند؟'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('انصراف', style: TextStyle(color: kMuted))),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('انصراف', style: TextStyle(color: kMuted))),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: kRed, foregroundColor: Colors.white),
             onPressed: () => Navigator.pop(ctx, true),
@@ -143,9 +143,9 @@ class _LogsPageState extends State<LogsPage> {
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
                   child: Row(
                     children: [
-                      const Icon(Icons.warning_amber_outlined, size: 16, color: kMuted),
+                      Icon(Icons.warning_amber_outlined, size: 16, color: kMuted),
                       const SizedBox(width: 6),
-                      const Expanded(child: Text('فقط هشدارها و خطاها', style: TextStyle(fontSize: 12, color: kMuted))),
+                      Expanded(child: Text('فقط هشدارها و خطاها', style: TextStyle(fontSize: 12, color: kMuted))),
                       Switch(
                         value: _onlyProblems,
                         activeColor: kAmber,
@@ -179,7 +179,7 @@ class _LogsPageState extends State<LogsPage> {
 
   Widget _list(List<LogEntry> list) {
     if (list.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -225,11 +225,11 @@ class _LogsPageState extends State<LogsPage> {
                 Row(
                   children: [
                     Text(l.timeText,
-                        style: const TextStyle(color: kMuted, fontSize: 11, fontFeatures: [FontFeature.tabularFigures()])),
+                        style: TextStyle(color: kMuted, fontSize: 11, fontFeatures: [FontFeature.tabularFigures()])),
                     const SizedBox(width: 8),
                     StatusBadge(l.levelText, color: col),
                     const SizedBox(width: 6),
-                    Text(l.kind.name, style: const TextStyle(color: kMuted, fontSize: 10)),
+                    Text(l.kind.name, style: TextStyle(color: kMuted, fontSize: 10)),
                   ],
                 ),
                 const SizedBox(height: 4),

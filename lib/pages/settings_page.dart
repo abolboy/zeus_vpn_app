@@ -105,13 +105,13 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                       const Divider(height: 1),
                       ListTile(
-                        leading: const Icon(Icons.how_to_reg_outlined, color: kGreen),
+                        leading: Icon(Icons.how_to_reg_outlined, color: kGreen),
                         title: Text(c.warp?.isValid == true ? 'ثبت مجدد WARP' : 'ثبت WARP'),
                         subtitle: Text(c.connected ? 'از طریق تونل فعلی ثبت می‌شود' : 'به اینترنت آزاد یا اتصال فعال نیاز دارد',
                             style: const TextStyle(fontSize: 11)),
                         trailing: c.busy
-                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: kGreen))
-                            : const Icon(Icons.chevron_left, color: kMuted),
+                            ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: kGreen))
+                            : Icon(Icons.chevron_left, color: kMuted),
                         onTap: c.busy ? null : _registerWarp,
                       ),
                       if (c.warp?.isValid == true) ...[
@@ -374,10 +374,10 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                       const Divider(height: 1),
                       ListTile(
-                        leading: const Icon(Icons.article_outlined, color: kGreen),
+                        leading: Icon(Icons.article_outlined, color: kGreen),
                         title: const Text('مشاهدهٔ لاگ‌ها'),
                         subtitle: Text('${c.logs.length} رکورد', style: const TextStyle(fontSize: 11)),
-                        trailing: const Icon(Icons.chevron_left, color: kMuted),
+                        trailing: Icon(Icons.chevron_left, color: kMuted),
                         onTap: widget.onGoLogs,
                       ),
                       ListTile(
@@ -391,7 +391,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
 
                 const SizedBox(height: 16),
-                const Center(
+                Center(
                   child: Text('ZEUS VPN  •  No logs. No limits. Your rules.',
                       style: TextStyle(color: kMuted, fontSize: 11, letterSpacing: 1)),
                 ),
@@ -410,7 +410,7 @@ class _SettingsPageState extends State<SettingsPage> {
         title: const Text('بازنشانی تنظیمات'),
         content: const Text('Fragment، Noise، TLS، Transport و DNS به حالت پیش‌فرض برگردند؟'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('انصراف', style: TextStyle(color: kMuted))),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('انصراف', style: TextStyle(color: kMuted))),
           FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('بازنشانی')),
         ],
       ),
@@ -482,7 +482,7 @@ class _SettingsPageState extends State<SettingsPage> {
             isExpanded: true,
             underline: const SizedBox(),
             dropdownColor: kSurface2,
-            style: const TextStyle(color: kText, fontSize: 13),
+            style: TextStyle(color: kText, fontSize: 13),
             items: items
                 .map((e) => DropdownMenuItem<T>(
                       value: e,
@@ -510,7 +510,7 @@ class _SettingsPageState extends State<SettingsPage> {
             labelText: label,
             hintText: hint,
             isDense: true,
-            labelStyle: const TextStyle(color: kMuted, fontSize: 12),
+            labelStyle: TextStyle(color: kMuted, fontSize: 12),
           ),
           onChanged: onChanged,
         ),
