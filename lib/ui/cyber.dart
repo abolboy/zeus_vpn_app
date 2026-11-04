@@ -393,3 +393,82 @@ class ReactorPainter extends CustomPainter {
   @override
   bool shouldRepaint(ReactorPainter o) => o.t != t || o.color != color || o.spinning != spinning || o.full != full;
 }
+
+// ───────────────────────── دکمهٔ «پالت تم» (گل نئونی) ─────────────────────────
+/// دکمهٔ گل‌مانند با پالتِ رنگ داخلش؛ گلبرگ‌ها آرام می‌چرخند و نقطه‌های پالت به رنگ‌های تم‌اند.
+class PaletteFlower extends StatelessWidget {
+  final VoidCallback onTap;
+  final double size;
+  final Color color;
+  final List<Color> dots;
+  const PaletteFlower({
+    super.key,
+    required this.onTap,
+    this.size = 46,
+    this.color = kGreen,
+    this.dots = const [kGreen, kBlue, kAmber, kMagenta],
+  });
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: RepaintBoundary(child: CustomPaint(painter: _FlowerPainter(color, dots))),
+        ),
+      );
+}
+
+class _FlowerPainter extends CustomPainter {
+  final Color color;
+  final List<Color> dots;
+  _FlowerPainter(this.color, this.dots) : super(repaint: zeusClock);
+
+  @override
+  void paint(Canvas canvas, Size s) {
+    final c = s.center(Offset.zero);
+    final r = s.width / 2 - 3;
+    final rot = zeusClock.value * .35;
+
+    // شکل گل: ۸ گلبرگ گرد
+    final flower = Path();
+    const steps = 160;
+    for (var i = 0; i <= steps; i++) {
+      final a = i / steps * 2 * pi;
+      final rr = r * (.86 + .14 * cos(8 * a));
+      final p = c + Offset(cos(a + rot), sin(a + rot)) * rr;
+      if (i == 0) {
+        flower.moveTo(p.dx, p.dy);
+      } else {
+        flower.lineTo(p.dx, p.dy);
+      }
+    }
+    flower.close();
+    canvas.drawPath(
+      flower,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 6
+        ..color = color.withValues(alpha: .25),
+    );
+    canvas.drawPath(flower, Paint()..color = color);
+
+    // پالتِ تیره با سوراخ شست
+    final u = r * .95;
+    var body = Path()..addOval(Rect.fromCenter(center: c, width: u * 1.15, height: u * .98));
+    final hole = Path()..addOval(Rect.fromCircle(center: c + Offset(u * .28, u * .2), radius: u * .12));
+    body = Path.combine(PathOperation.difference, body, hole);
+    canvas.drawPath(body, Paint()..color = kSurface);
+
+    // نقطه‌های رنگی پالت = رنگ‌های تم
+    final pos = [Offset(-.30, -.02), Offset(-.14, -.2), Offset(.14, -.2), Offset(.30, -.02)];
+    for (var i = 0; i < pos.length && i < dots.length; i++) {
+      canvas.drawCircle(c + pos[i] * u, u * .075, Paint()..color = dots[i]);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_FlowerPainter o) => o.color != color || o.dots != dots;
+}

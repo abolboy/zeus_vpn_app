@@ -37,6 +37,81 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     if (err != null) _snack(err, err: true);
   }
 
+  /// راهنمای رنگ‌های تم (معنی هر رنگ در وضعیت اتصال)
+  void _showPalette() {
+    Widget row(Color col, String title, String sub) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          child: Row(
+            children: [
+              Container(
+                width: 18,
+                height: 18,
+                decoration: BoxDecoration(color: col, shape: BoxShape.circle, boxShadow: neonGlow(col, blur: 10, alpha: .7)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: TextStyle(color: col, fontWeight: FontWeight.w800, fontSize: 14)),
+                    Text(sub, style: const TextStyle(color: kMuted, fontSize: 12)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: kSurface2,
+      shape: const BeveledRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+        side: BorderSide(color: kBorder),
+      ),
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 6, 20, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SectionLabel('پالت رنگ تم', icon: Icons.palette_outlined),
+              row(kGreen, 'سبز — امن', 'تونل سالم است و ترافیک رمزگذاری می‌شود'),
+              row(kAmber, 'زرد — در حال اتصال', 'منتظر برقراری یا بررسی تونل'),
+              row(kMagenta, 'قرمز — قطع / خطا', 'محافظت فعال نیست یا اتصال مشکل دارد'),
+              row(kBlue, 'نعنایی — ترافیک', 'آپلود و آمار لحظه‌ای'),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// دکمهٔ بزرگ «اتصال سریع» با آیکون نئونی هم‌رنگ تم
+  Widget _quickButton() {
+    final off = c.busy || c.pinging;
+    final col = off ? kMuted : kGreen;
+    return CyberBox(
+      color: col.withValues(alpha: .9),
+      fill: col.withValues(alpha: .14),
+      cut: 9,
+      glow: !off,
+      onTap: off ? null : _quickConnect,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(c.pinging ? Icons.network_check : Icons.bolt, color: col, size: 26, shadows: [Shadow(color: col, blurRadius: 12)]),
+          const SizedBox(width: 6),
+          Text(
+            c.pinging ? 'در حال سنجش' : 'اتصال سریع',
+            style: TextStyle(color: col, fontSize: 13.5, fontWeight: FontWeight.w800, shadows: [Shadow(color: col.withValues(alpha: .6), blurRadius: 8)]),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// اتصال سریع: اگر پینگی گرفته نشده «پینگ همه» می‌زند، سریع‌ترین سرور را انتخاب می‌کند و وصل می‌شود
   Future<void> _quickConnect() async {
     if (c.busy || c.pinging) return;
@@ -113,10 +188,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             title: _title,
             leading: IconButton(icon: const Icon(Icons.menu), onPressed: widget.onOpenMenu),
             actions: [
-              IconButton(
-                tooltip: 'اتصال سریع به سریع‌ترین سرور',
-                icon: const Icon(Icons.flash_on),
-                onPressed: c.busy || c.pinging ? null : _quickConnect,
+              Center(child: PaletteFlower(onTap: _showPalette)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: _quickButton(),
               ),
             ],
           ),
@@ -206,18 +281,43 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     );
   }
 
+  /// امضا: نام بزرگ با «برق» (چند جهش نور در هر چرخه) و دو آیکون رعد
   Widget _credit() => Padding(
-        padding: const EdgeInsets.only(top: 26, bottom: 6),
-        child: Center(
-          child: Text(
-            'abolboy',
-            style: TextStyle(
-              color: kMuted,
-              fontFamily: kMono,
-              fontSize: 12,
-              letterSpacing: 4,
-              shadows: [Shadow(color: kGreen.withValues(alpha: .5), blurRadius: 8)],
-            ),
+        padding: const EdgeInsets.only(top: 30, bottom: 12),
+        child: RepaintBoundary(
+          child: ValueListenableBuilder<double>(
+            valueListenable: zeusClock,
+            builder: (_, t, __) {
+              final k = pow(max(0.0, sin(t * 2.6)), 6).toDouble();
+              final k2 = pow(max(0.0, sin(t * 4.1 + 1.3)), 10).toDouble();
+              final f = max(k, k2); // شدت برق 0..1
+              final text = Color.lerp(kGreen, Colors.white, f * .65) ?? kGreen;
+              final bolt = kGreen.withValues(alpha: .35 + .65 * f);
+              Widget b() => Icon(Icons.bolt, color: bolt, size: 30, shadows: [Shadow(color: kGreen, blurRadius: 8 + 22 * f)]);
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  b(),
+                  const SizedBox(width: 8),
+                  Text(
+                    'abolboy',
+                    style: TextStyle(
+                      color: text,
+                      fontFamily: kMono,
+                      fontSize: 30,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 5,
+                      shadows: [
+                        Shadow(color: kGreen, blurRadius: 10 + 26 * f),
+                        Shadow(color: kGreen.withValues(alpha: .7 * f), blurRadius: 34 * f + 1),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  b(),
+                ],
+              );
+            },
           ),
         ),
       );
