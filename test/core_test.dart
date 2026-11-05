@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zeus_vpn/core/free_servers_data.dart';
 import 'package:zeus_vpn/core/models.dart';
 import 'package:zeus_vpn/warp.dart';
 
@@ -129,10 +128,6 @@ void main() {
 
     test('0.0.0.0 placeholder node is dropped', () {
       expect(parseSubscriptionBody('vless://0000@0.0.0.0:1?x=1#info\nvless://u@h.example:443#A').length, 1);
-    });
-
-    test('bundled free servers parse', () {
-      expect(parseSubscriptionBody(kBundledFreeServers).length, 106);
     });
   });
 }

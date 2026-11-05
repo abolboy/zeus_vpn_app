@@ -13,7 +13,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../warp.dart';
 import 'config_builder.dart';
 import 'free_servers.dart';
-import 'free_servers_data.dart';
 import 'models.dart';
 
 const String kPingUrl = 'https://www.gstatic.com/generate_204';
@@ -159,6 +158,18 @@ class ZeusController extends ChangeNotifier {
   /// اشتراک‌های داخلی («سرورهای رایگان») را یک‌بار به‌ازای هر آدرس اضافه می‌کند؛
   /// اگر کاربر حذفشان کند دوباره اضافه نمی‌شوند.
   Future<void> _seedFreeSubs(SharedPreferences p) async {
+    // اشتراک داخلیِ بازنشسته («سرورهای رایگان» نسخه‌های قبلی) از لیست کاربر پاک می‌شود
+    final before0 = subs.length;
+    subs.removeWhere((s) => kRetiredFreeSubscriptions.contains(s.url) && !kFreeSubscriptions.contains(s.url));
+    if (subs.length != before0) {
+      nodes = [];
+      selUri = null;
+      await _saveSubs();
+      await _saveNodes();
+      await _saveSel();
+      await p.remove('free_seeded_urls');
+      log(LogKind.system, 'Retired built-in free subscription removed');
+    }
     if (kFreeSubscriptions.isEmpty) return;
     final seeded = (p.getStringList('free_seeded_urls') ?? <String>[]).toSet();
     final before = seeded.length;
@@ -542,19 +553,6 @@ class ZeusController extends ChangeNotifier {
     return _SubFetch(parseSubscriptionBody(body), parseSubMeta(body, (k) => r.headers.value(k)));
   }
 
-  /// اشتراک داخلی («سرورهای رایگان») اگر از اینترنت دریافت نشد یا خالی بود، از لیست داخل برنامه خوانده می‌شود
-  Future<_SubFetch> _fetchOrBundled(SubRecord s) async {
-    final builtIn = kFreeSubscriptions.contains(s.url);
-    try {
-      final f = await _fetchSub(s.url);
-      if (f.links.isNotEmpty || !builtIn) return f;
-    } catch (e) {
-      if (!builtIn) rethrow;
-      log(LogKind.system, 'Free subscription unreachable; using bundled list', LogLevel.warn);
-    }
-    return _SubFetch(parseSubscriptionBody(kBundledFreeServers), parseSubMeta(kBundledFreeServers, (_) => null));
-  }
-
   /// متن اعلان‌های فعال (از هدر/توضیح اشتراک‌ها)
   List<String> get announcements => [
         for (final s in subs)
@@ -576,7 +574,7 @@ class ZeusController extends ChangeNotifier {
     try {
       final results = await Future.wait(snapshot.map((s) async {
         try {
-          final f = await _fetchOrBundled(s);
+          final f = await _fetchSub(s.url);
           final list = f.links;
           s.lastOk = list.isNotEmpty;
           s.lastSync = DateTime.now();

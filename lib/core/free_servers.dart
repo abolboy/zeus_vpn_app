@@ -1,14 +1,12 @@
-// lib/core/free_servers.dart — اشتراک‌های داخلی برنامه («سرورهای رایگان»)
+// lib/core/free_servers.dart — اشتراک‌های داخلی برنامه
 //
-// آدرس‌هایی که اینجا بگذارید در اولین اجرا خودکار به لیست اشتراک‌ها اضافه و همگام می‌شوند؛
-// پس کاربر بدون افزودن اشتراک هم می‌تواند با «اتصال سریع» وصل شود.
-// اگر کاربر آن را حذف کند دوباره اضافه نمی‌شود، ولی آدرسِ جدیدی که در نسخه‌های بعدی به این لیست
-// اضافه کنید برای همه اضافه می‌شود.
-//
-// نکته: محتوای فایل را می‌توانید هر زمان در GitHub ویرایش کنید؛ نیازی به انتشار نسخهٔ جدید نیست.
-// هر خط فایل یک لینک vless:// ، vmess:// یا trojan:// است (یا کل فایل base64).
-const List<String> kFreeSubscriptions = <String>[
-  'https://raw.githubusercontent.com/abolboy/zeus_vpn_app/main/free_servers.txt',
-];
+// فعلاً هیچ اشتراک داخلی وجود ندارد. اگر روزی خواستید، آدرسش را در kFreeSubscriptions بگذارید؛
+// در اولین اجرا خودکار اضافه و همگام می‌شود (و اگر کاربر حذفش کند دوباره اضافه نمی‌شود).
+const List<String> kFreeSubscriptions = <String>[];
 
 const String kFreeSubName = 'سرورهای رایگان';
+
+/// آدرس‌های اشتراک داخلیِ نسخه‌های قبلی؛ در اولین اجرای این نسخه از لیست کاربر پاک می‌شوند
+const List<String> kRetiredFreeSubscriptions = <String>[
+  'https://raw.githubusercontent.com/abolboy/zeus_vpn_app/main/free_servers.txt',
+];
