@@ -60,8 +60,26 @@ jobs:
           printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=zeus.jks\n' "$KEYSTORE_PASSWORD" "$KEY_PASSWORD" "$KEY_ALIAS" > android/key.properties
           python3 tools/patch_signing.py
 
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('pubspec.lock') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      # Maven Central گاهی خطای 429 (Too Many Requests) می‌دهد؛ تا ۳ بار با فاصله تلاش می‌کنیم
       - name: Build APK
-        run: flutter build apk --release --split-per-abi --build-number=${{ github.run_number }}
+        run: |
+          for attempt in 1 2 3; do
+            if flutter build apk --release --split-per-abi --build-number=${{ github.run_number }}; then
+              exit 0
+            fi
+            echo "::warning::Build attempt $attempt failed (probably a Gradle/Maven network error); retrying in 40s"
+            sleep 40
+          done
+          exit 1
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
