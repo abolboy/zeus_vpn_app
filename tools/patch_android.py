@@ -7,16 +7,20 @@
 2. app build.gradle(.kts) -> packaging { jniLibs.useLegacyPackaging = true }
    so the bundled Xray .so libraries are never stripped/compressed.
 3. gradle.properties -> drop the obsolete enableUncompressedNativeLibs flag.
+4. tools/icons/** -> copied over android/app/src/main/res (ZEUS launcher icon, adaptive + legacy).
 
 The script is idempotent: running it twice changes nothing the second time.
 """
 import os
+import shutil
 import sys
 
 MANIFEST = os.path.join("android", "app", "src", "main", "AndroidManifest.xml")
 GRADLE_KTS = os.path.join("android", "app", "build.gradle.kts")
 GRADLE_GROOVY = os.path.join("android", "app", "build.gradle")
 PROPS = os.path.join("android", "gradle.properties")
+ICONS_SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons")
+RES_DIR = os.path.join("android", "app", "src", "main", "res")
 PERMS = [
     "android.permission.INTERNET",
     "android.permission.POST_NOTIFICATIONS",
@@ -89,8 +93,27 @@ def patch_props() -> None:
         print("props ok")
 
 
+def patch_icons() -> None:
+    """Copy the ZEUS launcher icon resources over the default Flutter ones."""
+    if not os.path.isdir(ICONS_SRC):
+        print("icons: no tools/icons folder, skipped")
+        return
+    if not os.path.isdir(RES_DIR):
+        sys.exit("ERROR: res folder not found: " + RES_DIR)
+    count = 0
+    for root, _dirs, files in os.walk(ICONS_SRC):
+        rel = os.path.relpath(root, ICONS_SRC)
+        dst_dir = RES_DIR if rel == "." else os.path.join(RES_DIR, rel)
+        os.makedirs(dst_dir, exist_ok=True)
+        for name in files:
+            shutil.copy2(os.path.join(root, name), os.path.join(dst_dir, name))
+            count += 1
+    print(f"icons copied: {count} files")
+
+
 if __name__ == "__main__":
     patch_manifest()
     patch_gradle()
     patch_props()
+    patch_icons()
     print("ALL PATCHES DONE")
