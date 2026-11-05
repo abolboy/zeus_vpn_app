@@ -183,6 +183,17 @@ class _SubsPageState extends State<SubsPage> {
                       : Icon(Icons.chevron_left, color: kMuted),
                   onTap: (c.loadingSubs || c.subs.isEmpty) ? null : _refresh,
                 ),
+                ZeusTile(
+                  icon: Icons.ios_share,
+                  title: 'کپی همهٔ لینک‌ها (TXT)',
+                  subtitle: 'هر سرور در یک خط، برای اشتراک‌گذاری',
+                  onTap: c.nodes.isEmpty
+                      ? null
+                      : () {
+                          Clipboard.setData(ClipboardData(text: c.exportLinks()));
+                          _snack('${c.nodes.length} لینک کپی شد');
+                        },
+                ),
 
                 if (c.subs.isNotEmpty) ...[
                   const SectionLabel('اشتراک‌های شما'),
@@ -204,6 +215,35 @@ class _SubsPageState extends State<SubsPage> {
           Text(v, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: kGreen)),
         ],
       );
+
+  /// حجم مصرفی و انقضا (از هدر `subscription-userinfo` یا توضیح ابتدای اشتراک)
+  Widget _metaLine(SubRecord s) {
+    final parts = <String>[];
+    if (s.total > 0) parts.add('${fmtSize(s.used)} از ${fmtSize(s.total)}');
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (s.expire > 0) {
+      final left = DateTime.fromMillisecondsSinceEpoch(s.expire * 1000).difference(DateTime.now()).inDays;
+      parts.add(s.expire * 1000 < nowMs ? 'منقضی شده' : '$left روز مانده');
+    }
+    final frac = s.total > 0 ? (s.used / s.total).clamp(0.0, 1.0).toDouble() : 0.0;
+    final warn = frac > .9 || (s.expire > 0 && s.expire * 1000 < nowMs);
+    final col = warn ? kRed : kGreen;
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (s.total > 0)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(value: frac, minHeight: 4, color: col, backgroundColor: kBorder),
+            ),
+          const SizedBox(height: 3),
+          Text(parts.join(' • '), style: TextStyle(color: col, fontSize: 11)),
+        ],
+      ),
+    );
+  }
 
   Widget _subTile(int i, SubRecord s) {
     final title = s.name.isEmpty ? (Uri.tryParse(s.url)?.host ?? s.url) : s.name;
@@ -233,6 +273,7 @@ class _SubsPageState extends State<SubsPage> {
                   s.lastOk ? '${s.nodeCount} سرور • ${_ago(s.lastSync)}' : 'دریافت ناموفق • ${_ago(s.lastSync)}',
                   style: TextStyle(color: s.lastOk ? kMuted : kRed, fontSize: 11),
                 ),
+                if (s.total > 0 || s.expire > 0) _metaLine(s),
               ],
             ),
           ),

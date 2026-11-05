@@ -228,6 +228,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       children: [
         _logo(),
+        _announce(),
         const SizedBox(height: 14),
         GlassCard(
           hud: true,
@@ -284,6 +285,34 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         _trafficCard(),
         _credit(),
       ],
+    );
+  }
+
+  /// اعلان ارائه‌دهندهٔ اشتراک (از هدر/توضیح اشتراک)؛ با ضربدر بسته می‌شود
+  final Set<String> _hiddenAnnounce = {};
+
+  Widget _announce() {
+    final items = c.announcements.where((a) => !_hiddenAnnounce.contains(a)).toList();
+    if (items.isEmpty) return const SizedBox.shrink();
+    final text = items.first;
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: GlassCard(
+        borderColor: kAmber.withValues(alpha: .5),
+        padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+        child: Row(
+          children: [
+            const Icon(Icons.campaign_outlined, color: kAmber, size: 22),
+            const SizedBox(width: 10),
+            Expanded(child: Text(text, style: const TextStyle(fontSize: 12.5, height: 1.5))),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              icon: Icon(Icons.close, size: 18, color: kMuted),
+              onPressed: () => setState(() => _hiddenAnnounce.add(text)),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

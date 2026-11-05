@@ -157,8 +157,68 @@
     return text
         .split(RegExp(r'[\r\n]+'))
         .map((e) => e.trim())
-        .where((e) => e.isNotEmpty && isSupportedLink(e))
+        .where((e) => e.isNotEmpty && isSupportedLink(e) && !_isPlaceholder(e))
         .toList();
+  }
+
+  /// بعضی اشتراک‌ها اول لیست یک نود ساختگی (0.0.0.0) می‌گذارند تا نام/حجم را نشان دهند؛ سرور واقعی نیست
+  bool _isPlaceholder(String u) => u.contains('@0.0.0.0:');
+
+  // ───────────── اطلاعات اشتراک (سبک v2Box / ArasClient) ─────────────
+  class SubMeta {
+    final String title;
+    final int used; // بایت (آپلود + دانلود)
+    final int total; // بایت؛ ۰ = نامحدود/نامشخص
+    final int expire; // ثانیهٔ یونیکس؛ ۰ = نامشخص
+    final String announce;
+    const SubMeta({this.title = '', this.used = 0, this.total = 0, this.expire = 0, this.announce = ''});
+  }
+
+  String _metaDecode(String v) {
+    final t = v.trim();
+    if (t.toLowerCase().startsWith('base64:')) {
+      final d = tryB64Decode(t.substring(7).trim());
+      if (d != null) return d.trim();
+    }
+    return t;
+  }
+
+  /// از هدرهای HTTP (`profile-title`، `subscription-userinfo`، `announce`) و در نبودشان از
+  /// خط‌های توضیحی ابتدای متن (`# profile-title: …`) می‌خواند.
+  SubMeta parseSubMeta(String body, String? Function(String name) header) {
+    const keys = ['profile-title', 'subscription-userinfo', 'announce'];
+    final found = <String, String>{};
+    for (final k in keys) {
+      final v = header(k);
+      if (v != null && v.trim().isNotEmpty) found[k] = v;
+    }
+    final re = RegExp(r'^#\s*([A-Za-z\-]+)\s*:\s*(.+)$');
+    for (final line in body.split(RegExp(r'[\r\n]+'))) {
+      final m = re.firstMatch(line.trim());
+      if (m == null) continue;
+      final k = m.group(1)!.toLowerCase();
+      if (keys.contains(k)) found.putIfAbsent(k, () => m.group(2)!);
+    }
+    var used = 0;
+    var total = 0;
+    var expire = 0;
+    final info = found['subscription-userinfo'];
+    if (info != null) {
+      final vals = <String, int>{};
+      for (final m in RegExp(r'(\w+)\s*=\s*(\d+)').allMatches(info)) {
+        vals[m.group(1)!.toLowerCase()] = int.tryParse(m.group(2)!) ?? 0;
+      }
+      used = (vals['upload'] ?? 0) + (vals['download'] ?? 0);
+      total = vals['total'] ?? 0;
+      expire = vals['expire'] ?? 0;
+    }
+    return SubMeta(
+      title: _metaDecode(found['profile-title'] ?? ''),
+      used: used,
+      total: total,
+      expire: expire,
+      announce: _metaDecode(found['announce'] ?? ''),
+    );
   }
 
   // ───────────── Country / flag ─────────────
@@ -342,10 +402,34 @@
     int nodeCount;
     DateTime? lastSync;
     bool lastOk;
-    SubRecord({required this.url, this.name = '', this.nodeCount = 0, this.lastSync, this.lastOk = true});
+    int used;
+    int total;
+    int expire;
+    String announce;
+    SubRecord({
+      required this.url,
+      this.name = '',
+      this.nodeCount = 0,
+      this.lastSync,
+      this.lastOk = true,
+      this.used = 0,
+      this.total = 0,
+      this.expire = 0,
+      this.announce = '',
+    });
 
     Map<String, dynamic> toJson() =>
-        {'u': url, 'n': name, 'c': nodeCount, 'ls': lastSync?.millisecondsSinceEpoch, 'ok': lastOk};
+        {
+          'u': url,
+          'n': name,
+          'c': nodeCount,
+          'ls': lastSync?.millisecondsSinceEpoch,
+          'ok': lastOk,
+          'us': used,
+          'tt': total,
+          'ex': expire,
+          'an': announce,
+        };
 
     static SubRecord? fromJson(dynamic v) {
       if (v is String) return SubRecord(url: v); // سازگاری با نسخهٔ قدیمی (List<String>)
@@ -358,6 +442,10 @@
         nodeCount: v['c'] is int ? v['c'] : 0,
         lastSync: v['ls'] is int ? DateTime.fromMillisecondsSinceEpoch(v['ls']) : null,
         lastOk: v['ok'] is bool ? v['ok'] : true,
+        used: v['us'] is int ? v['us'] : 0,
+        total: v['tt'] is int ? v['tt'] : 0,
+        expire: v['ex'] is int ? v['ex'] : 0,
+        announce: (v['an'] ?? '').toString(),
       );
     }
   }

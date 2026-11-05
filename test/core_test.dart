@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zeus_vpn/core/free_servers_data.dart';
 import 'package:zeus_vpn/core/models.dart';
 import 'package:zeus_vpn/warp.dart';
 
@@ -106,6 +107,32 @@ void main() {
 
     test('old raw-outbound format is rejected (user must re-register)', () {
       expect(WarpConfig.tryDecode('{"protocol":"wireguard"}')?.isValid, isNot(true));
+    });
+  });
+
+  group('subscription meta & built-in servers', () {
+    test('reads title, userinfo and announce from comment lines', () {
+      const body = '# profile-title: Test\n# subscription-userinfo: upload=10; download=20; total=100; expire=1893456000\n'
+          '# announce: hello\nvless://u@h.example:443#A';
+      final m = parseSubMeta(body, (_) => null);
+      expect(m.title, 'Test');
+      expect(m.used, 30);
+      expect(m.total, 100);
+      expect(m.expire, 1893456000);
+      expect(m.announce, 'hello');
+    });
+
+    test('HTTP header wins and base64: prefix is decoded', () {
+      final m = parseSubMeta('# profile-title: Body', (k) => k == 'profile-title' ? 'base64:${base64Encode(utf8.encode('Hello'))}' : null);
+      expect(m.title, 'Hello');
+    });
+
+    test('0.0.0.0 placeholder node is dropped', () {
+      expect(parseSubscriptionBody('vless://0000@0.0.0.0:1?x=1#info\nvless://u@h.example:443#A').length, 1);
+    });
+
+    test('bundled free servers parse', () {
+      expect(parseSubscriptionBody(kBundledFreeServers).length, 106);
     });
   });
 }

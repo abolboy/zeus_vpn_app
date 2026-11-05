@@ -12,6 +12,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../warp.dart';
 import 'config_builder.dart';
+import 'free_servers.dart';
+import 'free_servers_data.dart';
 import 'models.dart';
 
 const String kPingUrl = 'https://www.gstatic.com/generate_204';
@@ -148,9 +150,32 @@ class ZeusController extends ChangeNotifier {
     booted = true;
     final p = await SharedPreferences.getInstance();
     _loadPrefs(p);
+    await _seedFreeSubs(p);
     log(LogKind.system, 'ZEUS starting…');
     await _initCore();
     if (subs.isNotEmpty) syncAll();
+  }
+
+  /// اشتراک‌های داخلی («سرورهای رایگان») را یک‌بار به‌ازای هر آدرس اضافه می‌کند؛
+  /// اگر کاربر حذفشان کند دوباره اضافه نمی‌شوند.
+  Future<void> _seedFreeSubs(SharedPreferences p) async {
+    if (kFreeSubscriptions.isEmpty) return;
+    final seeded = (p.getStringList('free_seeded_urls') ?? <String>[]).toSet();
+    final before = seeded.length;
+    var added = false;
+    for (final u in kFreeSubscriptions) {
+      if (seeded.contains(u)) continue;
+      seeded.add(u);
+      if (!subs.any((s) => s.url == u)) {
+        subs.add(SubRecord(url: u, name: kFreeSubName));
+        added = true;
+      }
+    }
+    if (seeded.length != before) await p.setStringList('free_seeded_urls', seeded.toList());
+    if (added) {
+      await _saveSubs();
+      log(LogKind.system, 'Built-in free subscription added');
+    }
   }
 
   Future<void> _initCore() async {
@@ -508,13 +533,36 @@ class ZeusController extends ChangeNotifier {
     if (subs.isNotEmpty) syncAll();
   }
 
-  Future<List<String>> _fetchSub(String url) async {
+  Future<_SubFetch> _fetchSub(String url) async {
     final r = await _dio.get<String>(
       url,
       options: Options(responseType: ResponseType.plain, headers: {'User-Agent': 'v2rayNG/1.8.0'}),
     );
-    return parseSubscriptionBody(r.data ?? '');
+    final body = r.data ?? '';
+    return _SubFetch(parseSubscriptionBody(body), parseSubMeta(body, (k) => r.headers.value(k)));
   }
+
+  /// اشتراک داخلی («سرورهای رایگان») اگر از اینترنت دریافت نشد یا خالی بود، از لیست داخل برنامه خوانده می‌شود
+  Future<_SubFetch> _fetchOrBundled(SubRecord s) async {
+    final builtIn = kFreeSubscriptions.contains(s.url);
+    try {
+      final f = await _fetchSub(s.url);
+      if (f.links.isNotEmpty || !builtIn) return f;
+    } catch (e) {
+      if (!builtIn) rethrow;
+      log(LogKind.system, 'Free subscription unreachable; using bundled list', LogLevel.warn);
+    }
+    return _SubFetch(parseSubscriptionBody(kBundledFreeServers), parseSubMeta(kBundledFreeServers, (_) => null));
+  }
+
+  /// متن اعلان‌های فعال (از هدر/توضیح اشتراک‌ها)
+  List<String> get announcements => [
+        for (final s in subs)
+          if (s.announce.trim().isNotEmpty) s.announce.trim(),
+      ];
+
+  /// همهٔ لینک‌های فعلی در یک متن (هر خط یک سرور) برای اشتراک‌گذاری
+  String exportLinks() => nodes.map((n) => n.rawUri).join('\n');
 
   Future<String?> syncAll() async {
     if (subs.isEmpty || loadingSubs) return null;
@@ -528,10 +576,16 @@ class ZeusController extends ChangeNotifier {
     try {
       final results = await Future.wait(snapshot.map((s) async {
         try {
-          final list = await _fetchSub(s.url);
+          final f = await _fetchOrBundled(s);
+          final list = f.links;
           s.lastOk = list.isNotEmpty;
           s.lastSync = DateTime.now();
           s.nodeCount = list.length;
+          s.used = f.meta.used;
+          s.total = f.meta.total;
+          s.expire = f.meta.expire;
+          s.announce = f.meta.announce;
+          if (s.name.isEmpty && f.meta.title.isNotEmpty) s.name = f.meta.title;
           return list;
         } catch (e) {
           s.lastOk = false;
@@ -1112,4 +1166,10 @@ class ZeusController extends ChangeNotifier {
     _proxyDio.close(force: true);
     super.dispose();
   }
+}
+
+class _SubFetch {
+  final List<String> links;
+  final SubMeta meta;
+  const _SubFetch(this.links, this.meta);
 }
