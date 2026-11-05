@@ -639,9 +639,21 @@ class ZeusController extends ChangeNotifier {
   }
 
   // ───────── ping (چندنمونه‌ای حرفه‌ای) ─────────
+  int _realFailLogged = 0;
+
+  /// پینگ واقعی از طریق هستهٔ Xray. هستهٔ بومی درخواست‌ها را پشت‌سرهم اجرا می‌کند؛ اگر یک سرور
+  /// گیر کند بقیه منتظر می‌مانند، پس برای هر سرور سقف زمانی می‌گذاریم تا لیست به‌خطا/قفل نیفتد.
   Future<int> _realDelay(ServerNode n) async {
     final cfg = _builder.buildForPing(n.rawUri);
-    return _v2ray.getServerDelay(config: jsonEncode(cfg), url: kPingUrl);
+    final ms = await _v2ray
+        .getServerDelay(config: jsonEncode(cfg), url: kPingUrl)
+        .timeout(const Duration(seconds: 12), onTimeout: () => -2);
+    if (ms < 0 && _realFailLogged < 8) {
+      _realFailLogged++;
+      log(LogKind.core, 'Real delay failed: ${n.displayName} (${n.host}:${n.port}) → ${ms == -2 ? 'timeout' : 'core returned $ms'}',
+          LogLevel.warn);
+    }
+    return ms;
   }
 
   Future<int> _tcpDelay(ServerNode n) async {
@@ -706,7 +718,11 @@ class ZeusController extends ChangeNotifier {
         n.jitterMs = 0;
         n.lossPct = 0;
       }
-    } catch (_) {
+    } catch (e) {
+      if (_realFailLogged < 8) {
+        _realFailLogged++;
+        log(LogKind.core, 'Ping error: ${n.displayName} → $e', LogLevel.warn);
+      }
       n.pingMs = -1;
       n.jitterMs = 0;
       n.lossPct = 100;
@@ -721,16 +737,19 @@ class ZeusController extends ChangeNotifier {
     pinging = true;
     pingDone = 0;
     pingTotal = nodes.length;
+    _realFailLogged = 0;
     notifyListeners();
     try {
       final queue = List<ServerNode>.from(nodes);
+      // حالت «واقعی» سنگین‌تر است (هر سرور یک نمونهٔ Xray می‌سازد)؛ همزمانی کمتر
+      final workers = (!connected && !connecting && settings.delayMode == 0) ? 3 : 6;
       Future<void> worker() async {
         while (queue.isNotEmpty) {
           await pingOne(queue.removeAt(0));
           pingDone++;
         }
       }
-      await Future.wait(List.generate(6, (_) => worker()));
+      await Future.wait(List.generate(workers, (_) => worker()));
       await _saveNodes();
     } finally {
       pinging = false;
