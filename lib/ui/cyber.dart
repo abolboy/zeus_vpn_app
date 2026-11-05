@@ -190,8 +190,8 @@ class _BootOverlayState extends State<BootOverlay> with SingleTickerProviderStat
           builder: (_, __) {
             final v = _c.value;
             final fade = v > .88 ? (1 - (v - .88) / .12) : 1.0;
-            const dim = TextStyle(fontFamily: kMono, fontSize: 12.5, color: kMuted, height: 1.2);
-            const ok = TextStyle(fontFamily: kMono, fontSize: 12.5, color: kCyan, fontWeight: FontWeight.w800);
+            final dim = TextStyle(fontFamily: kMono, fontSize: 12.5, color: kMuted, height: 1.2);
+            final ok = TextStyle(fontFamily: kMono, fontSize: 12.5, color: kCyan, fontWeight: FontWeight.w800);
             final lines = <Widget>[];
             for (var i = 0; i < _steps.length; i++) {
               final start = .06 + i * .13;
@@ -203,7 +203,7 @@ class _BootOverlayState extends State<BootOverlay> with SingleTickerProviderStat
                 padding: const EdgeInsets.only(bottom: 7),
                 child: Text.rich(TextSpan(children: [
                   TextSpan(text: label.substring(0, cut), style: dim),
-                  if (k >= 1) const TextSpan(text: '[ OK ]', style: ok),
+                  if (k >= 1) TextSpan(text: '[ OK ]', style: ok),
                 ])),
               ));
             }

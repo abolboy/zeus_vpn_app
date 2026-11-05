@@ -71,7 +71,7 @@ class ZeusApp extends StatelessWidget {
 
   ThemeData _buildTheme() {
     final base = ThemeData.dark(useMaterial3: true);
-    const scheme = ColorScheme.dark(
+    final scheme = ColorScheme.dark(
       primary: kGreen,
       onPrimary: Colors.black,
       secondary: kBlue,
