@@ -12,7 +12,7 @@ import 'ui/cyber.dart';
 import 'ui/theme.dart';
 import 'ui/transitions.dart';
 
-const String kAppVersion = '2.3.0';
+const String kAppVersion = '2.4.0';
 
 /// رنگ نوار ناوبری سیستم با تم فعلی هماهنگ می‌شود (هنگام شروع و هر بار تعویض تم)
 void _applyChrome() {
@@ -21,7 +21,9 @@ void _applyChrome() {
     statusBarIconBrightness: Brightness.light,
     systemNavigationBarColor: kSurface,
     systemNavigationBarIconBrightness: Brightness.light,
+    systemNavigationBarContrastEnforced: false,
   ));
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 }
 
 Future<void> main() async {
@@ -57,7 +59,17 @@ class ZeusApp extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            ZeusBackground(enabled: true, child: child!),
+            ZeusBackground(
+              enabled: true,
+              // نوار ناوبری پایین (سه‌دکمه‌ای/ژستی): محتوا بالای آن می‌ماند و پس‌زمینه زیرش ادامه دارد
+              child: Builder(builder: (ctx2) {
+                final bottom = MediaQuery.viewPaddingOf(ctx2).bottom;
+                return Padding(
+                  padding: EdgeInsets.only(bottom: bottom),
+                  child: MediaQuery.removePadding(context: ctx2, removeBottom: true, child: child!),
+                );
+              }),
+            ),
             // اسکن‌لاین و وینیت CRT روی کل برنامه (ورودی لمس را نمی‌گیرد)
             const CrtOverlay(),
             // ترمینال بوت؛ با لمس رد می‌شود و بعد از چند ثانیه محو می‌شود
@@ -224,6 +236,12 @@ class _ZeusShellState extends State<ZeusShell> {
 
   void _openMenu() => _scaffoldKey.currentState?.openDrawer();
 
+  Future<void> _checkUpdate() async {
+    final msg = await c.checkUpdate(manual: true);
+    if (!mounted || msg == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
   void _fromMenu(VoidCallback go) {
     // بستن drawer فقط اگر واقعاً باز است (قبلاً pop بی‌قید می‌توانست صفحه را ببندد)
     if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
@@ -372,6 +390,8 @@ class _ZeusShellState extends State<ZeusShell> {
                 _item(Icons.article_outlined, 'لاگ‌ها', () => _fromMenu(_goLogs),
                     badge: c.logs.isEmpty ? null : '${c.logs.length}'),
                 const Divider(height: 16),
+                _item(Icons.system_update_alt, 'بررسی به‌روزرسانی', () => _fromMenu(_checkUpdate),
+                    badge: c.update == null ? null : 'جدید'),
                 _item(Icons.info_outline, 'درباره', () => _fromMenu(_about)),
 
                 const Spacer(),

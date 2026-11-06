@@ -14,6 +14,7 @@ import '../warp.dart';
 import 'config_builder.dart';
 import 'free_servers.dart';
 import 'models.dart';
+import 'updater.dart';
 
 const String kPingUrl = 'https://www.gstatic.com/generate_204';
 const String kSpeedDownUrl = 'https://speed.cloudflare.com/__down?bytes=30000000';
@@ -152,7 +153,15 @@ class ZeusController extends ChangeNotifier {
     await _seedFreeSubs(p);
     log(LogKind.system, 'ZEUS starting…');
     await _initCore();
-    if (subs.isNotEmpty) syncAll();
+    if (subs.isNotEmpty) {
+      syncAll().then((_) {
+        if (settings.autoConnect && !connected && !connecting) quickConnect();
+      });
+    } else if (settings.autoConnect && nodes.isNotEmpty) {
+      quickConnect();
+    }
+    // بررسی بی‌صدای نسخهٔ جدید (چند ثانیه بعد، تا شروع اپ کند نشود)
+    Future.delayed(const Duration(seconds: 6), () => checkUpdate());
   }
 
   /// اشتراک‌های داخلی («سرورهای رایگان») را یک‌بار به‌ازای هر آدرس اضافه می‌کند؛
@@ -638,6 +647,81 @@ class ZeusController extends ChangeNotifier {
 
   // ───────── ping (چندنمونه‌ای حرفه‌ای) ─────────
   int _realFailLogged = 0;
+
+  // ───────── به‌روزرسانی برنامه ─────────
+  UpdateInfo? update;
+  bool checkingUpdate = false;
+
+  /// نسخهٔ جدید را از GitHub می‌پرسد. پیام برای کاربر برمی‌گرداند (null = فقط بی‌صدا انجام شد).
+  Future<String?> checkUpdate({bool manual = false}) async {
+    if (checkingUpdate) return null;
+    if (kBuildNumber <= 0) return manual ? 'بررسی به‌روزرسانی فقط در نسخهٔ ساخته‌شده توسط CI فعال است' : null;
+    checkingUpdate = true;
+    notifyListeners();
+    try {
+      update = await checkForUpdate(_dio);
+      if (update != null) return manual ? 'نسخهٔ جدید آماده است (بیلد ${update!.build})' : null;
+      return manual ? 'نسخهٔ شما به‌روز است' : null;
+    } catch (e) {
+      log(LogKind.system, 'Update check failed: $e', LogLevel.warn);
+      return manual ? 'بررسی به‌روزرسانی ناموفق بود' : null;
+    } finally {
+      checkingUpdate = false;
+      notifyListeners();
+    }
+  }
+
+  // ───────── اتصال هوشمند ─────────
+  /// اگر پینگی نیست «پینگ همه» می‌زند، سریع‌ترین سرور را انتخاب می‌کند و وصل می‌شود.
+  /// پیام اطلاع/خطا برمی‌گرداند؛ null یعنی موفق.
+  Future<String?> quickConnect() async {
+    if (busy || pinging) return null;
+    if (nodes.isEmpty) return 'هنوز سروری ندارید؛ از منو «اشتراک» را اضافه کنید';
+    if (nodes.every((n) => n.pingMs < 0)) await pingAll();
+    final best = bestNode();
+    if (best == null) return 'هیچ سروری پاسخ نداد؛ اینترنت را بررسی کنید';
+    if (connected && selUri == best.rawUri) return 'همین حالا به سریع‌ترین سرور وصل هستید';
+    if (connected || connecting) return selectNode(best); // سرور را عوض و دوباره وصل می‌کند
+    await selectNode(best, reconnect: false);
+    return connect();
+  }
+
+  // ───────── پشتیبان‌گیری / بازیابی ─────────
+  /// اشتراک‌ها و تنظیمات PattNG در یک متن (برای کپی و انتقال به گوشی دیگر)
+  String exportBackup() {
+    final m = {
+      'v': 1,
+      'subs': [for (final s in subs) {'u': s.url, 'n': s.name}],
+      'patt': patt.toJson(),
+    };
+    return 'ZEUS-BACKUP:${base64Url.encode(utf8.encode(jsonEncode(m)))}';
+  }
+
+  /// null = موفق؛ در غیر این صورت پیام خطا
+  Future<String?> importBackup(String text) async {
+    final t = text.trim();
+    if (!t.startsWith('ZEUS-BACKUP:')) return 'متن پشتیبان معتبر نیست';
+    try {
+      final j = jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(t.substring('ZEUS-BACKUP:'.length))))) as Map;
+      for (final e in (j['subs'] as List? ?? const [])) {
+        if (e is! Map) continue;
+        final u = (e['u'] ?? '').toString();
+        if (!u.startsWith('http') || subs.any((s) => s.url == u)) continue;
+        subs.add(SubRecord(url: u, name: (e['n'] ?? '').toString()));
+      }
+      if (j['patt'] is Map) {
+        patt.loadJson(j['patt'] as Map);
+        await savePatt();
+      }
+      await _saveSubs();
+      notifyListeners();
+      if (subs.isNotEmpty) await syncAll();
+      return null;
+    } catch (e) {
+      log(LogKind.system, 'Backup import failed: $e', LogLevel.warn);
+      return 'پشتیبان خراب است یا قابل خواندن نیست';
+    }
+  }
 
   /// پینگ واقعی از طریق هستهٔ Xray. هستهٔ بومی درخواست‌ها را پشت‌سرهم اجرا می‌کند؛ اگر یک سرور
   /// گیر کند بقیه منتظر می‌مانند، پس برای هر سرور سقف زمانی می‌گذاریم تا لیست به‌خطا/قفل نیفتد.

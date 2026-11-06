@@ -184,6 +184,21 @@ class _SubsPageState extends State<SubsPage> {
                   onTap: (c.loadingSubs || c.subs.isEmpty) ? null : _refresh,
                 ),
                 ZeusTile(
+                  icon: Icons.backup_outlined,
+                  title: 'پشتیبان‌گیری (کپی)',
+                  subtitle: 'اشتراک‌ها و تنظیمات PattNG در یک متن',
+                  onTap: () {
+                    Clipboard.setData(ClipboardData(text: c.exportBackup()));
+                    _snack('پشتیبان کپی شد؛ آن را جایی امن نگه دارید');
+                  },
+                ),
+                ZeusTile(
+                  icon: Icons.restore,
+                  title: 'بازیابی از کلیپ‌بورد',
+                  subtitle: 'متنی که با ZEUS-BACKUP شروع می‌شود',
+                  onTap: _restore,
+                ),
+                ZeusTile(
                   icon: Icons.ios_share,
                   title: 'کپی همهٔ لینک‌ها (TXT)',
                   subtitle: 'هر سرور در یک خط، برای اشتراک‌گذاری',
@@ -215,6 +230,12 @@ class _SubsPageState extends State<SubsPage> {
           Text(v, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: kGreen)),
         ],
       );
+
+  Future<void> _restore() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final err = await c.importBackup(data?.text ?? '');
+    _snack(err ?? 'پشتیبان بازیابی شد', err: err != null);
+  }
 
   /// حجم مصرفی و انقضا (از هدر `subscription-userinfo` یا توضیح ابتدای اشتراک)
   Widget _metaLine(SubRecord s) {

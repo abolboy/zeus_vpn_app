@@ -373,6 +373,14 @@ class _SettingsPageState extends State<SettingsPage> {
                         },
                       ),
                       const Divider(height: 1),
+                      _switch(
+                        icon: Icons.bolt,
+                        title: 'اتصال خودکار به سریع‌ترین سرور',
+                        subtitle: 'هنگام باز شدن اپ، بهترین سرور پیدا و وصل می‌شود',
+                        value: s.autoConnect,
+                        onChanged: (v) => _app(() => s.autoConnect = v),
+                      ),
+                      const Divider(height: 1),
                       ListTile(
                         leading: Icon(Icons.article_outlined, color: kGreen),
                         title: const Text('مشاهدهٔ لاگ‌ها'),

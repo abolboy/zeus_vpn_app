@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../core/controller.dart';
 import '../ui/cyber.dart';
@@ -121,29 +122,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   /// اتصال سریع: اگر پینگی گرفته نشده «پینگ همه» می‌زند، سریع‌ترین سرور را انتخاب می‌کند و وصل می‌شود
   Future<void> _quickConnect() async {
     if (c.busy || c.pinging) return;
-    if (c.nodes.isEmpty) {
-      _snack('هنوز سروری ندارید؛ از منو «اشتراک» را اضافه کنید', err: true);
-      return;
-    }
     _snack('در حال یافتن سریع‌ترین سرور…');
-    if (c.nodes.every((n) => n.pingMs < 0)) await c.pingAll();
-    final best = c.bestNode();
-    if (best == null) {
-      _snack('هیچ سروری پاسخ نداد؛ اینترنت را بررسی کنید', err: true);
-      return;
-    }
-    if (c.connected && c.selUri == best.rawUri) {
-      _snack('همین حالا به سریع‌ترین سرور وصل هستید');
-      return;
-    }
-    final String? err;
-    if (c.connected || c.connecting) {
-      err = await c.selectNode(best); // سرور را عوض و دوباره وصل می‌کند
-    } else {
-      await c.selectNode(best, reconnect: false);
-      err = await c.connect();
-    }
-    if (err != null) _snack(err, err: true);
+    final msg = await c.quickConnect();
+    if (msg != null) _snack(msg, err: !msg.startsWith('همین'));
   }
 
   // ───────── وضعیت واقعی (نه فقط CONNECTED پلاگین) ─────────
@@ -228,6 +209,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       children: [
         _logo(),
+        _updateBanner(),
         _announce(),
         const SizedBox(height: 14),
         GlassCard(
@@ -285,6 +267,42 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         _trafficCard(),
         _credit(),
       ],
+    );
+  }
+
+  /// بنر نسخهٔ جدید (از GitHub Releases)
+  bool _updateHidden = false;
+
+  Widget _updateBanner() {
+    final u = c.update;
+    if (u == null || _updateHidden) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: GlassCard(
+        borderColor: kGreen.withValues(alpha: .6),
+        padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+        child: Row(
+          children: [
+            Icon(Icons.system_update_alt, color: kGreen, size: 22),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                u.version.isEmpty ? 'نسخهٔ جدید آماده است (بیلد ${u.build})' : 'نسخهٔ ${u.version} آماده است',
+                style: const TextStyle(fontSize: 12.5),
+              ),
+            ),
+            TextButton(
+              onPressed: () => launchUrl(Uri.parse(u.url), mode: LaunchMode.externalApplication),
+              child: Text('دانلود', style: TextStyle(color: kGreen, fontWeight: FontWeight.w800)),
+            ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              icon: Icon(Icons.close, size: 18, color: kMuted),
+              onPressed: () => setState(() => _updateHidden = true),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -537,18 +555,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         ),
         const SizedBox(height: 14),
         _speedPanel(),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 50,
-          child: OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: kRed,
-              side: const BorderSide(color: kRed),
-              backgroundColor: kRed.withValues(alpha: 0.08),
-            ),
-            onPressed: c.busy ? null : () => c.disconnect(),
-            icon: const Icon(Icons.power_settings_new, size: 20),
-            label: const Text('قطع اتصال', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+        const SizedBox(height: 14),
+        Center(
+          child: Text(
+            'برای قطع اتصال، دایرهٔ بالا را لمس کنید',
+            style: TextStyle(color: kMuted, fontSize: 11.5),
           ),
         ),
         _credit(),

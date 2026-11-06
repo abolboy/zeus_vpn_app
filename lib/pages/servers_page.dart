@@ -18,6 +18,7 @@ class _ServersPageState extends State<ServersPage> {
   final _search = TextEditingController();
   int _tab = 0; // 0 همه | 1 پیشنهادی | 2 پینگ کمتر | 3 علاقه‌مندی‌ها
   String _proto = 'همه';
+  String _group = ''; // برچسب اشتراک (S1، S2…)؛ خالی = همهٔ اشتراک‌ها
 
   /// سروری که کاربر در این صفحه لمس کرده. تا دکمهٔ «اتصال» زده نشود،
   /// در حالت متصل هیچ تغییری در c.selUri داده نمی‌شود (اتصال فعلی دست‌نخورده می‌ماند).
@@ -46,6 +47,32 @@ class _ServersPageState extends State<ServersPage> {
 
   ServerNode? get _best => c.bestNode();
 
+  /// نام قابل‌نمایش یک اشتراک بر اساس برچسبش (S1 ← اولین اشتراک)
+  String _subName(String tag) {
+    final m = RegExp(r'^S(\d+)$').firstMatch(tag);
+    if (m != null) {
+      final i = (int.tryParse(m.group(1)!) ?? 0) - 1;
+      if (i >= 0 && i < c.subs.length) {
+        final s = c.subs[i];
+        if (s.name.isNotEmpty) return s.name;
+        final host = Uri.tryParse(s.url)?.host ?? '';
+        return host.isNotEmpty ? host : 'اشتراک ${i + 1}';
+      }
+    }
+    return tag;
+  }
+
+  /// گروه‌ها برای فیلتر: (برچسب، متن). اولی «همه» است.
+  List<MapEntry<String, String>> get _groups {
+    final out = <MapEntry<String, String>>[const MapEntry('', 'همه اشتراک‌ها')];
+    for (var i = 0; i < c.subs.length; i++) {
+      final tag = 'S${i + 1}';
+      final n = c.nodes.where((e) => e.subTag == tag).length;
+      out.add(MapEntry(tag, '${_subName(tag)} ($n)'));
+    }
+    return out;
+  }
+
   List<String> get _protocols {
     final set = <String>{'همه'};
     for (final n in c.nodes) {
@@ -58,6 +85,7 @@ class _ServersPageState extends State<ServersPage> {
     final q = _search.text.trim().toLowerCase();
     var list = c.nodes.where((n) {
       if (_proto != 'همه' && n.protocol != _proto) return false;
+      if (_group.isNotEmpty && n.subTag != _group) return false;
       if (q.isNotEmpty && !n.displayName.toLowerCase().contains(q) && !n.host.toLowerCase().contains(q)) {
         return false;
       }
@@ -241,6 +269,18 @@ class _ServersPageState extends State<ServersPage> {
                       : const SizedBox(width: double.infinity),
                 ),
                 const SizedBox(height: 8),
+                // دسته‌بندی بر اساس اشتراک (وقتی بیش از یک اشتراک داریم)
+                if (c.subs.length > 1) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: PillTabs(
+                      items: [for (final g in _groups) g.value],
+                      index: _groups.indexWhere((g) => g.key == _group).clamp(0, _groups.length - 1).toInt(),
+                      onChanged: (i) => setState(() => _group = _groups[i].key),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: PillTabs(
@@ -339,14 +379,35 @@ class _ServersPageState extends State<ServersPage> {
         ),
       );
     }
+    // وقتی بیش از یک اشتراک داریم و فیلتری انتخاب نشده، سرورها زیر عنوان هر اشتراک می‌آیند
+    final entries = <Object>[];
+    if (_group.isEmpty && c.subs.length > 1) {
+      final byTag = <String, List<ServerNode>>{};
+      for (final n in list) {
+        (byTag[n.subTag] ??= <ServerNode>[]).add(n);
+      }
+      final order = <String>[for (var i = 0; i < c.subs.length; i++) 'S${i + 1}'];
+      final tags = <String>[...order.where(byTag.containsKey), ...byTag.keys.where((t) => !order.contains(t))];
+      for (final t in tags) {
+        entries.add(_GroupHeader(t, byTag[t]!.length));
+        entries.addAll(byTag[t]!);
+      }
+    } else {
+      entries.addAll(list);
+    }
     return RefreshIndicator(
       color: kGreen,
       backgroundColor: kSurface,
       onRefresh: _refresh,
       child: ListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-        itemCount: list.length,
-        itemBuilder: (_, i) => _Appear(index: i, child: _tile(list[i])),
+        itemCount: entries.length,
+        itemBuilder: (_, i) {
+          final e = entries[i];
+          if (e is ServerNode) return _Appear(index: i, child: _tile(e));
+          final h = e as _GroupHeader;
+          return SectionLabel('${_subName(h.tag)} • ${h.count}', icon: Icons.folder_open_outlined);
+        },
       ),
     );
   }
@@ -526,4 +587,10 @@ class _Appear extends StatelessWidget {
         ),
         child: child,
       );
+}
+
+class _GroupHeader {
+  final String tag;
+  final int count;
+  const _GroupHeader(this.tag, this.count);
 }
