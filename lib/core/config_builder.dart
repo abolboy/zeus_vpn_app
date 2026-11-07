@@ -14,7 +14,8 @@ class ConfigBuilder {
   final WarpConfig? warp;
   final bool warpOn;
   final int warpMtu; // MTU تونل WireGuard برای outboundهای WARP
-  ConfigBuilder({required this.patt, this.warp, this.warpOn = false, this.warpMtu = 1280});
+  final String? chainUri; // سرور واسطه: ترافیک اول از آن عبور می‌کند، بعد به سرور انتخابی می‌رسد
+  ConfigBuilder({required this.patt, this.warp, this.warpOn = false, this.warpMtu = 1280, this.chainUri});
 
   bool get _warpReady => warpOn && (warp?.isValid ?? false);
 
@@ -41,16 +42,23 @@ class ConfigBuilder {
     final sockopt = (ss['sockopt'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
     final frag = _fragmentOut();
 
+    // پایین‌ترین حلقه‌ای که اتصال از آن شروع می‌شود (fragment یا warp)
+    final String? tail = frag != null ? 'fragment' : (_warpReady ? 'warp' : null);
     if (frag != null) {
-      sockopt['dialerProxy'] = 'fragment';
       if (_warpReady) {
         (frag['streamSettings'] as Map<String, dynamic>)['sockopt'] = {'dialerProxy': 'warp'};
       }
       result.add(frag);
-    } else if (_warpReady) {
-      sockopt['dialerProxy'] = 'warp';
     }
     if (_warpReady) result.add(warp!.toXrayOutbound(tag: 'warp', mtu: warpMtu));
+    // زنجیرهٔ دو سرور: سرور انتخابی از طریق سرور واسطه (chain-entry) وصل می‌شود
+    final chainOut = (chainUri != null && chainUri!.isNotEmpty && chainUri != uri) ? _chainOutbound(chainUri!, tail) : null;
+    if (chainOut != null) {
+      sockopt['dialerProxy'] = 'chain-entry';
+      result.add(chainOut);
+    } else if (tail != null) {
+      sockopt['dialerProxy'] = tail;
+    }
     if (sockopt.isNotEmpty) ss['sockopt'] = sockopt;
     main['streamSettings'] = ss;
 
@@ -59,6 +67,27 @@ class ConfigBuilder {
       ..add(_directOut())
       ..add(_blockOut());
     return _wrap(cfg, result);
+  }
+
+  /// outbound سرور واسطه؛ خودش از `tail` (fragment/warp) عبور می‌کند. اگر لینک نامعتبر باشد null.
+  Map<String, dynamic>? _chainOutbound(String uri, String? tail) {
+    try {
+      final parsed = V2ray.parseFromURL(uri);
+      final cfg = jsonDecode(parsed.getFullConfiguration()) as Map;
+      final outs = (cfg['outbounds'] as List?) ?? const [];
+      if (outs.isEmpty) return null;
+      final o = _deepCopy(outs.first as Map)..['tag'] = 'chain-entry';
+      if (tail != null) {
+        final ss = (o['streamSettings'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+        final so = (ss['sockopt'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+        so['dialerProxy'] = tail;
+        ss['sockopt'] = so;
+        o['streamSettings'] = ss;
+      }
+      return o;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// فقط WARP (بدون سرور)
@@ -149,6 +178,9 @@ class ConfigBuilder {
       // ✅ همهٔ پرس‌وجوهای DNS دستگاه → ماژول DNS داخلی
       {'type': 'field', 'inboundTag': ['socks', 'http'], 'port': '53', 'outboundTag': 'dns-out'},
     ];
+    if (patt.blockAds) {
+      rules.add({'type': 'field', 'domain': ['geosite:category-ads-all'], 'outboundTag': 'block'});
+    }
     if (patt.bypassLan) {
       rules.add({'type': 'field', 'ip': ['geoip:private'], 'outboundTag': 'direct'});
       rules.add({'type': 'field', 'domain': ['regexp:.*\\.local\$', 'domain:localhost'], 'outboundTag': 'direct'});

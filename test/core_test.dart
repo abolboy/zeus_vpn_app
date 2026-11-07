@@ -65,6 +65,15 @@ void main() {
       expect(t.autoFailover, false);
     });
 
+    test('Patt keeps blockAds and AppSettings keeps chain uri', () {
+      final p = Patt()..blockAds = true;
+      final q = Patt()..loadJson(p.toJson());
+      expect(q.blockAds, true);
+      final s = AppSettings()..chainUri = 'vless://u@h.example:443#A';
+      final t = AppSettings()..loadJson(s.toJson());
+      expect(t.chainUri, 'vless://u@h.example:443#A');
+    });
+
     test('SubRecord accepts legacy string format', () {
       expect(SubRecord.fromJson('https://a.example')?.url, 'https://a.example');
     });
@@ -91,6 +100,19 @@ void main() {
       final base = List<int>.filled(32, 0)..[0] = 9;
       expect(priv.length, 32);
       expect(base64Encode(x25519(priv, base)), kp.publicKey);
+    });
+
+    test('WireGuard conf import', () {
+      final priv = base64Encode(List<int>.filled(32, 7));
+      final peer = base64Encode(List<int>.filled(32, 9));
+      final cfg = parseWireGuardConf('[Interface]\nPrivateKey = $priv\nAddress = 172.16.0.2/32, 2606:4700:110:8a36::1/128\n\n'
+          '[Peer]\nPublicKey = $peer\nEndpoint = engage.cloudflareclient.com:2408\n');
+      expect(cfg.addressV4, '172.16.0.2/32');
+      expect(cfg.addressV6, '2606:4700:110:8a36::1/128');
+      expect(cfg.endpoint, 'engage.cloudflareclient.com:2408');
+      expect(cfg.reserved, [0, 0, 0]);
+      expect(base64Decode(cfg.publicKey).length, 32);
+      expect(() => parseWireGuardConf('[Interface]\nAddress = 1.2.3.4/32'), throwsFormatException);
     });
 
     test('config round-trip and xray outbound', () {

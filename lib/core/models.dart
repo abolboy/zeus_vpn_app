@@ -293,6 +293,7 @@
     String muxConc = '8';
     bool bypassLan = true;
     bool bypassIran = false;
+    bool blockAds = false; // مسدودساز تبلیغات/ردیاب‌ها (geosite:category-ads-all)
     String logLevel = 'warning';
     String dnsMode = 'auto';
     String customDns = '1.1.1.1';
@@ -317,7 +318,7 @@
           'frag': frag, 'fl': fragLen, 'fi': fragInt,
           'noise': noise, 'nt': noiseType, 'np': noisePacket, 'nd': noiseDelay,
           'mux': mux, 'mc': muxConc,
-          'lan': bypassLan, 'irn': bypassIran, 'log': logLevel,
+          'lan': bypassLan, 'irn': bypassIran, 'ads': blockAds, 'log': logLevel,
           'dns': dnsMode, 'dnsc': customDns,
           'real': reality, 'pbk': pbk, 'sid': sid, 'spx': spx, 'flow': flow,
           'alpn': alpn, 'sni': sni,
@@ -332,7 +333,7 @@
       noise = b('noise', noise); noiseType = s('nt', noiseType);
       noisePacket = s('np', noisePacket); noiseDelay = s('nd', noiseDelay);
       mux = b('mux', mux); muxConc = s('mc', muxConc);
-      bypassLan = b('lan', bypassLan); bypassIran = b('irn', bypassIran); logLevel = s('log', logLevel);
+      bypassLan = b('lan', bypassLan); bypassIran = b('irn', bypassIran); blockAds = b('ads', blockAds); logLevel = s('log', logLevel);
       dnsMode = s('dns', dnsMode); customDns = s('dnsc', customDns);
       reality = b('real', reality); pbk = s('pbk', pbk); sid = s('sid', sid);
       spx = s('spx', spx); flow = s('flow', flow);
@@ -350,6 +351,7 @@
     bool autoConnect = false;
     bool autoFailover = true;  // اگر تونل تأیید نشد، خودکار سرور بعدی امتحان شود
     List<String> bypassApps = <String>[]; // بستهٔ برنامه‌هایی که از VPN مستثنی‌اند
+    String chainUri = '';      // سرور واسطهٔ زنجیره (خالی = بدون زنجیره)
     // ── WARP ──
     String warpMode = 'chain'; // chain = روی سرور فعال | only = فقط WARP بدون سرور
     int warpMtu = 1280;        // MTU تونل WireGuard (۱۲۸۰ امن‌ترین، ۱۳۸۰/۱۴۲۰ سریع‌تر روی بعضی ISPها)
@@ -362,6 +364,7 @@
           'auto': autoConnect,
           'fail': autoFailover,
           'apps': bypassApps,
+          'chain': chainUri,
           'wmode': warpMode,
           'wmtu': warpMtu,
           'wfix': warpAutoFix,
@@ -374,6 +377,7 @@
       autoConnect = m['auto'] is bool ? m['auto'] : autoConnect;
       autoFailover = m['fail'] is bool ? m['fail'] : autoFailover;
       if (m['apps'] is List) bypassApps = [for (final e in m['apps'] as List) e.toString()];
+      chainUri = (m['chain'] ?? '').toString();
       final wm = (m['wmode'] ?? '').toString();
       if (wm == 'chain' || wm == 'only') warpMode = wm;
       final wmtu = m['wmtu'];

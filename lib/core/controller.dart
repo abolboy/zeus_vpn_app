@@ -142,6 +142,7 @@ class ZeusController extends ChangeNotifier {
         warp: warp,
         warpOn: warpOn,
         warpMtu: settings.warpMtu,
+        chainUri: settings.chainUri.isEmpty ? null : settings.chainUri,
       );
 
   // ───────── boot ─────────
@@ -1308,6 +1309,43 @@ class ZeusController extends ChangeNotifier {
       busy = false;
       notifyListeners();
     }
+  }
+
+  /// کانفیگ WireGuard (فرمت wgcf) را به‌جای ثبت‌نام خودکار وارد می‌کند. null = موفق
+  Future<String?> importWarpConf(String text) async {
+    try {
+      warp = parseWireGuardConf(text);
+      warpOn = true;
+      await saveWarp();
+      log(LogKind.system, 'WARP config imported (${warp?.addressV4})');
+      notifyListeners();
+      return null;
+    } on FormatException catch (e) {
+      return e.message;
+    } catch (_) {
+      return 'کانفیگ قابل خواندن نیست';
+    }
+  }
+
+  /// سرور واسطهٔ زنجیره (رشتهٔ خالی = غیرفعال)
+  Future<void> setChain(String uri) async {
+    settings.chainUri = uri;
+    await saveSettings();
+    notifyListeners();
+  }
+
+  /// تعداد سرورهای بی‌پاسخ (پینگ‌شده و timeout) که حذف‌شدنی‌اند؛ علاقه‌مندی‌ها و سرور انتخابی حفظ می‌شوند
+  int get deadCount => nodes.where((n) => n.pingMs == -1 && !n.favorite && n.rawUri != selUri).length;
+
+  Future<int> removeDeadNodes() async {
+    final before = nodes.length;
+    nodes.removeWhere((n) => n.pingMs == -1 && !n.favorite && n.rawUri != selUri);
+    final removed = before - nodes.length;
+    if (removed > 0) {
+      await _saveNodes();
+      notifyListeners();
+    }
+    return removed;
   }
 
   Future<void> setWarpOn(bool v) async {

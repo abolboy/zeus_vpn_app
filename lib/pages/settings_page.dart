@@ -27,6 +27,84 @@ class _SettingsPageState extends State<SettingsPage> {
   static const _flows = ['', 'xtls-rprx-vision', 'xtls-rprx-vision-udp443'];
   static const _logLevels = ['none', 'error', 'warning', 'info']; // debug عمداً حذف شده (حریم خصوصی)
 
+  String _chainLabel() {
+    final u = c.settings.chainUri;
+    if (u.isEmpty) return 'غیرفعال — ترافیک مستقیم به سرور انتخابی می‌رود';
+    final m = c.nodes.where((n) => n.rawUri == u);
+    return m.isEmpty ? 'سرور واسطهٔ انتخاب‌شده (در لیست فعلی نیست)' : 'ابتدا از ${m.first.displayName} عبور می‌کند';
+  }
+
+  Future<void> _pickChain() async {
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('سرور واسطه (زنجیره)'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 380,
+          child: c.nodes.isEmpty
+              ? const Center(child: Text('اول یک اشتراک اضافه کنید'))
+              : ListView(
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.link_off),
+                      title: const Text('بدون زنجیره (غیرفعال)'),
+                      selected: c.settings.chainUri.isEmpty,
+                      onTap: () => Navigator.pop(ctx, ''),
+                    ),
+                    for (final n in c.nodes)
+                      ListTile(
+                        dense: true,
+                        title: Text(n.displayName, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        subtitle: Text('${n.protocol} • ${n.pingText}', style: const TextStyle(fontSize: 11)),
+                        selected: n.rawUri == c.settings.chainUri,
+                        onTap: () => Navigator.pop(ctx, n.rawUri),
+                      ),
+                  ],
+                ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('بستن'))],
+      ),
+    );
+    if (picked == null) return;
+    await c.setChain(picked);
+    if (c.connected) _dirty = true;
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _importWarp() async {
+    final ctl = TextEditingController();
+    final clip = (await Clipboard.getData(Clipboard.kTextPlain))?.text ?? '';
+    if (clip.contains('[Interface]')) ctl.text = clip; // اگر کانفیگ کپی شده بود، خودکار پر می‌شود
+    if (!mounted) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('کانفیگ WireGuard (WARP)'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: TextField(
+            controller: ctl,
+            minLines: 5,
+            maxLines: 9,
+            style: TextStyle(fontFamily: kMono, fontSize: 11.5),
+            decoration: const InputDecoration(hintText: '[Interface]\nPrivateKey = …\nAddress = 172.16.0.2/32\n\n[Peer]\nPublicKey = …\nEndpoint = …'),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('انصراف')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('وارد کردن')),
+        ],
+      ),
+    );
+    final text = ctl.text;
+    Future.delayed(const Duration(milliseconds: 500), ctl.dispose);
+    if (ok != true) return;
+    final err = await c.importWarpConf(text);
+    _snack(err ?? 'کانفیگ WARP وارد و فعال شد', err: err != null);
+    if (err == null && c.connected) setState(() => _dirty = true);
+  }
+
   void _snack(String m, {bool err = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -114,6 +192,15 @@ class _SettingsPageState extends State<SettingsPage> {
                             ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: kGreen))
                             : Icon(Icons.chevron_left, color: kMuted),
                         onTap: c.busy ? null : _registerWarp,
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: Icon(Icons.vpn_key_outlined, color: kGreen),
+                        title: const Text('وارد کردن کانفیگ WireGuard'),
+                        subtitle: const Text('اگر ثبت خودکار جواب نداد: متن wgcf-profile.conf را جایگذاری کنید',
+                            style: TextStyle(fontSize: 11)),
+                        trailing: Icon(Icons.chevron_left, color: kMuted),
+                        onTap: _importWarp,
                       ),
                       if (c.warp?.isValid == true) ...[
                         const Divider(height: 1),
@@ -329,6 +416,20 @@ class _SettingsPageState extends State<SettingsPage> {
                         subtitle: 'سایت‌ها و IPهای ایران مستقیم باز می‌شوند',
                         value: p.bypassIran,
                         onChanged: (v) => _patt(() => p.bypassIran = v),
+                      ),
+                      _switch(
+                        icon: Icons.shield_moon_outlined,
+                        title: 'مسدودساز تبلیغات و ردیاب‌ها',
+                        subtitle: 'دامنه‌های تبلیغاتی مسدود می‌شوند؛ شروع اتصال کمی کندتر می‌شود',
+                        value: p.blockAds,
+                        onChanged: (v) => _patt(() => p.blockAds = v),
+                      ),
+                      ListTile(
+                        leading: Icon(Icons.link, color: c.settings.chainUri.isEmpty ? kMuted : kGreen),
+                        title: const Text('سرور واسطه (زنجیرهٔ دو سرور)'),
+                        subtitle: Text(_chainLabel(), style: const TextStyle(fontSize: 11)),
+                        trailing: Icon(Icons.chevron_left, color: kMuted),
+                        onTap: _pickChain,
                       ),
                     ],
                   ),

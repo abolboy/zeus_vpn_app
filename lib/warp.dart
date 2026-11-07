@@ -393,3 +393,80 @@ Future<WarpConfig> registerWarp({
     client.close(force: true);
   }
 }
+
+/// پارس کانفیگ WireGuard (فرمت wgcf / ابزارهای WARP) به WarpConfig.
+/// در خطا FormatException با پیام فارسی پرتاب می‌شود.
+WarpConfig parseWireGuardConf(String text) {
+  final iface = <String, String>{};
+  final peer = <String, String>{};
+  var section = '';
+  for (final raw in text.split(RegExp(r'[\r\n]+'))) {
+    final l = raw.trim();
+    if (l.isEmpty || l.startsWith('#') || l.startsWith(';')) continue;
+    if (l.startsWith('[') && l.endsWith(']')) {
+      section = l.substring(1, l.length - 1).trim().toLowerCase();
+      continue;
+    }
+    final i = l.indexOf('=');
+    if (i <= 0) continue;
+    final k = l.substring(0, i).trim().toLowerCase();
+    final v = l.substring(i + 1).trim(); // کلیدهای base64 خودشان «=» دارند؛ فقط اولین «=» جداکننده است
+    if (section == 'interface') {
+      iface[k] = v;
+    } else if (section == 'peer') {
+      peer[k] = v;
+    }
+  }
+
+  bool key32(String v) {
+    try {
+      return base64Decode(v).length == 32;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  final priv = iface['privatekey'] ?? '';
+  if (!key32(priv)) throw const FormatException('PrivateKey معتبر نیست (باید یک کلید base64 با ۳۲ بایت باشد)');
+  final peerPub = peer['publickey'] ?? '';
+  if (!key32(peerPub)) throw const FormatException('PublicKey بخش [Peer] معتبر نیست');
+
+  var v4 = '';
+  var v6 = '';
+  for (final a in (iface['address'] ?? '').split(',')) {
+    final t = a.trim();
+    if (t.isEmpty) continue;
+    if (t.contains(':')) {
+      if (v6.isEmpty) v6 = t.contains('/') ? t : '$t/128';
+    } else if (v4.isEmpty) {
+      v4 = t.contains('/') ? t : '$t/32';
+    }
+  }
+  if (v4.isEmpty) throw const FormatException('Address (IPv4) پیدا نشد');
+
+  var ep = (peer['endpoint'] ?? '').trim();
+  if (ep.isEmpty) ep = kWarpEndpoints.first;
+
+  var reserved = <int>[0, 0, 0];
+  final rs = iface['reserved'] ?? peer['reserved'];
+  if (rs != null) {
+    final parts = rs.replaceAll(RegExp(r'[\[\]\s]'), '').split(',').map(int.tryParse).toList();
+    if (parts.length == 3 && parts.every((e) => e != null && e >= 0 && e <= 255)) {
+      reserved = [for (final e in parts) e!];
+    }
+  }
+
+  final pub = base64Encode(x25519(base64Decode(priv), [9, ...List<int>.filled(31, 0)]));
+  return WarpConfig(
+    privateKey: priv,
+    publicKey: pub,
+    peerPublicKey: peerPub,
+    addressV4: v4,
+    addressV6: v6,
+    endpoint: ep,
+    reserved: reserved,
+    deviceId: '',
+    token: '',
+    registeredAt: 'imported',
+  );
+}

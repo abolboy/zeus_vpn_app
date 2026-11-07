@@ -33,6 +33,28 @@ class _ServersPageState extends State<ServersPage> {
     super.dispose();
   }
 
+  Future<void> _removeDead() async {
+    final n = c.deadCount;
+    if (n == 0) {
+      _snack('سرور بی‌پاسخی پیدا نشد (اول «پینگ همه» را بزنید)');
+      return;
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('حذف سرورهای بی‌پاسخ'),
+        content: Text('$n سرور که پینگ نداشتند از لیست حذف می‌شوند.\nعلاقه‌مندی‌ها و سرور انتخابی حفظ می‌شوند و با به‌روزرسانی اشتراک دوباره می‌آیند.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('انصراف')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حذف')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final r = await c.removeDeadNodes();
+    _snack('$r سرور حذف شد');
+  }
+
   void _snack(String m, {bool err = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -175,6 +197,11 @@ class _ServersPageState extends State<ServersPage> {
                       ? SizedBox(
                           width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: kGreen))
                       : const Icon(Icons.network_check),
+                ),
+                IconButton(
+                  tooltip: 'حذف سرورهای بدون پینگ',
+                  onPressed: c.nodes.isEmpty ? null : _removeDead,
+                  icon: const Icon(Icons.cleaning_services_outlined),
                 ),
                 IconButton(
                   tooltip: 'به‌روزرسانی',
