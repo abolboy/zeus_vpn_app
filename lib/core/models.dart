@@ -15,6 +15,7 @@
     int jitterMs;             // نوسان پینگ (میانگین اختلاف از میانه) — حاصل تست چندنمونه‌ای
     int lossPct;              // درصد نمونه‌های ناموفق در تست چندنمونه‌ای (۰..۱۰۰)
     bool favorite;
+    bool viaTcp = false;     // پینگ از راه TCP (جایگزین وقتی پینگ واقعی هسته جواب نداد)
 
     ServerNode({
       required this.subTag,
@@ -347,6 +348,8 @@
     bool saveLogs = true;
     int delayMode = 0; // 0 = real (core) | 1 = tcp
     bool autoConnect = false;
+    bool autoFailover = true;  // اگر تونل تأیید نشد، خودکار سرور بعدی امتحان شود
+    List<String> bypassApps = <String>[]; // بستهٔ برنامه‌هایی که از VPN مستثنی‌اند
     // ── WARP ──
     String warpMode = 'chain'; // chain = روی سرور فعال | only = فقط WARP بدون سرور
     int warpMtu = 1280;        // MTU تونل WireGuard (۱۲۸۰ امن‌ترین، ۱۳۸۰/۱۴۲۰ سریع‌تر روی بعضی ISPها)
@@ -357,6 +360,8 @@
           'logs': saveLogs,
           'delay': delayMode,
           'auto': autoConnect,
+          'fail': autoFailover,
+          'apps': bypassApps,
           'wmode': warpMode,
           'wmtu': warpMtu,
           'wfix': warpAutoFix,
@@ -367,6 +372,8 @@
       saveLogs = m['logs'] is bool ? m['logs'] : saveLogs;
       delayMode = m['delay'] is int ? m['delay'] : delayMode;
       autoConnect = m['auto'] is bool ? m['auto'] : autoConnect;
+      autoFailover = m['fail'] is bool ? m['fail'] : autoFailover;
+      if (m['apps'] is List) bypassApps = [for (final e in m['apps'] as List) e.toString()];
       final wm = (m['wmode'] ?? '').toString();
       if (wm == 'chain' || wm == 'only') warpMode = wm;
       final wmtu = m['wmtu'];

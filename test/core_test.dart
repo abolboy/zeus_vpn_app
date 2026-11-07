@@ -56,6 +56,15 @@ void main() {
       expect(p.sni, '');
     });
 
+    test('AppSettings keeps the per-app list and failover flag', () {
+      final s = AppSettings()
+        ..bypassApps = ['a.b', 'c.d']
+        ..autoFailover = false;
+      final t = AppSettings()..loadJson(s.toJson());
+      expect(t.bypassApps, ['a.b', 'c.d']);
+      expect(t.autoFailover, false);
+    });
+
     test('SubRecord accepts legacy string format', () {
       expect(SubRecord.fromJson('https://a.example')?.url, 'https://a.example');
     });

@@ -153,6 +153,7 @@ class ZeusController extends ChangeNotifier {
     await _seedFreeSubs(p);
     log(LogKind.system, 'ZEUS starting…');
     await _initCore();
+    unawaited(_detectRunningTunnel());
     if (subs.isNotEmpty) {
       syncAll().then((_) {
         if (settings.autoConnect && !connected && !connecting) quickConnect();
@@ -392,6 +393,15 @@ class ZeusController extends ChangeNotifier {
         await connect();
       }
     }
+    // ✅ Failover: اگر هنوز تونل تأیید نشده، تا ۲ بار سرور بعدیِ سالم‌تر را خودکار امتحان کن
+    if (settings.autoFailover && _failoverTries < 2 && gen == _connGen && connected && tunnel == TunnelState.failed) {
+      final alt = _nextFailoverNode();
+      if (alt != null) {
+        _failoverTries++;
+        log(LogKind.connection, 'Auto-failover → ${alt.displayName}', LogLevel.warn);
+        await selectNode(alt, auto: true);
+      }
+    }
   }
 
   /// تست دستی مجدد تونل (برای دکمهٔ «بررسی مجدد» در صفحهٔ خانه)
@@ -432,6 +442,8 @@ class ZeusController extends ChangeNotifier {
       await disconnect();
       return null;
     }
+    _failoverTries = 0;
+    _failoverTried.clear();
     return connect();
   }
 
@@ -467,6 +479,8 @@ class ZeusController extends ChangeNotifier {
         remark: remark,
         config: jsonEncode(cfg),
         proxyOnly: false,
+        // برنامه‌های مستثنی از VPN (Per-app routing)
+        blockedApps: settings.bypassApps.isEmpty ? null : List<String>.of(settings.bypassApps),
         notificationDisconnectButtonName: 'قطع',
       );
       _connectTimeout?.cancel();
@@ -509,7 +523,11 @@ class ZeusController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<String?> selectNode(ServerNode n, {bool reconnect = true}) async {
+  Future<String?> selectNode(ServerNode n, {bool reconnect = true, bool auto = false}) async {
+    if (!auto) {
+      _failoverTries = 0;
+      _failoverTried.clear();
+    }
     selUri = n.rawUri;
     await _saveSel();
     notifyListeners();
@@ -648,6 +666,53 @@ class ZeusController extends ChangeNotifier {
   // ───────── ping (چندنمونه‌ای حرفه‌ای) ─────────
   int _realFailLogged = 0;
 
+  // ───────── تشخیص VPN فعال و راهنمای پینگ ─────────
+  bool vpnInterfaceActive = false; // رابط tun/ppp روی گوشی (VPN خودمان یا برنامهٔ دیگر)
+  String? pingHint; // دلیل محتمل وقتی هیچ سروری پینگ نداد
+
+  Future<void> _detectVpnInterface() async {
+    try {
+      final list = await NetworkInterface.list(includeLoopback: false, includeLinkLocal: false);
+      vpnInterfaceActive = list.any((i) {
+        final n = i.name.toLowerCase();
+        return n.startsWith('tun') || n.startsWith('ppp') || n.startsWith('wg') || n.startsWith('tap');
+      });
+    } catch (_) {
+      vpnInterfaceActive = false;
+    }
+  }
+
+  // ───────── تعویض خودکار سرور (Failover) ─────────
+  int _failoverTries = 0;
+  final Set<String> _failoverTried = <String>{};
+
+  ServerNode? _nextFailoverNode() {
+    if (selUri != null) _failoverTried.add(selUri!);
+    final cands = nodes.where((n) => !_failoverTried.contains(n.rawUri)).toList();
+    if (cands.isEmpty) return null;
+    final good = cands.where((n) => n.pingMs >= 0).toList()..sort((a, b) => a.pingMs.compareTo(b.pingMs));
+    if (good.isNotEmpty) return good.first;
+    final untested = cands.where((n) => n.pingMs == -2).toList();
+    return untested.isEmpty ? null : untested.first;
+  }
+
+  /// اگر برنامه بعد از راه‌اندازی دوباره می‌بیند که تونلِ خودش هنوز زنده است (مثلاً بعد از بستن برنامه
+  /// از لیست اخیر)، وضعیت را هماهنگ می‌کند تا دکمهٔ قطع/پینگ درست کار کند.
+  Future<void> _detectRunningTunnel() async {
+    if (connected || connecting) return;
+    try {
+      final d = await _v2ray.getConnectedServerDelay(url: kPingUrl).timeout(const Duration(seconds: 4));
+      if (d >= 0 && !connected && !connecting) {
+        conn = ConnState.connected;
+        connectedAt = DateTime.now();
+        log(LogKind.connection, 'Existing tunnel detected (${d}ms) — state synced');
+        final gen = ++_connGen;
+        notifyListeners();
+        unawaited(_verifyTunnel(gen));
+      }
+    } catch (_) {}
+  }
+
   // ───────── به‌روزرسانی برنامه ─────────
   UpdateInfo? update;
   bool checkingUpdate = false;
@@ -676,6 +741,8 @@ class ZeusController extends ChangeNotifier {
   /// پیام اطلاع/خطا برمی‌گرداند؛ null یعنی موفق.
   Future<String?> quickConnect() async {
     if (busy || pinging) return null;
+    _failoverTries = 0;
+    _failoverTried.clear();
     if (nodes.isEmpty) return 'هنوز سروری ندارید؛ از منو «اشتراک» را اضافه کنید';
     if (nodes.every((n) => n.pingMs < 0)) await pingAll();
     final best = bestNode();
@@ -796,9 +863,16 @@ class ZeusController extends ChangeNotifier {
         await _tcpProbe(n);
       } else {
         final ms = await _realDelay(n);
-        n.pingMs = ms < 0 ? -1 : ms;
-        n.jitterMs = 0;
-        n.lossPct = 0;
+        if (ms >= 0) {
+          n.pingMs = ms;
+          n.jitterMs = 0;
+          n.lossPct = 0;
+          n.viaTcp = false;
+        } else {
+          // پینگ هسته جواب نداد: حداقل دسترسی‌پذیری TCP را بسنج تا «timeout» کاذب نشان داده نشود
+          await _tcpProbe(n);
+          n.viaTcp = n.pingMs >= 0;
+        }
       }
     } catch (e) {
       if (_realFailLogged < 8) {
@@ -820,6 +894,8 @@ class ZeusController extends ChangeNotifier {
     pingDone = 0;
     pingTotal = nodes.length;
     _realFailLogged = 0;
+    pingHint = null;
+    await _detectVpnInterface();
     notifyListeners();
     try {
       final queue = List<ServerNode>.from(nodes);
@@ -833,6 +909,12 @@ class ZeusController extends ChangeNotifier {
       }
       await Future.wait(List.generate(workers, (_) => worker()));
       await _saveNodes();
+      if (nodes.isNotEmpty && nodes.every((n) => n.pingMs < 0)) {
+        pingHint = (vpnInterfaceActive && !connected)
+            ? 'یک VPN روی گوشی فعال است (شاید اتصال قبلی ZEUS یا برنامهٔ دیگر)؛ آن را قطع کنید و دوباره پینگ بگیرید'
+            : 'هیچ سروری پاسخ نداد؛ اینترنت/فیلترینگ را بررسی کنید و اگر لازم شد روش پینگ را روی TCP بگذارید';
+        log(LogKind.core, 'All pings failed. vpnInterface=$vpnInterfaceActive connected=$connected', LogLevel.warn);
+      }
     } finally {
       pinging = false;
       notifyListeners();

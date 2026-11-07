@@ -269,6 +269,21 @@ class _ServersPageState extends State<ServersPage> {
                       : const SizedBox(width: double.infinity),
                 ),
                 const SizedBox(height: 8),
+                if (c.pingHint != null && !c.pinging)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: GlassCard(
+                      borderColor: kAmber.withValues(alpha: .6),
+                      padding: const EdgeInsets.all(10),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.warning_amber_rounded, color: kAmber, size: 22),
+                          const SizedBox(width: 10),
+                          Expanded(child: Text(c.pingHint!, style: const TextStyle(fontSize: 12, height: 1.5))),
+                        ],
+                      ),
+                    ),
+                  ),
                 // دسته‌بندی بر اساس اشتراک (وقتی بیش از یک اشتراک داریم)
                 if (c.subs.length > 1) ...[
                   Padding(
@@ -472,7 +487,7 @@ class _ServersPageState extends State<ServersPage> {
                             : Text.rich(
                                 TextSpan(children: [
                                   TextSpan(
-                                    text: 'Ping: ${n.pingText}',
+                                    text: 'Ping: ${n.pingText}${n.viaTcp && n.pingMs >= 0 ? ' (TCP)' : ''}',
                                     style: TextStyle(color: pc, fontSize: 11, fontWeight: FontWeight.w600),
                                   ),
                                   // جیتر و درصد نمونه‌های ناموفق از تست چندنمونه‌ای

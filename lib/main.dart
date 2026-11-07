@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'core/controller.dart';
+import 'pages/apps_page.dart';
 import 'pages/home_page.dart';
 import 'pages/logs_page.dart';
 import 'pages/servers_page.dart';
@@ -12,7 +13,7 @@ import 'ui/cyber.dart';
 import 'ui/theme.dart';
 import 'ui/transitions.dart';
 
-const String kAppVersion = '2.4.0';
+const String kAppVersion = '2.5.0';
 
 /// رنگ نوار ناوبری سیستم با تم فعلی هماهنگ می‌شود (هنگام شروع و هر بار تعویض تم)
 void _applyChrome() {
@@ -232,7 +233,8 @@ class _ZeusShellState extends State<ZeusShell> {
   void _goServers() => _push(ServersPage(onBack: _pop, onGoSubs: _goSubs));
   void _goSubs() => _push(SubsPage(onBack: _pop));
   void _goLogs() => _push(LogsPage(onBack: _pop));
-  void _goSettings() => _push(SettingsPage(onBack: _pop, onGoLogs: _goLogs));
+  void _goApps() => _push(AppsPage(onBack: _pop));
+  void _goSettings() => _push(SettingsPage(onBack: _pop, onGoLogs: _goLogs, onGoApps: _goApps));
 
   void _openMenu() => _scaffoldKey.currentState?.openDrawer();
 

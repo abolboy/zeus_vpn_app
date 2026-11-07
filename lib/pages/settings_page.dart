@@ -9,7 +9,8 @@ import '../warp.dart';
 class SettingsPage extends StatefulWidget {
   final VoidCallback onBack;
   final VoidCallback onGoLogs;
-  const SettingsPage({super.key, required this.onBack, required this.onGoLogs});
+  final VoidCallback onGoApps;
+  const SettingsPage({super.key, required this.onBack, required this.onGoLogs, required this.onGoApps});
   @override
   State<SettingsPage> createState() => _SettingsPageState();
 }
@@ -379,6 +380,23 @@ class _SettingsPageState extends State<SettingsPage> {
                         subtitle: 'هنگام باز شدن اپ، بهترین سرور پیدا و وصل می‌شود',
                         value: s.autoConnect,
                         onChanged: (v) => _app(() => s.autoConnect = v),
+                      ),
+                      _switch(
+                        icon: Icons.swap_horiz,
+                        title: 'تعویض خودکار سرور هنگام شکست',
+                        subtitle: 'اگر تونل تأیید نشد، تا ۲ بار سرور بعدیِ بهتر امتحان می‌شود',
+                        value: s.autoFailover,
+                        onChanged: (v) => _app(() => s.autoFailover = v),
+                      ),
+                      ListTile(
+                        leading: Icon(Icons.alt_route, color: kGreen),
+                        title: const Text('برنامه‌های مستثنی از VPN'),
+                        subtitle: Text(
+                          s.bypassApps.isEmpty ? 'همهٔ برنامه‌ها از VPN عبور می‌کنند' : '${s.bypassApps.length} برنامه بدون VPN',
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                        trailing: Icon(Icons.chevron_left, color: kMuted),
+                        onTap: widget.onGoApps,
                       ),
                       const Divider(height: 1),
                       ListTile(
