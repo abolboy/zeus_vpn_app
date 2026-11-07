@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zeus_vpn/core/clash_import.dart';
 import 'package:zeus_vpn/core/models.dart';
 import 'package:zeus_vpn/warp.dart';
 
@@ -159,6 +160,45 @@ void main() {
 
     test('0.0.0.0 placeholder node is dropped', () {
       expect(parseSubscriptionBody('vless://0000@0.0.0.0:1?x=1#info\nvless://u@h.example:443#A').length, 1);
+    });
+  });
+
+  group('Clash subscription import', () {
+    const yamlText = '''
+proxies:
+  - name: "A"
+    type: vless
+    server: example.com
+    port: 443
+    uuid: 11111111-1111-1111-1111-111111111111
+    network: ws
+    tls: true
+    servername: example.com
+    ws-opts:
+      path: /ws
+      headers:
+        Host: example.com
+  - {name: T, type: trojan, server: t.example.com, port: 443, password: pw, sni: t.example.com}
+  - {name: S, type: ss, server: 1.2.3.4, port: 8388, cipher: aes-256-gcm, password: pw}
+  - {name: H, type: hysteria2, server: h.example.com, port: 443, password: x}
+''';
+
+    test('detects and converts supported proxies, counts the rest', () {
+      expect(looksLikeClash(yamlText), isTrue);
+      final r = parseClash(yamlText);
+      expect(r.links.length, 3);
+      expect(r.unsupported, 1);
+      expect(r.links[0], startsWith('vless://11111111-1111-1111-1111-111111111111@example.com:443?'));
+      expect(r.links[0], contains('security=tls'));
+      expect(r.links[0], contains('type=ws'));
+      expect(r.links[0], contains('path=%2Fws'));
+      expect(r.links[1], startsWith('trojan://pw@t.example.com:443?'));
+      expect(r.links[2], startsWith('ss://'));
+      expect(r.links[2], contains('@1.2.3.4:8388'));
+    });
+
+    test('plain subscription is not mistaken for Clash', () {
+      expect(looksLikeClash('vless://u@h.example:443#A'), isFalse);
     });
   });
 }

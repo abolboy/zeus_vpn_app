@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../warp.dart';
 import 'config_builder.dart';
+import 'clash_import.dart';
 import 'free_servers.dart';
 import 'models.dart';
 import 'updater.dart';
@@ -578,7 +579,16 @@ class ZeusController extends ChangeNotifier {
       options: Options(responseType: ResponseType.plain, headers: {'User-Agent': 'v2rayNG/1.8.0'}),
     );
     final body = r.data ?? '';
-    return _SubFetch(parseSubscriptionBody(body), parseSubMeta(body, (k) => r.headers.value(k)));
+    final meta = parseSubMeta(body, (k) => r.headers.value(k));
+    // اشتراک فرمت Clash / Clash.Meta (YAML با کلید proxies:)
+    if (looksLikeClash(body)) {
+      final c = parseClash(body);
+      if (c.unsupported > 0) {
+        log(LogKind.system, 'Clash subscription: ${c.unsupported} proxy type(s) not supported by this core were skipped', LogLevel.warn);
+      }
+      return _SubFetch(c.links, meta);
+    }
+    return _SubFetch(parseSubscriptionBody(body), meta);
   }
 
   /// متن اعلان‌های فعال (از هدر/توضیح اشتراک‌ها)
