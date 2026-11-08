@@ -189,6 +189,14 @@ class ConfigBuilder {
       rules.add({'type': 'field', 'domain': ['geosite:category-ir', 'regexp:.*\\.ir\$'], 'outboundTag': 'direct'});
       rules.add({'type': 'field', 'ip': ['geoip:ir'], 'outboundTag': 'direct'});
     }
+    if (patt.bypassCn) {
+      rules.add({'type': 'field', 'domain': ['geosite:cn'], 'outboundTag': 'direct'});
+      rules.add({'type': 'field', 'ip': ['geoip:cn'], 'outboundTag': 'direct'});
+    }
+    if (patt.bypassRu) {
+      rules.add({'type': 'field', 'domain': ['domain:ru', 'domain:su', 'domain:xn--p1ai'], 'outboundTag': 'direct'});
+      rules.add({'type': 'field', 'ip': ['geoip:ru'], 'outboundTag': 'direct'});
+    }
     rules.add({'type': 'field', 'port': '0-65535', 'outboundTag': 'proxy'});
     return {'domainStrategy': 'IPIfNonMatch', 'rules': rules};
   }

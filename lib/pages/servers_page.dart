@@ -1,5 +1,7 @@
 // lib/pages/servers_page.dart — لیست سرورها با جستجو، فیلتر، آمار و انتخاب صریح
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../core/controller.dart';
 import '../core/models.dart';
@@ -454,7 +456,50 @@ class _ServersPageState extends State<ServersPage> {
     );
   }
 
-  Widget _tile(ServerNode n) {
+  /// نگه‌داشتن روی سرور: QR و کپی لینک برای اشتراک‌گذاری
+  void _share(ServerNode n) {
+    HapticFeedback.selectionClick();
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: kSurface2,
+      isScrollControlled: true,
+      shape: BeveledRectangleBorder(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+        side: BorderSide(color: kBorder),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(n.displayName, maxLines: 2, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+                child: QrImageView(data: n.rawUri, size: 220),
+              ),
+              const SizedBox(height: 14),
+              NeonButton(
+                label: 'کپی لینک',
+                icon: Icons.copy,
+                onTap: () {
+                  Clipboard.setData(ClipboardData(text: n.rawUri));
+                  Navigator.pop(ctx);
+                  _snack('لینک کپی شد');
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _tile(ServerNode n) => GestureDetector(onLongPress: () => _share(n), child: _tileCard(n));
+
+  Widget _tileCard(ServerNode n) {
     final sel = n.rawUri == c.selUri; // سرور ذخیره‌شده/متصل
     final pend = !sel && n.rawUri == _pendingUri; // در انتظار اتصال مجدد
     final probing = c.pingingUris.contains(n.rawUri);

@@ -363,7 +363,7 @@ class ZeusController extends ChangeNotifier {
       await Future.delayed(Duration(milliseconds: 700 * (i + 1)));
       if (gen != _connGen || !connected) return;
       try {
-        final d = await _v2ray.getConnectedServerDelay(url: kPingUrl);
+        final d = await _v2ray.getConnectedServerDelay(url: pingUrl);
         if (d >= 0) {
           tunnel = TunnelState.ok;
           final sel = selected;
@@ -677,6 +677,9 @@ class ZeusController extends ChangeNotifier {
   // ───────── ping (چندنمونه‌ای حرفه‌ای) ─────────
   int _realFailLogged = 0;
 
+  /// آدرس تست اتصال (قابل‌تنظیم؛ پیش‌فرض gstatic)
+  String get pingUrl => settings.pingUrl.trim().startsWith('http') ? settings.pingUrl.trim() : kPingUrl;
+
   // ───────── تشخیص VPN فعال و راهنمای پینگ ─────────
   bool vpnInterfaceActive = false; // رابط tun/ppp روی گوشی (VPN خودمان یا برنامهٔ دیگر)
   String? pingHint; // دلیل محتمل وقتی هیچ سروری پینگ نداد
@@ -712,7 +715,7 @@ class ZeusController extends ChangeNotifier {
   Future<void> _detectRunningTunnel() async {
     if (connected || connecting) return;
     try {
-      final d = await _v2ray.getConnectedServerDelay(url: kPingUrl).timeout(const Duration(seconds: 4));
+      final d = await _v2ray.getConnectedServerDelay(url: pingUrl).timeout(const Duration(seconds: 4));
       if (d >= 0 && !connected && !connecting) {
         conn = ConnState.connected;
         connectedAt = DateTime.now();
@@ -806,7 +809,7 @@ class ZeusController extends ChangeNotifier {
   Future<int> _realDelay(ServerNode n) async {
     final cfg = _builder.buildForPing(n.rawUri);
     final ms = await _v2ray
-        .getServerDelay(config: jsonEncode(cfg), url: kPingUrl)
+        .getServerDelay(config: jsonEncode(cfg), url: pingUrl)
         .timeout(const Duration(seconds: 12), onTimeout: () => -2);
     if (ms < 0 && _realFailLogged < 8) {
       _realFailLogged++;
@@ -866,7 +869,7 @@ class ZeusController extends ChangeNotifier {
     try {
       if (connected && n.rawUri == selUri) {
         // سرور فعال را از داخل تونل واقعی بسنج (TCP به خودِ سرور از داخل TUN timeout می‌دهد)
-        final ms = await _v2ray.getConnectedServerDelay(url: kPingUrl);
+        final ms = await _v2ray.getConnectedServerDelay(url: pingUrl);
         n.pingMs = ms < 0 ? -1 : ms;
         n.jitterMs = 0;
         n.lossPct = 0;

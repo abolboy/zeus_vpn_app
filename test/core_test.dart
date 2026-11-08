@@ -75,6 +75,18 @@ void main() {
       expect(t.chainUri, 'vless://u@h.example:443#A');
     });
 
+    test('Patt keeps China/Russia bypass and AppSettings keeps ping url', () {
+      final p = Patt()
+        ..bypassCn = true
+        ..bypassRu = true;
+      final q = Patt()..loadJson(p.toJson());
+      expect(q.bypassCn, true);
+      expect(q.bypassRu, true);
+      final s = AppSettings()..pingUrl = 'https://example.com/generate_204';
+      final t = AppSettings()..loadJson(s.toJson());
+      expect(t.pingUrl, 'https://example.com/generate_204');
+    });
+
     test('SubRecord accepts legacy string format', () {
       expect(SubRecord.fromJson('https://a.example')?.url, 'https://a.example');
     });

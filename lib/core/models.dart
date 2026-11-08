@@ -294,6 +294,8 @@
     bool bypassLan = true;
     bool bypassIran = false;
     bool blockAds = false; // مسدودساز تبلیغات/ردیاب‌ها (geosite:category-ads-all)
+    bool bypassCn = false; // سایت‌ها و IPهای چین مستقیم
+    bool bypassRu = false; // سایت‌ها و IPهای روسیه مستقیم
     String logLevel = 'warning';
     String dnsMode = 'auto';
     String customDns = '1.1.1.1';
@@ -318,7 +320,7 @@
           'frag': frag, 'fl': fragLen, 'fi': fragInt,
           'noise': noise, 'nt': noiseType, 'np': noisePacket, 'nd': noiseDelay,
           'mux': mux, 'mc': muxConc,
-          'lan': bypassLan, 'irn': bypassIran, 'ads': blockAds, 'log': logLevel,
+          'lan': bypassLan, 'irn': bypassIran, 'ads': blockAds, 'cn': bypassCn, 'ru': bypassRu, 'log': logLevel,
           'dns': dnsMode, 'dnsc': customDns,
           'real': reality, 'pbk': pbk, 'sid': sid, 'spx': spx, 'flow': flow,
           'alpn': alpn, 'sni': sni,
@@ -333,7 +335,7 @@
       noise = b('noise', noise); noiseType = s('nt', noiseType);
       noisePacket = s('np', noisePacket); noiseDelay = s('nd', noiseDelay);
       mux = b('mux', mux); muxConc = s('mc', muxConc);
-      bypassLan = b('lan', bypassLan); bypassIran = b('irn', bypassIran); blockAds = b('ads', blockAds); logLevel = s('log', logLevel);
+      bypassLan = b('lan', bypassLan); bypassIran = b('irn', bypassIran); blockAds = b('ads', blockAds); bypassCn = b('cn', bypassCn); bypassRu = b('ru', bypassRu); logLevel = s('log', logLevel);
       dnsMode = s('dns', dnsMode); customDns = s('dnsc', customDns);
       reality = b('real', reality); pbk = s('pbk', pbk); sid = s('sid', sid);
       spx = s('spx', spx); flow = s('flow', flow);
@@ -352,6 +354,7 @@
     bool autoFailover = true;  // اگر تونل تأیید نشد، خودکار سرور بعدی امتحان شود
     List<String> bypassApps = <String>[]; // بستهٔ برنامه‌هایی که از VPN مستثنی‌اند
     String chainUri = '';      // سرور واسطهٔ زنجیره (خالی = بدون زنجیره)
+    String pingUrl = '';       // آدرس تست اتصال (خالی = پیش‌فرض)
     // ── WARP ──
     String warpMode = 'chain'; // chain = روی سرور فعال | only = فقط WARP بدون سرور
     int warpMtu = 1280;        // MTU تونل WireGuard (۱۲۸۰ امن‌ترین، ۱۳۸۰/۱۴۲۰ سریع‌تر روی بعضی ISPها)
@@ -365,6 +368,7 @@
           'fail': autoFailover,
           'apps': bypassApps,
           'chain': chainUri,
+          'purl': pingUrl,
           'wmode': warpMode,
           'wmtu': warpMtu,
           'wfix': warpAutoFix,
@@ -378,6 +382,7 @@
       autoFailover = m['fail'] is bool ? m['fail'] : autoFailover;
       if (m['apps'] is List) bypassApps = [for (final e in m['apps'] as List) e.toString()];
       chainUri = (m['chain'] ?? '').toString();
+      pingUrl = (m['purl'] ?? '').toString();
       final wm = (m['wmode'] ?? '').toString();
       if (wm == 'chain' || wm == 'only') warpMode = wm;
       final wmtu = m['wmtu'];

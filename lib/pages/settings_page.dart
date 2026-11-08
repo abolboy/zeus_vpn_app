@@ -34,6 +34,31 @@ class _SettingsPageState extends State<SettingsPage> {
     return m.isEmpty ? 'سرور واسطهٔ انتخاب‌شده (در لیست فعلی نیست)' : 'ابتدا از ${m.first.displayName} عبور می‌کند';
   }
 
+  Future<void> _editPingUrl() async {
+    final ctl = TextEditingController(text: c.settings.pingUrl);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('آدرس تست اتصال'),
+        content: TextField(
+          controller: ctl,
+          keyboardType: TextInputType.url,
+          textDirection: TextDirection.ltr,
+          decoration: InputDecoration(hintText: kPingUrl),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('انصراف')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('ذخیره')),
+        ],
+      ),
+    );
+    final text = ctl.text.trim();
+    Future.delayed(const Duration(milliseconds: 500), ctl.dispose);
+    if (ok != true) return;
+    _app(() => c.settings.pingUrl = text.isEmpty || text.startsWith('http') ? text : c.settings.pingUrl);
+    if (text.isNotEmpty && !text.startsWith('http')) _snack('آدرس باید با http شروع شود', err: true);
+  }
+
   Future<void> _pickChain() async {
     final picked = await showDialog<String>(
       context: context,
@@ -418,6 +443,20 @@ class _SettingsPageState extends State<SettingsPage> {
                         onChanged: (v) => _patt(() => p.bypassIran = v),
                       ),
                       _switch(
+                        icon: Icons.public,
+                        title: 'Bypass China',
+                        subtitle: 'سایت‌ها و IPهای چین مستقیم باز می‌شوند',
+                        value: p.bypassCn,
+                        onChanged: (v) => _patt(() => p.bypassCn = v),
+                      ),
+                      _switch(
+                        icon: Icons.public,
+                        title: 'Bypass Russia',
+                        subtitle: 'سایت‌ها و IPهای روسیه مستقیم باز می‌شوند',
+                        value: p.bypassRu,
+                        onChanged: (v) => _patt(() => p.bypassRu = v),
+                      ),
+                      _switch(
                         icon: Icons.shield_moon_outlined,
                         title: 'مسدودساز تبلیغات و ردیاب‌ها',
                         subtitle: 'دامنه‌های تبلیغاتی مسدود می‌شوند؛ شروع اتصال کمی کندتر می‌شود',
@@ -488,6 +527,13 @@ class _SettingsPageState extends State<SettingsPage> {
                         subtitle: 'اگر تونل تأیید نشد، تا ۲ بار سرور بعدیِ بهتر امتحان می‌شود',
                         value: s.autoFailover,
                         onChanged: (v) => _app(() => s.autoFailover = v),
+                      ),
+                      ListTile(
+                        leading: Icon(Icons.network_ping, color: kGreen),
+                        title: const Text('آدرس تست اتصال (پینگ)'),
+                        subtitle: Text(c.pingUrl, style: TextStyle(fontSize: 11, fontFamily: kMono), textDirection: TextDirection.ltr),
+                        trailing: Icon(Icons.chevron_left, color: kMuted),
+                        onTap: _editPingUrl,
                       ),
                       ListTile(
                         leading: Icon(Icons.alt_route, color: kGreen),
