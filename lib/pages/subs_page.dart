@@ -8,7 +8,8 @@ import '../ui/theme.dart';
 
 class SubsPage extends StatefulWidget {
   final VoidCallback onBack;
-  const SubsPage({super.key, required this.onBack});
+  final VoidCallback? onGoFree;
+  const SubsPage({super.key, required this.onBack, this.onGoFree});
   @override
   State<SubsPage> createState() => _SubsPageState();
 }
@@ -183,6 +184,13 @@ class _SubsPageState extends State<SubsPage> {
                       : Icon(Icons.chevron_left, color: kMuted),
                   onTap: (c.loadingSubs || c.subs.isEmpty) ? null : _refresh,
                 ),
+                if (widget.onGoFree != null)
+                  ZeusTile(
+                    icon: Icons.card_giftcard,
+                    title: 'پروفایل‌های رایگان',
+                    subtitle: 'فهرست پیشنهادی اشتراک‌های عمومی (با هشدار پیش از افزودن)',
+                    onTap: widget.onGoFree,
+                  ),
                 ZeusTile(
                   icon: Icons.backup_outlined,
                   title: 'پشتیبان‌گیری (کپی)',

@@ -1,5 +1,7 @@
 // lib/core/config_builder.dart — ساخت کانفیگ Xray از لینک + PattNG + WARP
 import 'dart:convert';
+import 'dart:math';
+
 
 import 'package:flutter_v2ray_client/flutter_v2ray.dart';
 
@@ -90,6 +92,17 @@ class ConfigBuilder {
     }
   }
 
+  /// SNI با حروف تصادفی بزرگ/کوچک (طبق RFC حساس به حروف نیست؛ فیلترهای ساده را دور می‌زند)
+  static String _mixedCase(String s) {
+    final r = Random();
+    return String.fromCharCodes(s.codeUnits.map((u) {
+      final lower = u >= 97 && u <= 122;
+      final upper = u >= 65 && u <= 90;
+      if (!lower && !upper) return u;
+      return r.nextBool() ? (lower ? u - 32 : u) : (upper ? u + 32 : u);
+    }));
+  }
+
   /// فقط WARP (بدون سرور)
   Map<String, dynamic> buildWarpOnly() {
     final w = warp;
@@ -178,6 +191,12 @@ class ConfigBuilder {
       // ✅ همهٔ پرس‌وجوهای DNS دستگاه → ماژول DNS داخلی
       {'type': 'field', 'inboundTag': ['socks', 'http'], 'port': '53', 'outboundTag': 'dns-out'},
     ];
+    if (patt.bypassTorrent) {
+      rules.add({'type': 'field', 'protocol': ['bittorrent'], 'outboundTag': 'direct'});
+    }
+    if (patt.blockQuic) {
+      rules.add({'type': 'field', 'network': 'udp', 'port': '443', 'outboundTag': 'block'});
+    }
     if (patt.blockAds) {
       rules.add({'type': 'field', 'domain': ['geosite:category-ads-all'], 'outboundTag': 'block'});
     }
@@ -194,11 +213,11 @@ class ConfigBuilder {
       rules.add({'type': 'field', 'ip': ['geoip:cn'], 'outboundTag': 'direct'});
     }
     if (patt.bypassRu) {
-      rules.add({'type': 'field', 'domain': ['domain:ru', 'domain:su', 'domain:xn--p1ai'], 'outboundTag': 'direct'});
+      rules.add({'type': 'field', 'domain': ['geosite:category-ru', 'domain:ru', 'domain:su', 'domain:xn--p1ai'], 'outboundTag': 'direct'});
       rules.add({'type': 'field', 'ip': ['geoip:ru'], 'outboundTag': 'direct'});
     }
     rules.add({'type': 'field', 'port': '0-65535', 'outboundTag': 'proxy'});
-    return {'domainStrategy': 'IPIfNonMatch', 'rules': rules};
+    return {'domainStrategy': patt.domainStrategy, 'rules': rules};
   }
 
   Map<String, dynamic> _dnsOut() => {
@@ -271,6 +290,8 @@ class ConfigBuilder {
       final tls = (ss['tlsSettings'] as Map?)?.cast<String, dynamic>() ?? {};
       if (patt.fp.isNotEmpty) tls['fingerprint'] = patt.fp;
       if (patt.sni.isNotEmpty) tls['serverName'] = patt.sni;
+      final sn = tls['serverName'];
+      if (patt.mixedSni && sn is String && sn.isNotEmpty) tls['serverName'] = _mixedCase(sn);
       if (patt.cs.isNotEmpty) tls['cipherSuites'] = patt.cs;
       if (patt.pcs.isNotEmpty) tls['pinnedPeerCertificateChainSha256'] = _csv(patt.pcs);
       if (patt.vcn.isNotEmpty) tls['verifyPeerCertInNames'] = _csv(patt.vcn);

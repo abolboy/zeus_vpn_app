@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zeus_vpn/core/clash_import.dart';
+import 'package:zeus_vpn/core/free_profiles.dart';
 import 'package:zeus_vpn/core/models.dart';
 import 'package:zeus_vpn/warp.dart';
 
@@ -85,6 +86,27 @@ void main() {
       final s = AppSettings()..pingUrl = 'https://example.com/generate_204';
       final t = AppSettings()..loadJson(s.toJson());
       expect(t.pingUrl, 'https://example.com/generate_204');
+    });
+
+    test('Patt keeps the new routing/TLS flags', () {
+      final p = Patt()
+        ..blockQuic = true
+        ..bypassTorrent = true
+        ..mixedSni = true
+        ..domainStrategy = 'IPOnDemand';
+      final q = Patt()..loadJson(p.toJson());
+      expect(q.blockQuic, true);
+      expect(q.bypassTorrent, true);
+      expect(q.mixedSni, true);
+      expect(q.domainStrategy, 'IPOnDemand');
+    });
+
+    test('free profile catalog is well formed', () {
+      expect(kBuiltinFreeProfiles.length, 3);
+      for (final f in kBuiltinFreeProfiles) {
+        expect(f.url, startsWith('https://'));
+        expect(f.title, isNotEmpty);
+      }
     });
 
     test('SubRecord accepts legacy string format', () {

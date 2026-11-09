@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import 'core/controller.dart';
 import 'pages/apps_page.dart';
+import 'pages/free_page.dart';
 import 'pages/home_page.dart';
 import 'pages/logs_page.dart';
 import 'pages/servers_page.dart';
@@ -13,7 +14,7 @@ import 'ui/cyber.dart';
 import 'ui/theme.dart';
 import 'ui/transitions.dart';
 
-const String kAppVersion = '2.8.0';
+const String kAppVersion = '2.9.0';
 
 /// رنگ نوار ناوبری سیستم با تم فعلی هماهنگ می‌شود (هنگام شروع و هر بار تعویض تم)
 void _applyChrome() {
@@ -231,7 +232,8 @@ class _ZeusShellState extends State<ZeusShell> {
   }
 
   void _goServers() => _push(ServersPage(onBack: _pop, onGoSubs: _goSubs));
-  void _goSubs() => _push(SubsPage(onBack: _pop));
+  void _goFree() => _push(FreePage(onBack: _pop));
+  void _goSubs() => _push(SubsPage(onBack: _pop, onGoFree: _goFree));
   void _goLogs() => _push(LogsPage(onBack: _pop));
   void _goApps() => _push(AppsPage(onBack: _pop));
   void _goSettings() => _push(SettingsPage(onBack: _pop, onGoLogs: _goLogs, onGoApps: _goApps));
@@ -386,6 +388,7 @@ class _ZeusShellState extends State<ZeusShell> {
                 _item(Icons.home_outlined, 'خانه', () => _scaffoldKey.currentState?.closeDrawer()),
                 _item(Icons.public, 'سرورها', () => _fromMenu(_goServers),
                     badge: c.nodes.isEmpty ? null : '${c.nodes.length}'),
+                _item(Icons.card_giftcard, 'پروفایل‌های رایگان', () => _fromMenu(_goFree)),
                 _item(Icons.link, 'اشتراک', () => _fromMenu(_goSubs),
                     badge: c.subs.isEmpty ? null : '${c.subs.length}'),
                 _item(Icons.settings_outlined, 'تنظیمات', () => _fromMenu(_goSettings)),

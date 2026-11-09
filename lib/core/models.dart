@@ -296,6 +296,10 @@
     bool blockAds = false; // مسدودساز تبلیغات/ردیاب‌ها (geosite:category-ads-all)
     bool bypassCn = false; // سایت‌ها و IPهای چین مستقیم
     bool bypassRu = false; // سایت‌ها و IPهای روسیه مستقیم
+    bool blockQuic = false; // مسدود کردن UDP 443 تا QUIC به TCP برگردد
+    bool bypassTorrent = false; // BitTorrent مستقیم (نیاز به sniffing)
+    bool mixedSni = false; // حروف SNI به‌صورت تصادفی بزرگ/کوچک (ترفند TLS)
+    String domainStrategy = 'IPIfNonMatch'; // AsIs / IPIfNonMatch / IPOnDemand
     String logLevel = 'warning';
     String dnsMode = 'auto';
     String customDns = '1.1.1.1';
@@ -320,7 +324,7 @@
           'frag': frag, 'fl': fragLen, 'fi': fragInt,
           'noise': noise, 'nt': noiseType, 'np': noisePacket, 'nd': noiseDelay,
           'mux': mux, 'mc': muxConc,
-          'lan': bypassLan, 'irn': bypassIran, 'ads': blockAds, 'cn': bypassCn, 'ru': bypassRu, 'log': logLevel,
+          'lan': bypassLan, 'irn': bypassIran, 'ads': blockAds, 'cn': bypassCn, 'ru': bypassRu, 'bq': blockQuic, 'bt': bypassTorrent, 'msni': mixedSni, 'ds': domainStrategy, 'log': logLevel,
           'dns': dnsMode, 'dnsc': customDns,
           'real': reality, 'pbk': pbk, 'sid': sid, 'spx': spx, 'flow': flow,
           'alpn': alpn, 'sni': sni,
@@ -335,7 +339,7 @@
       noise = b('noise', noise); noiseType = s('nt', noiseType);
       noisePacket = s('np', noisePacket); noiseDelay = s('nd', noiseDelay);
       mux = b('mux', mux); muxConc = s('mc', muxConc);
-      bypassLan = b('lan', bypassLan); bypassIran = b('irn', bypassIran); blockAds = b('ads', blockAds); bypassCn = b('cn', bypassCn); bypassRu = b('ru', bypassRu); logLevel = s('log', logLevel);
+      bypassLan = b('lan', bypassLan); bypassIran = b('irn', bypassIran); blockAds = b('ads', blockAds); bypassCn = b('cn', bypassCn); bypassRu = b('ru', bypassRu); blockQuic = b('bq', blockQuic); bypassTorrent = b('bt', bypassTorrent); mixedSni = b('msni', mixedSni); domainStrategy = s('ds', domainStrategy); logLevel = s('log', logLevel);
       dnsMode = s('dns', dnsMode); customDns = s('dnsc', customDns);
       reality = b('real', reality); pbk = s('pbk', pbk); sid = s('sid', sid);
       spx = s('spx', spx); flow = s('flow', flow);
@@ -355,6 +359,9 @@
     List<String> bypassApps = <String>[]; // بستهٔ برنامه‌هایی که از VPN مستثنی‌اند
     String chainUri = '';      // سرور واسطهٔ زنجیره (خالی = بدون زنجیره)
     String pingUrl = '';       // آدرس تست اتصال (خالی = پیش‌فرض)
+    bool autoTestAfterSync = false; // بعد از به‌روزرسانی اشتراک، خودکار پینگ بگیر
+    bool autoRemoveDead = false;    // و سرورهای بی‌پاسخ را حذف کن
+    int pingConcurrency = 6;        // تعداد پینگ همزمان
     // ── WARP ──
     String warpMode = 'chain'; // chain = روی سرور فعال | only = فقط WARP بدون سرور
     int warpMtu = 1280;        // MTU تونل WireGuard (۱۲۸۰ امن‌ترین، ۱۳۸۰/۱۴۲۰ سریع‌تر روی بعضی ISPها)
@@ -369,6 +376,9 @@
           'apps': bypassApps,
           'chain': chainUri,
           'purl': pingUrl,
+          'ats': autoTestAfterSync,
+          'ard': autoRemoveDead,
+          'pc': pingConcurrency,
           'wmode': warpMode,
           'wmtu': warpMtu,
           'wfix': warpAutoFix,
@@ -383,6 +393,9 @@
       if (m['apps'] is List) bypassApps = [for (final e in m['apps'] as List) e.toString()];
       chainUri = (m['chain'] ?? '').toString();
       pingUrl = (m['purl'] ?? '').toString();
+      autoTestAfterSync = m['ats'] is bool ? m['ats'] : autoTestAfterSync;
+      autoRemoveDead = m['ard'] is bool ? m['ard'] : autoRemoveDead;
+      pingConcurrency = m['pc'] is int ? (m['pc'] as int).clamp(1, 20).toInt() : pingConcurrency;
       final wm = (m['wmode'] ?? '').toString();
       if (wm == 'chain' || wm == 'only') warpMode = wm;
       final wmtu = m['wmtu'];

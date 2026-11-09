@@ -557,6 +557,21 @@ class ZeusController extends ChangeNotifier {
     return syncAll();
   }
 
+  /// افزودن اشتراک از فهرست «رایگان» با نام دلخواه
+  /// بعد از به‌روزرسانی: پینگ همه، و در صورت فعال بودن، حذف سرورهای بی‌پاسخ
+  Future<void> _postSyncPipeline() async {
+    await pingAll();
+    if (settings.autoRemoveDead) await removeDeadNodes();
+  }
+
+  Future<String?> addFreeSub(String url, String name) async {
+    if (subs.any((s) => s.url == url)) return 'این اشتراک قبلاً اضافه شده';
+    subs.add(SubRecord(url: url, name: name));
+    await _saveSubs();
+    notifyListeners();
+    return syncAll();
+  }
+
   Future<void> removeSub(SubRecord s) async {
     final idx = subs.indexOf(s);
     if (idx < 0) return;
@@ -664,6 +679,7 @@ class ZeusController extends ChangeNotifier {
       log(LogKind.system, 'Loaded ${nodes.length} servers');
       notifyListeners();
       final failed = subs.where((s) => !s.lastOk).length;
+      if (settings.autoTestAfterSync) unawaited(_postSyncPipeline());
       return failed > 0 ? '$failed اشتراک دریافت نشد' : null;
     } finally {
       // هر خطای پیش‌بینی‌نشده‌ای نباید loadingSubs را برای همیشه true نگه دارد
@@ -914,7 +930,8 @@ class ZeusController extends ChangeNotifier {
     try {
       final queue = List<ServerNode>.from(nodes);
       // حالت «واقعی» سنگین‌تر است (هر سرور یک نمونهٔ Xray می‌سازد)؛ همزمانی کمتر
-      final workers = (!connected && !connecting && settings.delayMode == 0) ? 3 : 6;
+      final base = settings.pingConcurrency.clamp(2, 16).toInt();
+      final workers = (!connected && !connecting && settings.delayMode == 0) ? min(base, 4) : base;
       Future<void> worker() async {
         while (queue.isNotEmpty) {
           await pingOne(queue.removeAt(0));
