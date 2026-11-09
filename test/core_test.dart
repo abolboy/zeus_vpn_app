@@ -197,6 +197,51 @@ void main() {
     });
   });
 
+  group('regressions v2.9.1', () {
+    test('ss:// full-base64 link is parsed and normalized', () {
+      // base64("aes-256-gcm:secret@1.2.3.4:8388") - the whole-body-base64 format
+      const full = 'ss://YWVzLTI1Ni1nY206c2VjcmV0QDEuMi4zLjQ6ODM4OA==#TestNode';
+      final p = ParsedLink.parse(full);
+      expect(p.protocol, 'Shadowsocks');
+      expect(p.host, '1.2.3.4');
+      expect(p.port, 8388);
+      expect(p.name, 'TestNode');
+
+      final n = ServerNode.fromUri(full, 'S1');
+      // rawUri must be converted to the userinfo format the core understands
+      expect(n.rawUri.startsWith('ss://'), isTrue);
+      expect(n.rawUri.contains('@1.2.3.4:8388'), isTrue);
+      final reparsed = ParsedLink.parse(n.rawUri);
+      expect(reparsed.host, '1.2.3.4');
+      expect(reparsed.port, 8388);
+      expect(n.port, 8388);
+    });
+
+    test('ss:// standard link stays untouched', () {
+      // base64("aes-256-gcm:secret") = YWVzLTI1Ni1nY206c2VjcmV0
+      const std = 'ss://YWVzLTI1Ni1nY206c2VjcmV0@1.2.3.4:8388#A';
+      expect(normalizeLink(std), std);
+      final p = ParsedLink.parse(std);
+      expect(p.host, '1.2.3.4');
+      expect(p.port, 8388);
+    });
+
+    test('non-ss links pass through normalizeLink unchanged', () {
+      const v = 'vless://u@h.example:443?security=tls#A';
+      expect(normalizeLink(v), v);
+    });
+
+    test('lowercase unambiguous country codes get flags', () {
+      expect(flagFromName('de-01'), '🇩🇪');
+      expect(flagFromName('sg premium'), '🇸🇬');
+      // ambiguous english words must NOT match in lowercase
+      expect(flagFromName('server us east'), '🌐');
+      expect(flagFromName('Fast server in it at home'), '🌐');
+      // uppercase always matches
+      expect(flagFromName('US-East 01'), '🇺🇸');
+    });
+  });
+
   group('Clash subscription import', () {
     const yamlText = '''
 proxies:

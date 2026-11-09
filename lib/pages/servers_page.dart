@@ -182,6 +182,11 @@ class _ServersPageState extends State<ServersPage> {
     return ListenableBuilder(
       listenable: c,
       builder: (_, __) {
+        // اگر بعد از به‌روزرسانی اشتراک، پروتکل یا اشتراکِ فیلترشده دیگر وجود نداشته باشد،
+        // فیلتر به «همه» برمی‌گردد (قبلاً تبِ «همه» به‌صورت بصری انتخاب می‌شد ولی فیلتر
+        // قدیمی باقی می‌ماند و لیست همیشه خالی با پیام «نتیجه‌ای یافت نشد» نمایش داده می‌شد)
+        if (_proto != 'همه' && !_protocols.contains(_proto)) _proto = 'همه';
+        if (_group.isNotEmpty && !_groups.any((g) => g.key == _group)) _group = '';
         final list = _filtered;
         final avg = c.avgPing;
         final pending = _pending;
