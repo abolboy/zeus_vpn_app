@@ -39,7 +39,8 @@
       final p = ParsedLink.parse(uri);
       return ServerNode(
         subTag: subTag,
-        rawUri: uri,
+        // فرمت «کل Base64» ی ss:// به فرمت قابل‌اجرا تبدیل می‌شود
+        rawUri: normalizeLink(uri),
         displayName: p.name,
         protocol: p.protocol,
         security: p.security,
@@ -90,6 +91,11 @@
             return ParsedLink(name.isEmpty ? '$host:$port' : name, 'VMess', tls == 'tls' ? 'TLS' : 'NONE', host, port);
           }
         }
+        // فرمت «کل لینک Base64» در ss:// با Uri.parse قابل‌خواند نیست (host مجهول می‌شود)؛ اینجا دستی باز می‌شود.
+        if (low.startsWith('ss://')) {
+          final ss = _parseSsBody(uri);
+          if (ss != null) return ss;
+        }
         final u = Uri.parse(uri);
         final frag = u.fragment.isNotEmpty ? Uri.decodeComponent(u.fragment).trim() : '';
         final sec = (u.queryParameters['security'] ?? 'none').toLowerCase();
@@ -123,6 +129,68 @@
       } catch (_) {
         return ParsedLink(uri.length > 30 ? uri.substring(0, 30) : uri, '?', 'NONE', '', 0);
       }
+    }
+
+    /// بدنهٔ ss:// بدون «@» را به‌صورت Base64 کامل باز می‌کند؛ null یعنی این فرمت نیست.
+    static ParsedLink? _parseSsBody(String uri) {
+      try {
+        var body = uri.substring(5);
+        final hash = body.indexOf('#');
+        final frag = hash >= 0 ? Uri.decodeComponent(body.substring(hash + 1)).trim() : '';
+        if (hash >= 0) body = body.substring(0, hash);
+        final qm = body.indexOf('?');
+        if (qm >= 0) body = body.substring(0, qm);
+        if (body.contains('@')) return null; // فرمت استاندارد؛ مسیر عمومی هندلش می‌کند
+        final d = tryB64Decode(body);
+        if (d == null) return null;
+        final at = d.lastIndexOf('@');
+        if (at <= 0) return null;
+        final hostport = d.substring(at + 1);
+        final colon = hostport.lastIndexOf(':');
+        if (colon <= 0) return null;
+        var host = hostport.substring(0, colon);
+        final port = int.tryParse(hostport.substring(colon + 1)) ?? 0;
+        if (host.isEmpty || port <= 0) return null;
+        if (host.startsWith('[') && host.endsWith(']')) host = host.substring(1, host.length - 1);
+        return ParsedLink(frag.isEmpty ? '$host:$port' : frag, 'Shadowsocks', 'NONE', host, port);
+      } catch (_) {
+        return null;
+      }
+    }
+  }
+
+  /// لینک ss:// که کل بدنهٔ آن Base64 است («ss://BASE64(method:pass@host:port)#name»)
+  /// به فرمت استاندارد هسته («ss://BASE64(method:pass)@host:port#name») تبدیل می‌شود.
+  /// هستهٔ اتصال فقط فرمت دوم را می‌فهمد؛ فرمت اول همواره شکست می‌خورد.
+  String normalizeLink(String uri) {
+    if (!uri.toLowerCase().startsWith('ss://')) return uri;
+    try {
+      var body = uri.substring(5);
+      final hash = body.indexOf('#');
+      final frag = hash >= 0 ? body.substring(hash + 1) : '';
+      if (hash >= 0) body = body.substring(0, hash);
+      var query = '';
+      final qm = body.indexOf('?');
+      if (qm >= 0) {
+        query = body.substring(qm);
+        body = body.substring(0, qm);
+      }
+      if (body.contains('@')) return uri; // از قبل فرمت استاندارد است
+      final d = tryB64Decode(body);
+      if (d == null) return uri;
+      final at = d.lastIndexOf('@');
+      if (at <= 0) return uri;
+      final userinfo = d.substring(0, at);
+      final hostport = d.substring(at + 1);
+      if (userinfo.isEmpty || hostport.isEmpty || hostport.lastIndexOf(':') <= 0) return uri;
+      // Base64 استاندارد (هسته فقط همین را decode می‌کند) + percent-encode تا
+      // «/» یا «+» داخل userinfo توسط Uri.parse جداکنندهٔ مسیر خوانده نشود.
+      final enc = Uri.encodeComponent(base64.encode(utf8.encode(userinfo)).replaceAll('=', ''));
+      return 'ss://$enc@$hostport'
+          '${query.isNotEmpty ? query : ''}'
+          '${frag.isNotEmpty ? '#$frag' : ''}';
+    } catch (_) {
+      return uri;
     }
   }
 
@@ -268,10 +336,14 @@
   for (final e in _countryWords.entries.where((e) => e.key.length > 2)) {
     if (low.contains(' ${e.key} ')) return e.value;
   }
-  // کدهای دو حرفی فقط وقتی با حروف بزرگ نوشته شده باشند؛ وگرنه کلمات انگلیسی
-  // مثل «in» یا «it» یا «at» به‌اشتباه پرچم هند/ایتالیا/اتریش می‌گیرند.
+  // کدهای دو حرفی:
+  //  • با حروف بزرگ همیشه پذیرفته می‌شوند (DE / US / IT …)
+  //  • با حروف کوچک فقط وقتی با یک کلمهٔ انگلیسی هم‌نام نباشند — وگرنه
+  //    «in/it/at/us/am» به‌اشتباه پرچم می‌گرفتند.
+  const Set<String> ambiguousLower = {'in', 'it', 'at', 'us', 'am'};
   for (final e in _countryWords.entries.where((e) => e.key.length == 2)) {
     if (norm.contains(' ${e.key.toUpperCase()} ')) return e.value;
+    if (!ambiguousLower.contains(e.key) && low.contains(' ${e.key} ')) return e.value;
   }
   return '🌐';
 }

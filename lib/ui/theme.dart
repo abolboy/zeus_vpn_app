@@ -666,7 +666,15 @@ class NeonButton extends StatelessWidget {
               Icon(icon, size: 18, color: fg),
               const SizedBox(width: 8),
             ],
-            Text(label, style: TextStyle(color: fg, fontWeight: FontWeight.w800, fontSize: 13, letterSpacing: isAscii(label) ? .6 : 0)),
+            // Flexible: نام‌های طولانی سرور (مثل دکمهٔ «انتخاب سرور» در خانه) به‌جای
+            // سرریز شدن و خطوط زرد، با سه‌نقطه کوتاه می‌شوند
+            Flexible(
+              child: Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color: fg, fontWeight: FontWeight.w800, fontSize: 13, letterSpacing: isAscii(label) ? .6 : 0)),
+            ),
           ],
         ),
       ),
