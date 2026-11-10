@@ -121,6 +121,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   /// اتصال سریع: اگر پینگی گرفته نشده «پینگ همه» می‌زند، سریع‌ترین سرور را انتخاب می‌کند و وصل می‌شود
   Future<void> _quickConnect() async {
+    // قبل از نمایش اسنک وضعیت را چک کن؛ quickConnect در حالت busy/pinging بی‌صدا null
+    // برمی‌گرداند و قبلاً پیام «در حال یافتن سریع‌ترین سرور...» بی‌نتیجه نمایش داده می‌شد
     if (c.busy || c.pinging) return;
     _snack('در حال یافتن سریع‌ترین سرور…');
     final msg = await c.quickConnect();

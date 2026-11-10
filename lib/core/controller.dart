@@ -363,7 +363,11 @@ class ZeusController extends ChangeNotifier {
       await Future.delayed(Duration(milliseconds: 700 * (i + 1)));
       if (gen != _connGen || !connected) return;
       try {
-        final d = await _v2ray.getConnectedServerDelay(url: pingUrl);
+        // ⚠️ سقف زمانی اجباری: اگر هسته روی تونل مرده گیر کند، بدون این timeout
+        // وضعیت برای همیشه «checking» می‌ماند و WARP-autofix/failover هرگز اجرا نمی‌شوند.
+        final d = await _v2ray
+            .getConnectedServerDelay(url: pingUrl)
+            .timeout(const Duration(seconds: 8), onTimeout: () => -1);
         if (d >= 0) {
           tunnel = TunnelState.ok;
           final sel = selected;
@@ -582,6 +586,15 @@ class ZeusController extends ChangeNotifier {
       final k = int.tryParse(n.subTag.substring(1));
       if (k != null && k > idx + 1) n.subTag = 'S${k - 1}';
     }
+    // اگر سرورِ انتخاب‌شده متعلق به همین اشتراک بود و اتصالی هم برقرار نیست،
+    // selUri نباید به سروری حذف‌شده اشاره کند (وگرنه «اتصال» به سرور حذف‌شده انجام می‌شود)
+    if (selUri != null &&
+        !nodes.any((n) => n.rawUri == selUri) &&
+        !connected &&
+        !connecting) {
+      selUri = null;
+      await _saveSel();
+    }
     await _saveSubs();
     await _saveNodes();
     notifyListeners();
@@ -661,12 +674,15 @@ class ZeusController extends ChangeNotifier {
         notifyListeners();
         return 'هیچ سروری دریافت نشد؛ لیست قبلی حفظ شد';
       }
-      // پینگ و علاقه‌مندی همین جلسه حفظ می‌شود
+      // پینگ، علاقه‌مندی و آمارِ تست چندنمونه‌ای همین جلسه حفظ می‌شود
       final old = {for (final n in nodes) n.rawUri: n};
       for (final n in fresh) {
         final o = old[n.rawUri];
         if (o != null) {
           n.pingMs = o.pingMs;
+          n.jitterMs = o.jitterMs;
+          n.lossPct = o.lossPct;
+          n.viaTcp = o.viaTcp;
           n.favorite = o.favorite;
         }
       }
@@ -885,7 +901,11 @@ class ZeusController extends ChangeNotifier {
     try {
       if (connected && n.rawUri == selUri) {
         // سرور فعال را از داخل تونل واقعی بسنج (TCP به خودِ سرور از داخل TUN timeout می‌دهد)
-        final ms = await _v2ray.getConnectedServerDelay(url: pingUrl);
+        // ⚠️ سقف زمانی: بدون آن، اگر هسته جواب ندهد «سنجش…» برای همیشه می‌ماند
+        // و pingAll/quickConnect چون pinging=true است قفل می‌شود.
+        final ms = await _v2ray
+            .getConnectedServerDelay(url: pingUrl)
+            .timeout(const Duration(seconds: 8), onTimeout: () => -1);
         n.pingMs = ms < 0 ? -1 : ms;
         n.jitterMs = 0;
         n.lossPct = 0;
@@ -1412,6 +1432,7 @@ class ZeusController extends ChangeNotifier {
   @override
   void dispose() {
     _connectTimeout?.cancel();
+    _stopGrace?.cancel();
     _speedToken?.cancel();
     _dio.close(force: true);
     _proxyDio.close(force: true);
