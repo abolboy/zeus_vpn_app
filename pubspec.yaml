@@ -1,7 +1,7 @@
 name: zeus_vpn
 description: ZEUS VPN — Hacker Matrix HUD with PattNG
 publish_to: 'none'
-version: 2.9.1+1
+version: 2.9.2+1
 
 environment:
   sdk: '>=3.6.0 <4.0.0'
