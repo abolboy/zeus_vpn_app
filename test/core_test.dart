@@ -109,6 +109,12 @@ void main() {
       }
     });
 
+    test('AppSettings keeps the grid view flag', () {
+      final s = AppSettings()..gridView = false;
+      final t = AppSettings()..loadJson(s.toJson());
+      expect(t.gridView, false);
+    });
+
     test('SubRecord accepts legacy string format', () {
       expect(SubRecord.fromJson('https://a.example')?.url, 'https://a.example');
     });

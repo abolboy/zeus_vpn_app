@@ -14,7 +14,7 @@ import 'ui/cyber.dart';
 import 'ui/theme.dart';
 import 'ui/transitions.dart';
 
-const String kAppVersion = '2.9.1';
+const String kAppVersion = '2.10.0';
 
 /// رنگ نوار ناوبری سیستم با تم فعلی هماهنگ می‌شود (هنگام شروع و هر بار تعویض تم)
 void _applyChrome() {

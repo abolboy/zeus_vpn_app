@@ -652,7 +652,11 @@ class NeonButton extends StatelessWidget {
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 200),
       opacity: enabled ? 1 : .45,
-      child: CyberBox(
+      // ConstrainedBox: داخل Row (عرض نامحدود) Flexible خطای «unbounded width» می‌داد؛
+      // با سقف عرض، هم نام‌های بلند کوتاه می‌شوند و هم در Row/Column کرش نمی‌کند
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 280),
+        child: CyberBox(
         color: color.withValues(alpha: outlined ? .8 : 1),
         fill: outlined ? color.withValues(alpha: .08) : color,
         cut: 10,
@@ -677,6 +681,7 @@ class NeonButton extends StatelessWidget {
             ),
           ],
         ),
+      ),
       ),
     );
   }

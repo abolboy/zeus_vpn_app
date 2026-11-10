@@ -431,6 +431,7 @@
     List<String> bypassApps = <String>[]; // بستهٔ برنامه‌هایی که از VPN مستثنی‌اند
     String chainUri = '';      // سرور واسطهٔ زنجیره (خالی = بدون زنجیره)
     String pingUrl = '';       // آدرس تست اتصال (خالی = پیش‌فرض)
+    bool gridView = true;      // نمایش دو ستونهٔ سرورها (کارت‌های فشرده)
     bool autoTestAfterSync = false; // بعد از به‌روزرسانی اشتراک، خودکار پینگ بگیر
     bool autoRemoveDead = false;    // و سرورهای بی‌پاسخ را حذف کن
     int pingConcurrency = 6;        // تعداد پینگ همزمان
@@ -448,6 +449,7 @@
           'apps': bypassApps,
           'chain': chainUri,
           'purl': pingUrl,
+          'gv': gridView,
           'ats': autoTestAfterSync,
           'ard': autoRemoveDead,
           'pc': pingConcurrency,
@@ -465,6 +467,7 @@
       if (m['apps'] is List) bypassApps = [for (final e in m['apps'] as List) e.toString()];
       chainUri = (m['chain'] ?? '').toString();
       pingUrl = (m['purl'] ?? '').toString();
+      gridView = m['gv'] is bool ? m['gv'] : gridView;
       autoTestAfterSync = m['ats'] is bool ? m['ats'] : autoTestAfterSync;
       autoRemoveDead = m['ard'] is bool ? m['ard'] : autoRemoveDead;
       pingConcurrency = m['pc'] is int ? (m['pc'] as int).clamp(1, 20).toInt() : pingConcurrency;

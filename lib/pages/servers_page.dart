@@ -1,4 +1,6 @@
 // lib/pages/servers_page.dart — لیست سرورها با جستجو، فیلتر، آمار و انتخاب صریح
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -204,6 +206,15 @@ class _ServersPageState extends State<ServersPage> {
                       ? SizedBox(
                           width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: kGreen))
                       : const Icon(Icons.network_check),
+                ),
+                IconButton(
+                  tooltip: c.settings.gridView ? 'نمایش لیستی' : 'نمایش شبکه‌ای (دو ستونه)',
+                  icon: Icon(c.settings.gridView ? Icons.view_agenda_outlined : Icons.grid_view),
+                  onPressed: () {
+                    c.settings.gridView = !c.settings.gridView;
+                    c.saveSettings();
+                    c.refresh();
+                  },
                 ),
                 IconButton(
                   tooltip: 'حذف سرورهای بدون پینگ',
@@ -444,15 +455,35 @@ class _ServersPageState extends State<ServersPage> {
     } else {
       entries.addAll(list);
     }
+    // نمایش شبکه‌ای: هر ردیف دو کارت؛ عنوان اشتراک ردیف را می‌شکند
+    final rows = <Object>[];
+    if (c.settings.gridView) {
+      List<ServerNode>? cur;
+      for (final e in entries) {
+        if (e is ServerNode) {
+          if (cur == null || cur.length == 2) {
+            cur = <ServerNode>[];
+            rows.add(cur);
+          }
+          cur.add(e);
+        } else {
+          rows.add(e);
+          cur = null;
+        }
+      }
+    } else {
+      rows.addAll(entries);
+    }
     return RefreshIndicator(
       color: kGreen,
       backgroundColor: kSurface,
       onRefresh: _refresh,
       child: ListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-        itemCount: entries.length,
+        itemCount: rows.length,
         itemBuilder: (_, i) {
-          final e = entries[i];
+          final e = rows[i];
+          if (e is List<ServerNode>) return _Appear(index: i, child: _gridRow(e));
           if (e is ServerNode) return _Appear(index: i, child: _tile(e));
           final h = e as _GroupHeader;
           return SectionLabel('${_subName(h.tag)} • ${h.count}', icon: Icons.folder_open_outlined);
@@ -503,6 +534,137 @@ class _ServersPageState extends State<ServersPage> {
   }
 
   Widget _tile(ServerNode n) => GestureDetector(onLongPress: () => _share(n), child: _tileCard(n));
+
+  // ───────── نمایش شبکه‌ای (دو ستونه) ─────────
+  /// IPv4 را مثل PattNG نیمه‌پنهان نشان می‌دهد (آخرین بخش ***)؛ دامنه کامل می‌ماند.
+  String _maskedAddress(ServerNode n) {
+    final m = RegExp(r'^(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}$').firstMatch(n.host);
+    final h = m != null ? '${m.group(1)}.***' : n.host;
+    return n.port > 0 ? '$h:${n.port}' : h;
+  }
+
+  String _transport(ServerNode n) {
+    try {
+      final u = n.rawUri;
+      if (u.startsWith('vmess://')) {
+        final j = jsonDecode(utf8.decode(base64.decode(base64.normalize(u.substring(8))))) as Map;
+        return (j['net'] ?? 'tcp').toString().toLowerCase();
+      }
+      return (Uri.parse(u).queryParameters['type'] ?? 'tcp').toLowerCase();
+    } catch (_) {
+      return 'tcp';
+    }
+  }
+
+  /// مثل «VLESS / xhttp / reality»؛ tcp و none نمایش داده نمی‌شوند
+  String _kind(ServerNode n) {
+    final tr = _transport(n);
+    final sec = n.security.toLowerCase();
+    return [n.protocol, if (tr != 'tcp') tr, if (sec.isNotEmpty && sec != 'none') sec].join(' / ');
+  }
+
+  Widget _gridRow(List<ServerNode> p) => Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: _gridCard(p[0])),
+              const SizedBox(width: 10),
+              Expanded(child: p.length > 1 ? _gridCard(p[1]) : const SizedBox.shrink()),
+            ],
+          ),
+        ),
+      );
+
+  Widget _gridCard(ServerNode n) {
+    final sel = n.rawUri == c.selUri;
+    final pend = !sel && n.rawUri == _pendingUri;
+    final probing = c.pingingUris.contains(n.rawUri);
+    final accent = sel ? kGreen : (pend ? kAmber : null);
+    final name = n.displayName.isEmpty ? (n.host.isEmpty ? 'سرور بی‌نام' : n.host) : n.displayName;
+    final ping = probing ? 'سنجش…' : (n.pingMs >= 0 ? '${n.pingMs}ms' : (n.pingMs == -1 ? 'timeout' : ''));
+    final pc = probing ? kAmber : (n.pingMs == -2 ? kMuted : pingColor(n.pingMs));
+    return GestureDetector(
+      onLongPress: () => _share(n),
+      child: GlassCard(
+        padding: const EdgeInsets.fromLTRB(10, 8, 2, 8),
+        borderColor: accent?.withValues(alpha: .7),
+        glow: sel || pend,
+        onTap: () => _select(n),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (accent != null) Container(width: 3, margin: const EdgeInsetsDirectional.only(end: 8), color: accent),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          n.flag.isEmpty ? name : '${n.flag} $name',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, height: 1.3, color: sel ? kGreen : kText),
+                        ),
+                      ),
+                      _cardMenu(n),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(_maskedAddress(n),
+                      maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: kMuted, fontSize: 11, fontFamily: kMono)),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(_kind(n),
+                            maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: kAmber, fontSize: 11, fontWeight: FontWeight.w700)),
+                      ),
+                      if (ping.isNotEmpty)
+                        Text(ping, style: TextStyle(color: pc, fontSize: 11.5, fontWeight: FontWeight.w800, fontFamily: kMono)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _cardMenu(ServerNode n) => SizedBox(
+        width: 30,
+        height: 30,
+        child: PopupMenuButton<String>(
+          padding: EdgeInsets.zero,
+          color: kSurface2,
+          icon: Icon(Icons.more_vert, size: 18, color: kMuted),
+          onSelected: (v) {
+            switch (v) {
+              case 'share':
+                _share(n);
+              case 'fav':
+                c.toggleFavorite(n);
+              case 'ping':
+                c.pingOne(n);
+              case 'chain':
+                c.setChain(n.rawUri);
+                _snack('به‌عنوان سرور واسطه (زنجیره) تنظیم شد');
+            }
+          },
+          itemBuilder: (_) => [
+            const PopupMenuItem(value: 'share', child: Text('QR / کپی لینک')),
+            PopupMenuItem(value: 'fav', child: Text(n.favorite ? 'حذف از علاقه‌مندی' : 'علاقه‌مندی')),
+            const PopupMenuItem(value: 'ping', child: Text('پینگ این سرور')),
+            const PopupMenuItem(value: 'chain', child: Text('سرور واسطه (زنجیره)')),
+          ],
+        ),
+      );
 
   Widget _tileCard(ServerNode n) {
     final sel = n.rawUri == c.selUri; // سرور ذخیره‌شده/متصل
