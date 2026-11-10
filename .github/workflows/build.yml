@@ -57,7 +57,7 @@ jobs:
             exit 0
           fi
           echo "$KEYSTORE_B64" | base64 -d > android/app/zeus.jks
-          printf 'storePassword=%s\\nkeyPassword=%s\\nkeyAlias=%s\\nstoreFile=zeus.jks\\n' "$KEYSTORE_PASSWORD" "$KEY_PASSWORD" "$KEY_ALIAS" > android/key.properties
+          printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=zeus.jks\n' "$KEYSTORE_PASSWORD" "$KEY_PASSWORD" "$KEY_ALIAS" > android/key.properties
           python3 tools/patch_signing.py
 
       - name: Cache Gradle
