@@ -84,7 +84,7 @@ jobs:
       - name: Name APKs
         run: |
           set -euo pipefail
-          VER=$(grep '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*//; s/\\+.*//')
+          VER=$(grep '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*//; s/\+.*//')
           mkdir -p dist
           for abi in arm64-v8a armeabi-v7a x86_64; do
             cp "build/app/outputs/flutter-apk/app-${abi}-release.apk" "dist/ZEUS-VPN-v${VER}-${abi}.apk"
@@ -104,7 +104,7 @@ jobs:
         run: |
           set -euo pipefail
           TAG="build-${{ github.run_number }}-${{ github.run_attempt }}"
-          VER=$(grep '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*//; s/\\+.*//')
-          gh release create "$TAG" dist/*.apk \\
-            --title "ZEUS VPN v${VER}" \\
+          VER=$(grep '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*//; s/\+.*//')
+          gh release create "$TAG" dist/*.apk \
+            --title "ZEUS VPN v${VER}" \
             --generate-notes
