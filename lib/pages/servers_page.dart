@@ -1,4 +1,6 @@
 // lib/pages/servers_page.dart — لیست سرورها با جستجو، فیلتر، آمار و انتخاب صریح
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -20,7 +22,8 @@ class _ServersPageState extends State<ServersPage> {
   final _search = TextEditingController();
   int _tab = 0; // 0 همه | 1 پیشنهادی | 2 پینگ کمتر | 3 علاقه‌مندی‌ها
   String _proto = 'همه';
-  String _group = ''; // برچسب اشتراک (S1، S2…)؛ خالی = همهٔ اشتراک‌ها
+  String _group = ''; // برچسب اشتراک (S1، S2… یا *other)؛ خالی = همه (وقتی اشتراکی نیست)
+  bool _searchOpen = false;
 
   /// سروری که کاربر در این صفحه لمس کرده. تا دکمهٔ «اتصال» زده نشود،
   /// در حالت متصل هیچ تغییری در c.selUri داده نمی‌شود (اتصال فعلی دست‌نخورده می‌ماند).
@@ -86,6 +89,42 @@ class _ServersPageState extends State<ServersPage> {
     return tag;
   }
 
+  bool _isSubTag(String tag) {
+    final m = RegExp(r'^S(\d+)$').firstMatch(tag);
+    final i = m == null ? -1 : (int.tryParse(m.group(1)!) ?? 0) - 1;
+    return i >= 0 && i < c.subs.length;
+  }
+
+  bool _inGroup(ServerNode n, String g) => g == '*other' ? !_isSubTag(n.subTag) : n.subTag == g;
+
+  /// تب‌های اشتراک: هر اشتراک + («سایر» برای لینک‌های دستی)
+  List<_TabItem> get _subTabs {
+    if (c.subs.isEmpty) return const [];
+    final out = <_TabItem>[];
+    for (var i = 0; i < c.subs.length; i++) {
+      final tag = 'S${i + 1}';
+      out.add(_TabItem(tag, _subName(tag), c.nodes.where((e) => e.subTag == tag).length));
+    }
+    final other = c.nodes.where((e) => !_isSubTag(e.subTag)).length;
+    if (other > 0) out.add(_TabItem('*other', 'سایر', other));
+    return out;
+  }
+
+  void _onMenu(String v) {
+    switch (v) {
+      case 'refresh':
+        if (!c.loadingSubs) _refresh();
+      case 'ping':
+        if (!c.pinging && c.nodes.isNotEmpty) c.pingAll();
+      case 'clean':
+        if (c.nodes.isNotEmpty) _removeDead();
+      case 'view':
+        c.settings.gridView = !c.settings.gridView;
+        c.saveSettings();
+        c.refresh();
+    }
+  }
+
   /// گروه‌ها برای فیلتر: (برچسب، متن). اولی «همه» است.
   List<MapEntry<String, String>> get _groups {
     final out = <MapEntry<String, String>>[const MapEntry('', 'همه اشتراک‌ها')];
@@ -109,7 +148,8 @@ class _ServersPageState extends State<ServersPage> {
     final q = _search.text.trim().toLowerCase();
     var list = c.nodes.where((n) {
       if (_proto != 'همه' && n.protocol != _proto) return false;
-      if (_group.isNotEmpty && n.subTag != _group) return false;
+      // وقتی جستجو می‌کنی، نتیجه از همهٔ اشتراک‌هاست؛ وگرنه فقط تبِ انتخاب‌شده
+      if (_group.isNotEmpty && q.isEmpty && !_inGroup(n, _group)) return false;
       if (q.isNotEmpty && !n.displayName.toLowerCase().contains(q) && !n.host.toLowerCase().contains(q)) {
         return false;
       }
@@ -186,7 +226,13 @@ class _ServersPageState extends State<ServersPage> {
         // فیلتر به «همه» برمی‌گردد (قبلاً تبِ «همه» به‌صورت بصری انتخاب می‌شد ولی فیلتر
         // قدیمی باقی می‌ماند و لیست همیشه خالی با پیام «نتیجه‌ای یافت نشد» نمایش داده می‌شد)
         if (_proto != 'همه' && !_protocols.contains(_proto)) _proto = 'همه';
-        if (_group.isNotEmpty && !_groups.any((g) => g.key == _group)) _group = '';
+        // تب اشتراک: همیشه یکی انتخاب است (پیش‌فرض اولین اشتراک)؛ اگر دیگر وجود نداشت به اولی برمی‌گردد
+        final tabs = _subTabs;
+        if (tabs.isEmpty) {
+          _group = '';
+        } else if (!tabs.any((t) => t.key == _group)) {
+          _group = tabs.first.key;
+        }
         final list = _filtered;
         final avg = c.avgPing;
         final pending = _pending;
@@ -198,47 +244,62 @@ class _ServersPageState extends State<ServersPage> {
               leading: IconButton(icon: const Icon(Icons.arrow_forward), onPressed: widget.onBack),
               actions: [
                 IconButton(
-                  tooltip: 'پینگ همه',
-                  onPressed: c.pinging || c.nodes.isEmpty ? null : c.pingAll,
-                  icon: c.pinging
-                      ? SizedBox(
-                          width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: kGreen))
-                      : const Icon(Icons.network_check),
+                  tooltip: 'جستجو',
+                  icon: Icon(_searchOpen ? Icons.search_off : Icons.search),
+                  onPressed: () => setState(() {
+                    _searchOpen = !_searchOpen;
+                    if (!_searchOpen) _search.clear();
+                  }),
                 ),
                 IconButton(
-                  tooltip: 'حذف سرورهای بدون پینگ',
-                  onPressed: c.nodes.isEmpty ? null : _removeDead,
-                  icon: const Icon(Icons.cleaning_services_outlined),
+                  tooltip: 'افزودن اشتراک',
+                  icon: const Icon(Icons.add),
+                  onPressed: widget.onGoSubs,
                 ),
-                IconButton(
-                  tooltip: 'به‌روزرسانی',
-                  onPressed: c.loadingSubs ? null : _refresh,
-                  icon: c.loadingSubs
-                      ? SizedBox(
-                          width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: kGreen))
-                      : const Icon(Icons.refresh),
+                PopupMenuButton<String>(
+                  tooltip: 'بیشتر',
+                  color: kSurface2,
+                  icon: const Icon(Icons.more_vert),
+                  onSelected: _onMenu,
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(value: 'refresh', child: Text('به‌روزرسانی اشتراک‌ها')),
+                    const PopupMenuItem(value: 'ping', child: Text('پینگ همه')),
+                    const PopupMenuItem(value: 'clean', child: Text('حذف سرورهای بدون پینگ')),
+                    PopupMenuItem(value: 'view', child: Text(c.settings.gridView ? 'نمایش لیستی' : 'نمایش شبکه‌ای (دو ستونه)')),
+                  ],
                 ),
               ],
             ),
             body: Column(
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
-                  child: TextField(
-                    controller: _search,
-                    onChanged: (_) => setState(() {}),
-                    decoration: InputDecoration(
-                      hintText: 'جستجوی سرور، کشور یا نام',
-                      prefixIcon: Icon(Icons.search, color: kMuted, size: 20),
-                      suffixIcon: _search.text.isEmpty
-                          ? Icon(Icons.tune, color: kMuted, size: 18)
-                          : IconButton(
-                              icon: Icon(Icons.close, color: kMuted, size: 18),
-                              onPressed: () => setState(_search.clear),
-                            ),
+                if (c.loadingSubs) LinearProgressIndicator(minHeight: 2, color: kGreen, backgroundColor: kBorder),
+                if (_searchOpen || _search.text.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                    child: TextField(
+                      controller: _search,
+                      autofocus: _searchOpen && _search.text.isEmpty,
+                      onChanged: (_) => setState(() {}),
+                      decoration: InputDecoration(
+                        hintText: 'جستجوی سرور، کشور یا نام (در همهٔ اشتراک‌ها)',
+                        prefixIcon: Icon(Icons.search, color: kMuted, size: 20),
+                        suffixIcon: IconButton(
+                          icon: Icon(Icons.close, color: kMuted, size: 18),
+                          onPressed: () => setState(() {
+                            _search.clear();
+                            _searchOpen = false;
+                          }),
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                // تب‌های اشتراک (مثل PattNG): هر اشتراک یک تب با تعداد سرورهایش
+                if (_subTabs.isNotEmpty)
+                  _SubTabBar(
+                    items: _subTabs,
+                    selected: _group,
+                    onSelect: (k) => setState(() => _group = k),
+                  ),
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: PillTabs(items: _tabs, index: _tab, onChanged: (i) => setState(() => _tab = i)),
@@ -318,27 +379,6 @@ class _ServersPageState extends State<ServersPage> {
                       ),
                     ),
                   ),
-                // دسته‌بندی بر اساس اشتراک (وقتی بیش از یک اشتراک داریم)
-                if (c.subs.length > 1) ...[
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: PillTabs(
-                      items: [for (final g in _groups) g.value],
-                      index: _groups.indexWhere((g) => g.key == _group).clamp(0, _groups.length - 1).toInt(),
-                      onChanged: (i) => setState(() => _group = _groups[i].key),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                ],
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: PillTabs(
-                    items: _protocols,
-                    index: _protocols.indexOf(_proto).clamp(0, _protocols.length - 1).toInt(),
-                    onChanged: (i) => setState(() => _proto = _protocols[i]),
-                  ),
-                ),
-                const SizedBox(height: 8),
                 Expanded(child: _list(list)),
                 AnimatedSize(
                   duration: const Duration(milliseconds: 260),
@@ -430,7 +470,7 @@ class _ServersPageState extends State<ServersPage> {
     }
     // وقتی بیش از یک اشتراک داریم و فیلتری انتخاب نشده، سرورها زیر عنوان هر اشتراک می‌آیند
     final entries = <Object>[];
-    if (_group.isEmpty && c.subs.length > 1) {
+    if (_search.text.trim().isNotEmpty && c.subs.length > 1) {
       final byTag = <String, List<ServerNode>>{};
       for (final n in list) {
         (byTag[n.subTag] ??= <ServerNode>[]).add(n);
@@ -444,15 +484,35 @@ class _ServersPageState extends State<ServersPage> {
     } else {
       entries.addAll(list);
     }
+    // نمایش شبکه‌ای: هر ردیف دو کارت؛ عنوان اشتراک ردیف را می‌شکند
+    final rows = <Object>[];
+    if (c.settings.gridView) {
+      List<ServerNode>? cur;
+      for (final e in entries) {
+        if (e is ServerNode) {
+          if (cur == null || cur.length == 2) {
+            cur = <ServerNode>[];
+            rows.add(cur);
+          }
+          cur.add(e);
+        } else {
+          rows.add(e);
+          cur = null;
+        }
+      }
+    } else {
+      rows.addAll(entries);
+    }
     return RefreshIndicator(
       color: kGreen,
       backgroundColor: kSurface,
       onRefresh: _refresh,
       child: ListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-        itemCount: entries.length,
+        itemCount: rows.length,
         itemBuilder: (_, i) {
-          final e = entries[i];
+          final e = rows[i];
+          if (e is List<ServerNode>) return _Appear(index: i, child: _gridRow(e));
           if (e is ServerNode) return _Appear(index: i, child: _tile(e));
           final h = e as _GroupHeader;
           return SectionLabel('${_subName(h.tag)} • ${h.count}', icon: Icons.folder_open_outlined);
@@ -503,6 +563,146 @@ class _ServersPageState extends State<ServersPage> {
   }
 
   Widget _tile(ServerNode n) => GestureDetector(onLongPress: () => _share(n), child: _tileCard(n));
+
+  // ───────── نمایش شبکه‌ای (دو ستونه) ─────────
+  /// IPv4 را مثل PattNG نیمه‌پنهان نشان می‌دهد (آخرین بخش ***)؛ دامنه کامل می‌ماند.
+  /// اگر نام از قبل پرچم دارد (🇩🇪 …) دوباره اضافه نشود
+  bool _startsWithFlag(String s) => RegExp(r'^[\u{1F1E6}-\u{1F1FF}]{2}', unicode: true).hasMatch(s);
+
+  String _maskedAddress(ServerNode n) {
+    final m = RegExp(r'^(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}$').firstMatch(n.host);
+    final h = m != null ? '${m.group(1)}.***' : n.host;
+    return n.port > 0 ? '$h:${n.port}' : h;
+  }
+
+  String _transport(ServerNode n) {
+    try {
+      final u = n.rawUri;
+      if (u.startsWith('vmess://')) {
+        final j = jsonDecode(utf8.decode(base64.decode(base64.normalize(u.substring(8))))) as Map;
+        return (j['net'] ?? 'tcp').toString().toLowerCase();
+      }
+      return (Uri.parse(u).queryParameters['type'] ?? 'tcp').toLowerCase();
+    } catch (_) {
+      return 'tcp';
+    }
+  }
+
+  /// مثل «VLESS / xhttp / reality»؛ tcp و none نمایش داده نمی‌شوند
+  String _kind(ServerNode n) {
+    final tr = _transport(n);
+    final sec = n.security.toLowerCase();
+    return [n.protocol, if (tr != 'tcp') tr, if (sec.isNotEmpty && sec != 'none') sec].join(' / ');
+  }
+
+  Widget _gridRow(List<ServerNode> p) => Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: _gridCard(p[0])),
+              const SizedBox(width: 10),
+              Expanded(child: p.length > 1 ? _gridCard(p[1]) : const SizedBox.shrink()),
+            ],
+          ),
+        ),
+      );
+
+  Widget _gridCard(ServerNode n) {
+    final sel = n.rawUri == c.selUri;
+    final pend = !sel && n.rawUri == _pendingUri;
+    final probing = c.pingingUris.contains(n.rawUri);
+    final accent = sel ? kGreen : (pend ? kAmber : null);
+    final name = n.displayName.isEmpty ? (n.host.isEmpty ? 'سرور بی‌نام' : n.host) : n.displayName;
+    final ping = probing ? 'سنجش…' : (n.pingMs >= 0 ? '${n.pingMs}ms' : (n.pingMs == -1 ? 'timeout' : ''));
+    final pc = probing ? kAmber : (n.pingMs == -2 ? kMuted : pingColor(n.pingMs));
+    return GestureDetector(
+      onLongPress: () => _share(n),
+      child: GlassCard(
+        padding: const EdgeInsets.fromLTRB(10, 8, 2, 8),
+        borderColor: accent?.withValues(alpha: .7),
+        glow: sel || pend,
+        onTap: () => _select(n),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (accent != null) Container(width: 3, margin: const EdgeInsetsDirectional.only(end: 8), color: accent),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          (n.flag.isEmpty || _startsWithFlag(name)) ? name : '${n.flag} $name',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, height: 1.3, color: sel ? kGreen : kText),
+                        ),
+                      ),
+                      _cardMenu(n),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(_maskedAddress(n),
+                      textDirection: TextDirection.ltr,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: kMuted, fontSize: 11, fontFamily: kMono)),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(_kind(n),
+                            textDirection: TextDirection.ltr,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: kAmber, fontSize: 11, fontWeight: FontWeight.w700)),
+                      ),
+                      if (ping.isNotEmpty)
+                        Text(ping, style: TextStyle(color: pc, fontSize: 11.5, fontWeight: FontWeight.w800, fontFamily: kMono)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _cardMenu(ServerNode n) => SizedBox(
+        width: 30,
+        height: 30,
+        child: PopupMenuButton<String>(
+          padding: EdgeInsets.zero,
+          color: kSurface2,
+          icon: Icon(Icons.more_vert, size: 18, color: kMuted),
+          onSelected: (v) {
+            switch (v) {
+              case 'share':
+                _share(n);
+              case 'fav':
+                c.toggleFavorite(n);
+              case 'ping':
+                c.pingOne(n);
+              case 'chain':
+                c.setChain(n.rawUri);
+                _snack('به‌عنوان سرور واسطه (زنجیره) تنظیم شد');
+            }
+          },
+          itemBuilder: (_) => [
+            const PopupMenuItem(value: 'share', child: Text('QR / کپی لینک')),
+            PopupMenuItem(value: 'fav', child: Text(n.favorite ? 'حذف از علاقه‌مندی' : 'علاقه‌مندی')),
+            const PopupMenuItem(value: 'ping', child: Text('پینگ این سرور')),
+            const PopupMenuItem(value: 'chain', child: Text('سرور واسطه (زنجیره)')),
+          ],
+        ),
+      );
 
   Widget _tileCard(ServerNode n) {
     final sel = n.rawUri == c.selUri; // سرور ذخیره‌شده/متصل
@@ -685,4 +885,88 @@ class _GroupHeader {
   final String tag;
   final int count;
   const _GroupHeader(this.tag, this.count);
+}
+
+class _TabItem {
+  final String key;
+  final String label;
+  final int count;
+  const _TabItem(this.key, this.label, this.count);
+}
+
+/// نوار تب‌های اشتراک؛ قرص گرد با تب‌های قابل‌پیمایش و نشان تعداد (مثل PattNG)
+class _SubTabBar extends StatelessWidget {
+  final List<_TabItem> items;
+  final String selected;
+  final ValueChanged<String> onSelect;
+  const _SubTabBar({required this.items, required this.selected, required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 2, 16, 10),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: kSurface2.withValues(alpha: .75),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: kBorder),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (final t in items)
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => onSelect(t.key),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: t.key == selected ? kGreen.withValues(alpha: .16) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: t.key == selected ? kGreen.withValues(alpha: .55) : Colors.transparent),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 150),
+                        child: Text(
+                          t.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: t.key == selected ? kGreen : kMuted,
+                            fontWeight: t.key == selected ? FontWeight.w800 : FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: t.key == selected ? kGreen : kMuted.withValues(alpha: .35),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${t.count}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            fontFamily: kMono,
+                            color: t.key == selected ? Colors.black : kText,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
