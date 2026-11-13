@@ -8,6 +8,8 @@
    so the bundled Xray .so libraries are never stripped/compressed.
 3. gradle.properties -> drop the obsolete enableUncompressedNativeLibs flag.
 4. tools/icons/** -> copied over android/app/src/main/res (ZEUS launcher icon, adaptive + legacy).
+5. Android Lint tasks (lintVital*, lintAnalyze*) are disabled: lint crashes on JDK 17 with
+   NoSuchMethodError List.removeLast() while analysing plugin sources and is not needed to build the APK.
 
 The script is idempotent: running it twice changes nothing the second time.
 """
@@ -93,6 +95,50 @@ def patch_props() -> None:
         print("props ok")
 
 
+LINT_MARK = "ZEUS: lint-vital-off"
+
+
+def patch_lint() -> None:
+    """Disable Android Lint tasks in every module (the CI JDK makes lint crash on url_launcher)."""
+    kts = os.path.join("android", "build.gradle.kts")
+    groovy = os.path.join("android", "build.gradle")
+    if os.path.isfile(kts):
+        path = kts
+        block = (
+            "\n// " + LINT_MARK + "\n"
+            "subprojects {\n"
+            "    tasks.configureEach {\n"
+            "        if (name.startsWith(\"lintVital\") || name.startsWith(\"lintAnalyze\") || name == \"lint\") {\n"
+            "            enabled = false\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+        )
+    elif os.path.isfile(groovy):
+        path = groovy
+        block = (
+            "\n// " + LINT_MARK + "\n"
+            "subprojects {\n"
+            "    tasks.configureEach { t ->\n"
+            "        if (t.name.startsWith('lintVital') || t.name.startsWith('lintAnalyze') || t.name == 'lint') {\n"
+            "            t.enabled = false\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+        )
+    else:
+        print("lint: no root gradle file found, skipped")
+        return
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    if LINT_MARK in text:
+        print("lint: already disabled")
+        return
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(block)
+    print("lint tasks disabled in " + path)
+
+
 def patch_icons() -> None:
     """Copy the ZEUS launcher icon resources over the default Flutter ones."""
     if not os.path.isdir(ICONS_SRC):
@@ -116,4 +162,5 @@ if __name__ == "__main__":
     patch_gradle()
     patch_props()
     patch_icons()
+    patch_lint()
     print("ALL PATCHES DONE")
