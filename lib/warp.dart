@@ -334,7 +334,7 @@ class WarpConfig {
       'address': addrs,
       'peers': <Map<String, dynamic>>[peer],
       'reserved': reserved,
-      'mtu': interfaceMtu ?? mtu,
+      'mtu': mtu,
       'workers': workers,
       if (dnsServers.isNotEmpty) 'remoteDNS': List<String>.of(dnsServers),
       'domainStrategy': includeV6 && addressV6.isNotEmpty
