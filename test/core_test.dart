@@ -343,7 +343,12 @@ void main() {
       final merged = mergeRefreshedNodes([feed], [manual]);
 
       expect(merged.length, 1);
-      expect(merged.single.subTag, 'S1');
+      expect(merged.single.subTag, 'M');
+
+      final nextRefreshWithoutTheFeed = mergeRefreshedNodes([], merged);
+      expect(nextRefreshWithoutTheFeed.length, 1);
+      expect(nextRefreshWithoutTheFeed.single.subTag, 'M');
+      expect(nextRefreshWithoutTheFeed.single.rawUri, manual.rawUri);
     });
   });
 
