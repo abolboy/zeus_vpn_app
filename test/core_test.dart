@@ -104,6 +104,33 @@ void main() {
     });
   });
 
+  group('sensitive log redaction', () {
+    test('hides share URIs and query-bearing subscription URLs', () {
+      const input =
+          'Sub failed: vless://123e4567-e89b-12d3-a456-426614174000@vpn.example:443?security=tls '
+          'while requesting https://feed.example/sub?token=secret-value';
+      final output = redactSensitiveLogText(input);
+
+      expect(output, isNot(contains('123e4567-e89b-12d3-a456-426614174000')));
+      expect(output, isNot(contains('secret-value')));
+      expect(output, contains('vpn.example'));
+      expect(output, contains('feed.example'));
+      expect(output, contains('[REDACTED]'));
+    });
+
+    test('redacts private key, bearer token, and standalone credential assignments', () {
+      const input =
+          'PrivateKey = U0VDUkVUS0VZ AccessToken: abc.def.ghi '
+          'Authorization: Bearer token-value';
+      final output = redactSensitiveLogText(input);
+
+      expect(output, isNot(contains('U0VDUkVUS0VZ')));
+      expect(output, isNot(contains('abc.def.ghi')));
+      expect(output, isNot(contains('token-value')));
+      expect(output, contains('[REDACTED]'));
+    });
+  });
+
   group('subscription URL security', () {
     test('accepts HTTPS URLs, including non-default ports and query tokens', () {
       expect(
