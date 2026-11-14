@@ -614,8 +614,13 @@ WarpConfig parseWireGuardConf(String text) {
   final dnsServers = (iface['dns'] ?? '')
       .split(',')
       .map((value) => value.trim())
-      .where((value) => value.isNotEmpty && InternetAddress.tryParse(value) != null)
+      .where((value) => value.isNotEmpty)
       .toList();
+  if (dnsServers.any((value) => InternetAddress.tryParse(value) == null)) {
+    throw const FormatException(
+      'DNS باید فقط شامل آدرس‌های IPv4 یا IPv6 باشد؛ Xray remoteDNS نام دامنه را قبول نمی‌کند',
+    );
+  }
 
   var reserved = <int>[0, 0, 0];
   final reservedText = (iface['reserved'] ?? peer['reserved'] ?? '').trim();
