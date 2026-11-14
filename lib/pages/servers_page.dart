@@ -1772,7 +1772,7 @@ class _SubTabBar extends StatelessWidget {
                       ),
                     ),
                     const Spacer(),
-                    Text(n.subTag, style: TextStyle(color: kMuted, fontSize: 10)),
+                    Text(_subName(n.subTag), style: TextStyle(color: kMuted, fontSize: 10)),
                   ],
                 ),
               ],
