@@ -376,7 +376,7 @@ class ZeusController extends ChangeNotifier {
   // ───────── logs ─────────
   void log(LogKind kind, String text, [LogLevel level = LogLevel.info]) {
     if (!settings.saveLogs && level == LogLevel.info) return;
-    logs.insert(0, LogEntry(kind, level, text));
+    logs.insert(0, LogEntry(kind, level, redactSensitiveLogText(text)));
     if (logs.length > _maxLogs) logs.removeRange(_maxLogs, logs.length);
     notifyListeners();
   }
