@@ -130,15 +130,24 @@ void main() {
       expect(output, contains('[REDACTED]'));
     });
 
-    test('redacts private key, bearer token, and standalone credential assignments', () {
+    test('redacts plain and JSON credential fields plus Bearer and Basic headers', () {
       const input =
           'PrivateKey = U0VDUkVUS0VZ AccessToken: abc.def.ghi '
-          'Authorization: Bearer token-value';
+          'Authorization: Bearer token-value '
+          '{"privateKey":"json-private-value","preSharedKey":"json-psk-value"} '
+          'Authorization: Basic dXNlcjpwYXNzd29yZA==';
       final output = redactSensitiveLogText(input);
 
-      expect(output, isNot(contains('U0VDUkVUS0VZ')));
-      expect(output, isNot(contains('abc.def.ghi')));
-      expect(output, isNot(contains('token-value')));
+      for (final secret in [
+        'U0VDUkVUS0VZ',
+        'abc.def.ghi',
+        'token-value',
+        'json-private-value',
+        'json-psk-value',
+        'dXNlcjpwYXNzd29yZA==',
+      ]) {
+        expect(output, isNot(contains(secret)), reason: 'Leaked $secret');
+      }
       expect(output, contains('[REDACTED]'));
     });
   });
