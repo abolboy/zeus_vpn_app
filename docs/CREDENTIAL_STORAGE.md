@@ -14,7 +14,7 @@ The app stores values that can contain authentication material in `flutter_secur
 
 Non-secret UI and protocol preferences such as `patt_json`, and the boolean WARP toggle, remain in SharedPreferences.
 
-On Android, `flutter_secure_storage` uses Android Keystore-backed RSA-OAEP key wrapping and AES-GCM data encryption by default. The storage is device-bound; it is not a cloud sync service and does not export the Android Keystore key. Android Auto Backup is disabled so ciphertext is not restored without its original Keystore key.
+On Android, `flutter_secure_storage` uses Android Keystore-backed RSA-OAEP key wrapping and AES-GCM data encryption by default. The app enables crash-resilient migration backups and sets `resetOnError: false`, so a Keystore/decryption error is surfaced instead of silently resetting the encrypted store. The storage is device-bound; it is not a cloud sync service and does not export the Android Keystore key. Android Auto Backup is disabled so ciphertext is not restored without its original Keystore key.
 
 ## First-launch migration
 
