@@ -180,7 +180,7 @@ jobs:
   release:
     name: Build and publish signed release APKs
     if: github.event_name == 'workflow_dispatch' && inputs.publish_release == 'true'
-    needs: verify
+    needs: [verify, android-keystore]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
