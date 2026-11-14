@@ -68,4 +68,6 @@ The importer does not probe or modify the VPS, security group, firewall, forward
 
 ## Protect the profile
 
-A WireGuard client file contains private key material and may also contain a preshared key. Never commit it to GitHub, paste it into public issues, or share it in screenshots. Keep an encrypted offline copy in a trusted password manager. The app currently stores its profile locally; encrypted app-level migration of existing credentials remains a separate hardening task.
+A WireGuard client file contains private key material and may also contain a preshared key. Never commit it to GitHub, paste it into public issues, or share it in screenshots. Keep the original client `.conf` in a separate encrypted password manager or secure offline location.
+
+ZEUS stores the imported profile with the app's Android Keystore-backed encrypted credential storage. This storage is bound to the device/app installation; it is not cloud sync or a portable backup. Reinstalling the app or moving to another phone can require importing the profile again. See [Credential storage and migration](CREDENTIAL_STORAGE.md) for the migration and recovery behavior.
