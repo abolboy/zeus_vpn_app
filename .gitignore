@@ -50,3 +50,14 @@ app.*.map.json
 *.keystore
 key.properties
 *.b64
+
+# Android signing material — never commit private keys or password files
+*.jks
+*.keystore
+*.p12
+*.pfx
+key.properties
+release.properties
+android/key.properties
+android/app/zeus.jks
+ci/keystore.b64
