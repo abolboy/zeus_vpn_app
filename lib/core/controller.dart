@@ -564,6 +564,56 @@ class ZeusController extends ChangeNotifier {
     return syncAll();
   }
 
+  /// Removes a locally imported share link. Active direct or chain routes are protected.
+  Future<String?> removeSingleLink(ServerNode node) async {
+    if (node.subTag != 'M') return 'فقط لینک‌های تکی را می‌توان از این بخش حذف کرد';
+    if ((connected || connecting) &&
+        (selUri == node.rawUri || settings.chainUri == node.rawUri)) {
+      return 'این لینک در اتصال فعلی استفاده می‌شود؛ ابتدا VPN را قطع کن';
+    }
+
+    final index = nodes.indexWhere((item) => item.rawUri == node.rawUri && item.subTag == 'M');
+    if (index < 0) return 'لینک تکی در فهرست پیدا نشد';
+
+    final previousSelection = selUri;
+    final previousChain = settings.chainUri;
+    nodes.removeAt(index);
+    if (selUri == node.rawUri) selUri = null;
+    if (settings.chainUri == node.rawUri) settings.chainUri = '';
+
+    try {
+      await _saveNodes();
+      if (previousSelection != selUri) await _saveSel();
+      if (previousChain != settings.chainUri) await saveSettings();
+    } catch (error) {
+      nodes.insert(index, node);
+      selUri = previousSelection;
+      settings.chainUri = previousChain;
+
+      var rollbackSucceeded = false;
+      try {
+        await _saveNodes();
+        if (previousSelection != selUri) await _saveSel();
+        if (previousChain != settings.chainUri) await saveSettings();
+        rollbackSucceeded = true;
+      } catch (rollbackError) {
+        log(
+          LogKind.system,
+          'Manual server deletion rollback could not be verified: $rollbackError',
+          LogLevel.error,
+        );
+      }
+      notifyListeners();
+      return rollbackSucceeded
+          ? 'حذف امن انجام نشد؛ لینک قبلی بازیابی شد'
+          : 'حذف ناموفق بود و بازیابی خودکار تأیید نشد؛ فهرست سرورها را بررسی کن';
+    }
+
+    notifyListeners();
+    log(LogKind.system, 'Manual server removed (${node.protocol})');
+    return null;
+  }
+
   /// Adds one share URI directly to the local server list without creating a subscription.
   /// Manual nodes use the M tag and are preserved when subscription feeds refresh.
   Future<String?> addSingleLink(String value) async {
