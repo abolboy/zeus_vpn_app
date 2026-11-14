@@ -64,6 +64,17 @@ void main() {
       expect(secure.values.containsKey('warp_json'), isFalse);
     });
 
+    test('secure read failure falls back to legacy value without deleting it', () async {
+      SharedPreferences.setMockInitialValues({'warp_json': 'legacy-profile'});
+      final preferences = await SharedPreferences.getInstance();
+      final secure = _MemorySecureKeyValueStore()..failReads = true;
+      final vault = CredentialVault(storage: secure);
+
+      expect(await vault.readAndMigrate(preferences, 'warp_json'), 'legacy-profile');
+      expect(preferences.getString('warp_json'), 'legacy-profile');
+      expect(secure.values.containsKey('warp_json'), isFalse);
+    });
+
     test('encrypted value takes precedence and removes old duplicate', () async {
       SharedPreferences.setMockInitialValues({'sel': 'old-server-uri'});
       final preferences = await SharedPreferences.getInstance();
