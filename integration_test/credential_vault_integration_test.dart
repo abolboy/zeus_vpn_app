@@ -1,18 +1,19 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:integration_test/integration_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zeus_vpn/core/credential_vault.dart';
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   const key = 'zeus_keystore_migration_integration_test';
   const initialValue = 'legacy-vless://private-subscription-token';
   const updatedValue = 'new-encrypted-wireguard-profile';
 
   testWidgets('Android Keystore encrypts, migrates, updates and deletes credentials',
-      (tester) async {
+      (_) async {
     final preferences = await SharedPreferences.getInstance();
-    const secureStore = PlatformSecureKeyValueStore();
+    final secureStore = PlatformSecureKeyValueStore();
     final vault = CredentialVault(storage: secureStore);
 
     await secureStore.delete(key);
