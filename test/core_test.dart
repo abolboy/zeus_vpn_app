@@ -355,6 +355,15 @@ void main() {
         ),
         throwsFormatException,
       );
+      expect(
+        () => parseWireGuardConf(
+          '[Interface]\\nPrivateKey = $priv\\nAddress = 10.8.0.2/32\\n'
+          'DNS = dns.example.com\\n'
+          '[Peer]\\nPublicKey = $peer\\nEndpoint = 203.0.113.7:51820\\n',
+        ),
+        throwsFormatException,
+        reason: 'Xray remoteDNS must contain IP addresses, not DNS hostnames.',
+      );
     });
 
     test('config round-trip and Xray outbound retains WireGuard peer fields', () {
