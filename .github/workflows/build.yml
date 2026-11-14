@@ -1,18 +1,33 @@
-name: Build ZEUS VPN
+name: Build and Verify ZEUS VPN
 
 on:
   push:
     branches: [main, master]
+  pull_request:
+    branches: [main, master]
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: "Publish signed release APKs after certificate verification"
+        required: true
+        type: choice
+        options:
+          - "false"
+          - "true"
+        default: "false"
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: zeus-vpn-${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  verify:
+    name: Analyze, test, and build debug APK
     runs-on: ubuntu-latest
-    timeout-minutes: 40
-
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,82 +44,173 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Create Android folder
+      - name: Create Android project files
         run: flutter create --platforms=android --project-name zeus_vpn --org ir.zeus .
 
       - name: Patch Android files
         run: python3 tools/patch_android.py
 
-      - name: Pub get
+      - name: Verify Android security and signing-file hygiene
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          manifest_path = Path("android/app/src/main/AndroidManifest.xml")
+          manifest = ET.parse(manifest_path).getroot()
+          android = "{http://schemas.android.com/apk/res/android}"
+          app = manifest.find("application")
+          assert app is not None, "Android application element is missing"
+          assert app.get(android + "allowBackup") == "false", "Android Auto Backup must be disabled"
+          assert app.get(android + "usesCleartextTraffic") == "false", "Cleartext HTTP must be disabled"
+          assert app.get(android + "label") == "ZEUS VPN", "Application label is not branded"
+
+          gradle_kts = Path("android/app/build.gradle.kts")
+          gradle_file = gradle_kts if gradle_kts.is_file() else Path("android/app/build.gradle")
+          gradle_text = gradle_file.read_text(encoding="utf-8")
+          debug_suffix = (
+              'applicationIdSuffix = ".debug"'
+              if gradle_file.suffix == ".kts"
+              else 'applicationIdSuffix ".debug"'
+          )
+          assert debug_suffix in gradle_text, "Debug APK must use a separate .debug application ID"
+
+          tracked = subprocess.run(
+              ["git", "ls-files", "-z"],
+              check=True,
+              capture_output=True,
+              text=True,
+          ).stdout.split("\0")
+          forbidden_exact = {
+              "ci/keystore.b64",
+              "key.properties",
+              "android/key.properties",
+              "android/app/key.properties",
+              "release.properties",
+          }
+          forbidden_suffixes = (".jks", ".keystore", ".p12", ".pfx")
+          signing_files = [
+              path for path in tracked
+              if path in forbidden_exact
+              or Path(path).name.lower() in {"key.properties", "release.properties"}
+              or path.lower().endswith(forbidden_suffixes)
+          ]
+          assert not signing_files, (
+              "Signing material must never be committed: " + ", ".join(signing_files)
+          )
+          print("Android backup policy, cleartext policy, branding, isolated debug package, and signing-file hygiene verified.")
+          PY
+
+      - name: Resolve dependencies
         run: flutter pub get
 
-      - name: Analyze
+      - name: Analyze Dart code
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
-      - name: Test
+      - name: Run unit and widget tests
         run: flutter test
 
-      - name: Setup signing
+      - name: Build debug verification APK
+        run: flutter build apk --debug
+
+      - name: Upload debug verification APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: zeus-vpn-debug-verification
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Build and publish signed release APKs
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_release == 'true'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Create Android project files
+        run: flutter create --platforms=android --project-name zeus_vpn --org ir.zeus .
+
+      - name: Patch Android files
+        run: python3 tools/patch_android.py
+
+      - name: Configure and verify release signing certificate
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          EXPECTED_CERT_SHA256: ${{ vars.ANDROID_RELEASE_CERT_SHA256 }}
         run: |
           set -euo pipefail
-          if [ -z "${KEYSTORE_B64:-}" ]; then
-            echo "::warning::No KEYSTORE_B64 secret -> debug signing: every build gets a DIFFERENT signature, so Android will refuse to update over the previous one. See tools/make_keystore.sh"
-            exit 0
+          for name in KEYSTORE_B64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD EXPECTED_CERT_SHA256; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Required signing value is missing: $name"
+              exit 1
+            fi
+          done
+
+          mkdir -p android/app
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > android/app/zeus.jks
+          chmod 600 android/app/zeus.jks
+          {
+            printf 'storePassword=%s\n' "$KEYSTORE_PASSWORD"
+            printf 'keyPassword=%s\n' "$KEY_PASSWORD"
+            printf 'keyAlias=%s\n' "$KEY_ALIAS"
+            printf 'storeFile=zeus.jks\n'
+          } > android/key.properties
+          chmod 600 android/key.properties
+
+          actual="$(keytool -list -v -keystore android/app/zeus.jks -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" 2>/dev/null | awk -F': ' '/SHA256:/{print $2; exit}' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+          expected="$(printf '%s' "$EXPECTED_CERT_SHA256" | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+          if [ -z "$actual" ] || [ "$actual" != "$expected" ]; then
+            echo "::error::Release certificate SHA-256 does not match ANDROID_RELEASE_CERT_SHA256."
+            exit 1
           fi
-          echo "$KEYSTORE_B64" | base64 -d > android/app/zeus.jks
-          printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=zeus.jks\n' "$KEYSTORE_PASSWORD" "$KEY_PASSWORD" "$KEY_ALIAS" > android/key.properties
+          echo "Release signing certificate fingerprint matches the pinned repository variable."
           python3 tools/patch_signing.py
 
-      - name: Cache Gradle
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('pubspec.lock') }}
-          restore-keys: gradle-${{ runner.os }}-
+      - name: Resolve dependencies
+        run: flutter pub get
 
-      # Maven Central گاهی خطای 429 (Too Many Requests) می‌دهد؛ تا ۳ بار با فاصله تلاش می‌کنیم
-      - name: Build APK
-        run: |
-          for attempt in 1 2 3; do
-            if flutter build apk --release --split-per-abi --build-number=${{ github.run_number }} --dart-define=BUILD_NUMBER=${{ github.run_number }}; then
-              exit 0
-            fi
-            echo "::warning::Build attempt $attempt failed (probably a Gradle/Maven network error); retrying in 40s"
-            sleep 40
-          done
-          exit 1
+      - name: Build signed release APKs
+        run: flutter build apk --release --split-per-abi --build-number=${{ github.run_number }}
 
-      - name: Name APKs
+      - name: Name release APKs
         run: |
           set -euo pipefail
-          VER=$(grep '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*//; s/\+.*//')
+          version="$(grep '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*//; s/+.*//')"
           mkdir -p dist
           for abi in arm64-v8a armeabi-v7a x86_64; do
-            cp "build/app/outputs/flutter-apk/app-${abi}-release.apk" "dist/ZEUS-VPN-v${VER}-${abi}.apk"
+            cp "build/app/outputs/flutter-apk/app-${abi}-release.apk" "dist/ZEUS-VPN-v${version}-${abi}.apk"
           done
           ls -la dist
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: zeus-vpn-apks
-          path: dist/*.apk
-          if-no-files-found: error
-
-      - name: Publish to Releases
+      - name: Publish verified release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="build-${{ github.run_number }}-${{ github.run_attempt }}"
-          VER=$(grep '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*//; s/\+.*//')
-          gh release create "$TAG" dist/*.apk \
-            --title "ZEUS VPN v${VER} (Build ${{ github.run_number }})" \
+          tag="build-${{ github.run_number }}-${{ github.run_attempt }}"
+          version="$(grep '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*//; s/+.*//')"
+          gh release create "$tag" dist/*.apk \
+            --title "ZEUS VPN v${version} (Build ${{ github.run_number }})" \
             --generate-notes
