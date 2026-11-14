@@ -118,6 +118,64 @@
     }
   }
 
+  /// Auto-cleanup is limited to subscription nodes; local manual links require explicit deletion.
+  bool isAutoRemovableDeadNode(ServerNode node, String? selectedUri) {
+    return node.subTag != 'M' &&
+        node.pingMs == -1 &&
+        !node.favorite &&
+        node.rawUri != selectedUri;
+  }
+
+  /// Remove only selected subscription groups and reindex the remaining groups.
+  /// Manual entries (M) and unrelated local nodes are retained.
+  List<ServerNode> removeSubscriptionNodesAndReindex(
+    List<ServerNode> nodes,
+    Set<int> removedZeroBasedIndexes,
+  ) {
+    final sorted = removedZeroBasedIndexes.toList()..sort();
+    nodes.removeWhere((node) {
+      final number = node.subTag.startsWith('S')
+          ? int.tryParse(node.subTag.substring(1))
+          : null;
+      if (number == null || number <= 0) return false;
+      final oldIndex = number - 1;
+      if (removedZeroBasedIndexes.contains(oldIndex)) return true;
+      final removedBefore = sorted.where((index) => index < oldIndex).length;
+      if (removedBefore > 0) {
+        node.subTag = 'S${oldIndex - removedBefore + 1}';
+      }
+      return false;
+    });
+    return nodes;
+  }
+
+  /// Merge subscription results with local manual links, retaining measurements.
+  List<ServerNode> mergeRefreshedNodes(
+    List<ServerNode> fresh,
+    List<ServerNode> existing,
+  ) {
+    final previous = {for (final node in existing) node.rawUri: node};
+    for (final node in fresh) {
+      final old = previous[node.rawUri];
+      if (old == null) continue;
+      node
+        ..pingMs = old.pingMs
+        ..jitterMs = old.jitterMs
+        ..lossPct = old.lossPct
+        ..viaTcp = old.viaTcp
+        ..favorite = old.favorite;
+      // Manual ownership takes precedence when a subscription also publishes
+      // the same URI; this keeps the link after that feed later removes it.
+      if (old.subTag == 'M') node.subTag = 'M';
+    }
+
+    final seen = fresh.map((node) => node.rawUri).toSet();
+    for (final node in existing.where((node) => node.subTag == 'M')) {
+      if (seen.add(node.rawUri)) fresh.add(node);
+    }
+    return fresh;
+  }
+
   // ───────────── Link parsing ─────────────
   class ParsedLink {
     final String name;

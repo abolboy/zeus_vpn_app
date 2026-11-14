@@ -69,6 +69,83 @@ class _ServersPageState extends State<ServersPage> {
     ));
   }
 
+  Future<void> _addSingleLinkDialog() async {
+    final ctl = TextEditingController();
+    final clipboard =
+        (await Clipboard.getData(Clipboard.kTextPlain))?.text?.trim() ?? '';
+    if (isSupportedLink(clipboard)) ctl.text = clipboard;
+    if (!mounted) {
+      ctl.dispose();
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('افزودن لینک تکی سرور'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: TextField(
+            controller: ctl,
+            autofocus: true,
+            minLines: 3,
+            maxLines: 6,
+            keyboardType: TextInputType.url,
+            textDirection: TextDirection.ltr,
+            style: TextStyle(fontFamily: kMono, fontSize: 11.5),
+            decoration: const InputDecoration(
+              hintText: 'vless://… یا vmess://… یا trojan://…',
+              helperText: 'لینک سرور؛ بدون نیاز به اشتراک HTTPS',
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('انصراف')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('افزودن سرور')),
+        ],
+      ),
+    );
+    final value = ctl.text.trim();
+    Future.delayed(const Duration(milliseconds: 400), ctl.dispose);
+    if (confirmed != true || value.isEmpty) return;
+    final error = await c.addSingleLink(value);
+    if (!mounted) return;
+    if (error != null) {
+      _snack(error, err: true);
+      return;
+    }
+    final normalized = normalizeLink(value);
+    setState(() {
+      _pendingUri = normalized;
+      _group = '*other';
+    });
+    _snack('لینک تکی اضافه شد؛ برای اتصال، دکمهٔ اتصال را بزن');
+  }
+
+  Future<void> _removeManualLink(ServerNode node) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('حذف لینک تکی؟'),
+        content: Text('سرور «${node.displayName.isEmpty ? node.host : node.displayName}» از فهرست این گوشی حذف شود؟'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('انصراف')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حذف')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final error = await c.removeSingleLink(node);
+    if (!mounted) return;
+    if (error != null) {
+      _snack(error, err: true);
+      return;
+    }
+    setState(() {
+      if (_pendingUri == node.rawUri) _pendingUri = null;
+    });
+    _snack('لینک تکی حذف شد');
+  }
+
   ServerNode? get _pending => _pendingUri == null
       ? null
       : c.nodes.cast<ServerNode?>().firstWhere((n) => n!.rawUri == _pendingUri, orElse: () => null);
@@ -77,6 +154,7 @@ class _ServersPageState extends State<ServersPage> {
 
   /// نام قابل‌نمایش یک اشتراک بر اساس برچسبش (S1 ← اولین اشتراک)
   String _subName(String tag) {
+    if (tag == 'M') return 'لینک تکی';
     final m = RegExp(r'^S(\d+)$').firstMatch(tag);
     if (m != null) {
       final i = (int.tryParse(m.group(1)!) ?? 0) - 1;
@@ -100,14 +178,16 @@ class _ServersPageState extends State<ServersPage> {
 
   /// تب‌های اشتراک: هر اشتراک + («سایر» برای لینک‌های دستی)
   List<_TabItem> get _subTabs {
-    if (c.subs.isEmpty) return const [];
     final out = <_TabItem>[];
     for (var i = 0; i < c.subs.length; i++) {
       final tag = 'S${i + 1}';
       out.add(_TabItem(tag, _subName(tag), c.nodes.where((e) => e.subTag == tag).length));
     }
-    final other = c.nodes.where((e) => !_isSubTag(e.subTag)).length;
-    if (other > 0) out.add(_TabItem('*other', 'سایر', other));
+    final manual = c.nodes.where((e) => e.subTag == 'M').length;
+    final other = c.nodes.where((e) => !_isSubTag(e.subTag) && e.subTag != 'M').length;
+    if (manual + other > 0) {
+      out.add(_TabItem('*other', manual > 0 ? 'لینک‌های تکی و سایر' : 'سایر', manual + other));
+    }
     return out;
   }
 
@@ -134,6 +214,8 @@ class _ServersPageState extends State<ServersPage> {
       final n = c.nodes.where((e) => e.subTag == tag).length;
       out.add(MapEntry(tag, '${_subName(tag)} ($n)'));
     }
+    final manual = c.nodes.where((e) => e.subTag == 'M').length;
+    if (manual > 0) out.add(MapEntry('*other', 'لینک‌های تکی ($manual)'));
     return out;
   }
 
@@ -252,10 +334,21 @@ class _ServersPageState extends State<ServersPage> {
                     if (!_searchOpen) _search.clear();
                   }),
                 ),
-                IconButton(
-                  tooltip: 'افزودن اشتراک',
+                PopupMenuButton<String>(
+                  tooltip: 'افزودن سرور',
+                  color: kSurface2,
                   icon: const Icon(Icons.add),
-                  onPressed: widget.onGoSubs,
+                  onSelected: (value) {
+                    if (value == 'single') {
+                      _addSingleLinkDialog();
+                    } else if (value == 'subscription') {
+                      widget.onGoSubs();
+                    }
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'single', child: ListTile(dense: true, leading: Icon(Icons.link), title: Text('لینک تکی سرور'))),
+                    PopupMenuItem(value: 'subscription', child: ListTile(dense: true, leading: Icon(Icons.playlist_add), title: Text('اشتراک HTTPS'))),
+                  ],
                 ),
                 PopupMenuButton<String>(
                   tooltip: 'بیشتر',
@@ -454,6 +547,8 @@ class _ServersPageState extends State<ServersPage> {
             const SizedBox(height: 10),
             Text('هنوز سروری ندارید', style: TextStyle(color: kMuted)),
             const SizedBox(height: 12),
+            NeonButton(label: 'افزودن لینک تکی', icon: Icons.link, onTap: _addSingleLinkDialog),
+            const SizedBox(height: 8),
             NeonButton(label: 'افزودن اشتراک', icon: Icons.add_link, onTap: widget.onGoSubs),
           ],
         ),
@@ -699,6 +794,8 @@ class _ServersPageState extends State<ServersPage> {
               case 'chain':
                 c.setChain(n.rawUri);
                 _snack('به‌عنوان سرور واسطه (زنجیره) تنظیم شد');
+              case 'remove':
+                _removeManualLink(n);
             }
           },
           itemBuilder: (_) => [
@@ -706,6 +803,7 @@ class _ServersPageState extends State<ServersPage> {
             PopupMenuItem(value: 'fav', child: Text(n.favorite ? 'حذف از علاقه‌مندی' : 'علاقه‌مندی')),
             const PopupMenuItem(value: 'ping', child: Text('پینگ این سرور')),
             const PopupMenuItem(value: 'chain', child: Text('سرور واسطه (زنجیره)')),
+            if (n.subTag == 'M') const PopupMenuItem(value: 'remove', child: Text('حذف لینک تکی')),
           ],
         ),
       );
@@ -789,7 +887,7 @@ class _ServersPageState extends State<ServersPage> {
                       ),
                     ),
                     const Spacer(),
-                    Text(n.subTag, style: TextStyle(color: kMuted, fontSize: 10)),
+                    Text(_subName(n.subTag), style: TextStyle(color: kMuted, fontSize: 10)),
                   ],
                 ),
               ],

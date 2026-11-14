@@ -198,6 +198,160 @@ void main() {
     });
   });
 
+  group('manual server links', () {
+    test('single VLESS link is represented as a local manual node', () {
+      const uri = 'vless://user-id@edge.example:443?security=tls#My%20Server';
+      expect(isSupportedLink(uri), isTrue);
+
+      final node = ServerNode.fromUri(uri, 'M');
+      expect(node.subTag, 'M');
+      expect(node.protocol, 'VLESS');
+      expect(node.host, 'edge.example');
+      expect(node.port, 443);
+      expect(node.displayName, 'My Server');
+      expect(node.rawUri, uri);
+    });
+
+    test('subscription refresh preserves manual nodes and feed state', () {
+      final manual = ServerNode.fromUri(
+        'vless://manual-id@manual.example:443?security=tls#Manual',
+        'M',
+      )
+        ..favorite = true
+        ..pingMs = 37
+        ..jitterMs = 4
+        ..lossPct = 0
+        ..viaTcp = true;
+      final previousFeedNode = ServerNode.fromUri(
+        'trojan://password@feed.example:443#Feed',
+        'S1',
+      )
+        ..favorite = true
+        ..pingMs = 52
+        ..jitterMs = 7
+        ..lossPct = 10;
+      final refreshedFeedNode = ServerNode.fromUri(
+        'trojan://password@feed.example:443#Feed',
+        'S1',
+      );
+      final newFeedNode = ServerNode.fromUri(
+        'vless://another-id@new-feed.example:443?security=reality#New',
+        'S1',
+      );
+
+      final merged = mergeRefreshedNodes(
+        [refreshedFeedNode, newFeedNode],
+        [manual, previousFeedNode],
+      );
+
+      expect(merged.map((node) => node.rawUri).toSet().length, merged.length);
+      expect(merged.where((node) => node.subTag == 'M').single, same(manual));
+      expect(manual.favorite, isTrue);
+      expect(manual.pingMs, 37);
+      expect(manual.viaTcp, isTrue);
+      expect(refreshedFeedNode.favorite, isTrue);
+      expect(refreshedFeedNode.pingMs, 52);
+      expect(refreshedFeedNode.jitterMs, 7);
+      expect(refreshedFeedNode.lossPct, 10);
+      expect(merged, contains(newFeedNode));
+    });
+
+    test('retiring built-in subscription groups preserves personal and manual nodes', () {
+      final retired = ServerNode.fromUri(
+        'vless://retired@old-free.example:443?security=tls#OldFree',
+        'S1',
+      );
+      final personalFirst = ServerNode.fromUri(
+        'trojan://personal-one@personal.example:443#PersonalOne',
+        'S2',
+      );
+      final manual = ServerNode.fromUri(
+        'vless://manual@manual.example:443?security=tls#Manual',
+        'M',
+      );
+      final personalSecond = ServerNode.fromUri(
+        'vless://personal-two@personal.example:444?security=tls#PersonalTwo',
+        'S3',
+      );
+      final nodes = [retired, personalFirst, manual, personalSecond];
+
+      removeSubscriptionNodesAndReindex(nodes, {0});
+
+      expect(nodes.map((node) => node.rawUri).toList(), [
+        personalFirst.rawUri,
+        manual.rawUri,
+        personalSecond.rawUri,
+      ]);
+      expect(personalFirst.subTag, 'S1');
+      expect(manual.subTag, 'M');
+      expect(personalSecond.subTag, 'S2');
+    });
+
+    test('removing multiple subscription groups reindexes only later groups', () {
+      final first = ServerNode.fromUri('trojan://a@a.example:443#A', 'S1');
+      final second = ServerNode.fromUri('trojan://b@b.example:443#B', 'S2');
+      final third = ServerNode.fromUri('trojan://c@c.example:443#C', 'S3');
+      final fourth = ServerNode.fromUri('trojan://d@d.example:443#D', 'S4');
+      final manual = ServerNode.fromUri('vless://m@m.example:443?security=tls#M', 'M');
+      final nodes = [first, second, third, fourth, manual];
+
+      removeSubscriptionNodesAndReindex(nodes, {0, 2});
+
+      expect(nodes.map((node) => node.subTag).toList(), ['S1', 'S2', 'M']);
+      expect(nodes.map((node) => node.rawUri).toList(), [
+        second.rawUri,
+        fourth.rawUri,
+        manual.rawUri,
+      ]);
+    });
+
+    test('dead-node auto-cleanup never removes manual links', () {
+      final manual = ServerNode.fromUri(
+        'vless://manual@manual.example:443?security=tls#Manual',
+        'M',
+      )..pingMs = -1;
+      final deadSubscription = ServerNode.fromUri(
+        'vless://dead@dead.example:443?security=tls#Dead',
+        'S1',
+      )..pingMs = -1;
+      final favoriteSubscription = ServerNode.fromUri(
+        'vless://favorite@favorite.example:443?security=tls#Favorite',
+        'S1',
+      )
+        ..pingMs = -1
+        ..favorite = true;
+      final selectedSubscription = ServerNode.fromUri(
+        'vless://selected@selected.example:443?security=tls#Selected',
+        'S1',
+      )..pingMs = -1;
+
+      expect(isAutoRemovableDeadNode(manual, null), isFalse);
+      expect(isAutoRemovableDeadNode(deadSubscription, null), isTrue);
+      expect(isAutoRemovableDeadNode(favoriteSubscription, null), isFalse);
+      expect(
+        isAutoRemovableDeadNode(selectedSubscription, selectedSubscription.rawUri),
+        isFalse,
+      );
+    });
+
+    test('manual node is not duplicated when a feed publishes the same URI', () {
+      final manual = ServerNode.fromUri(
+        'vless://same-id@same.example:443?security=tls#Same',
+        'M',
+      );
+      final feed = ServerNode.fromUri(manual.rawUri, 'S1');
+      final merged = mergeRefreshedNodes([feed], [manual]);
+
+      expect(merged.length, 1);
+      expect(merged.single.subTag, 'M');
+
+      final nextRefreshWithoutTheFeed = mergeRefreshedNodes([], merged);
+      expect(nextRefreshWithoutTheFeed.length, 1);
+      expect(nextRefreshWithoutTheFeed.single.subTag, 'M');
+      expect(nextRefreshWithoutTheFeed.single.rawUri, manual.rawUri);
+    });
+  });
+
   group('flagFromName', () {
     test('emoji in name', () => expect(flagFromName('🇩🇪 Berlin'), '🇩🇪'));
     test('long country word', () => expect(flagFromName('Germany Frankfurt 01'), '🇩🇪'));

@@ -180,31 +180,69 @@ class ZeusController extends ChangeNotifier {
   /// اشتراک‌های داخلی («سرورهای رایگان») را یک‌بار به‌ازای هر آدرس اضافه می‌کند؛
   /// اگر کاربر حذفشان کند دوباره اضافه نمی‌شوند.
   Future<void> _seedFreeSubs(SharedPreferences p) async {
-    // اشتراک داخلیِ بازنشسته («سرورهای رایگان» نسخه‌های قبلی) از لیست کاربر پاک می‌شود
-    final before0 = subs.length;
-    subs.removeWhere((s) => kRetiredFreeSubscriptions.contains(s.url) && !kFreeSubscriptions.contains(s.url));
-    if (subs.length != before0) {
-      nodes = [];
-      selUri = null;
+    // Retire only old built-in groups; keep personal subscriptions and manual links.
+    final retiredIndexes = <int>{};
+    for (var i = 0; i < subs.length; i++) {
+      final url = subs[i].url;
+      if (kRetiredFreeSubscriptions.contains(url) &&
+          !kFreeSubscriptions.contains(url)) {
+        retiredIndexes.add(i);
+      }
+    }
+
+    if (retiredIndexes.isNotEmpty) {
+      final removedUris = nodes.where((node) {
+        final number = node.subTag.startsWith('S')
+            ? int.tryParse(node.subTag.substring(1))
+            : null;
+        if (number == null || number <= 0) return false;
+        return retiredIndexes.contains(number - 1);
+      }).map((node) => node.rawUri).toSet();
+
+      final previousSelection = selUri;
+      final previousChain = settings.chainUri;
+      final sortedRetired = retiredIndexes.toList()..sort();
+      for (final index in sortedRetired.reversed) {
+        subs.removeAt(index);
+      }
+      removeSubscriptionNodesAndReindex(nodes, retiredIndexes);
+
+      if (selUri != null &&
+          !nodes.any((node) => node.rawUri == selUri) &&
+          !connected &&
+          !connecting) {
+        selUri = null;
+      }
+      if (!connected &&
+          !connecting &&
+          previousChain.isNotEmpty &&
+          removedUris.contains(previousChain)) {
+        settings.chainUri = '';
+      }
+
       await _saveSubs();
       await _saveNodes();
-      await _saveSel();
+      if (previousSelection != selUri) await _saveSel();
+      if (previousChain != settings.chainUri) await saveSettings();
       await p.remove('free_seeded_urls');
       log(LogKind.system, 'Retired built-in free subscription removed');
     }
+
     if (kFreeSubscriptions.isEmpty) return;
     final seeded = (p.getStringList('free_seeded_urls') ?? <String>[]).toSet();
     final before = seeded.length;
     var added = false;
-    for (final u in kFreeSubscriptions) {
-      if (seeded.contains(u)) continue;
-      seeded.add(u);
-      if (!subs.any((s) => s.url == u)) {
-        subs.add(SubRecord(url: u, name: kFreeSubName));
+    for (final url in kFreeSubscriptions) {
+      if (seeded.contains(url)) continue;
+      seeded.add(url);
+      if (!subs.any((subscription) => subscription.url == url)) {
+        subs.add(SubRecord(url: url, name: kFreeSubName));
         added = true;
       }
     }
-    if (seeded.length != before) await p.setStringList('free_seeded_urls', seeded.toList());
+    if (seeded.length != before) {
+      await p.setStringList('free_seeded_urls', seeded.toList());
+    }
     if (added) {
       await _saveSubs();
       log(LogKind.system, 'Built-in free subscription added');
@@ -653,6 +691,103 @@ class ZeusController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Add one supported share URI as a local node; no subscription is created.
+  Future<String?> addSingleLink(String value) async {
+    final uri = value.trim();
+    if (uri.isEmpty || !isSupportedLink(uri)) {
+      return 'لینک باید یکی از فرمت‌های VLESS، VMess، Trojan، Shadowsocks یا SOCKS باشد';
+    }
+
+    late final ServerNode node;
+    try {
+      node = ServerNode.fromUri(uri, 'M');
+      if (node.protocol == '?' || node.host.isEmpty || node.port < 1) {
+        return 'ساختار لینک سرور کامل یا معتبر نیست';
+      }
+      _builder.build(node.rawUri);
+    } catch (error) {
+      log(
+        LogKind.system,
+        'Manual server link rejected (${error.runtimeType})',
+        LogLevel.warn,
+      );
+      return 'این لینک برای هستهٔ فعلی ZEUS معتبر یا پشتیبانی‌شده نیست';
+    }
+
+    if (nodes.any((existing) => existing.rawUri == node.rawUri)) {
+      return 'این سرور قبلاً به فهرست اضافه شده است';
+    }
+
+    nodes.add(node);
+    try {
+      await _saveNodes();
+    } catch (error) {
+      nodes.removeWhere((existing) => existing.rawUri == node.rawUri);
+      log(
+        LogKind.system,
+        'Manual server could not be saved securely (${error.runtimeType})',
+        LogLevel.error,
+      );
+      return 'ذخیرهٔ امن سرور ناموفق بود؛ دوباره تلاش کن';
+    }
+
+    notifyListeners();
+    log(LogKind.system, 'Manual server added (${node.protocol})');
+    return null;
+  }
+
+  /// Remove a manually imported node without deleting a server used by an active route.
+  Future<String?> removeSingleLink(ServerNode node) async {
+    if (node.subTag != 'M') return 'فقط لینک‌های تکی را می‌توان از این بخش حذف کرد';
+    if ((connected || connecting) &&
+        (selUri == node.rawUri || settings.chainUri == node.rawUri)) {
+      return 'این لینک در اتصال فعلی استفاده می‌شود؛ ابتدا VPN را قطع کن';
+    }
+
+    final index = nodes.indexWhere(
+      (item) => item.rawUri == node.rawUri && item.subTag == 'M',
+    );
+    if (index < 0) return 'لینک تکی در فهرست پیدا نشد';
+
+    final previousSelection = selUri;
+    final previousChain = settings.chainUri;
+    nodes.removeAt(index);
+    if (selUri == node.rawUri) selUri = null;
+    if (settings.chainUri == node.rawUri) settings.chainUri = '';
+
+    try {
+      await _saveNodes();
+      if (previousSelection != selUri) await _saveSel();
+      if (previousChain != settings.chainUri) await saveSettings();
+    } catch (error) {
+      nodes.insert(index, node);
+      selUri = previousSelection;
+      settings.chainUri = previousChain;
+
+      var rollbackSucceeded = false;
+      try {
+        await _saveNodes();
+        if (previousSelection != selUri) await _saveSel();
+        if (previousChain != settings.chainUri) await saveSettings();
+        rollbackSucceeded = true;
+      } catch (rollbackError) {
+        log(
+          LogKind.system,
+          'Manual server deletion rollback could not be verified (${rollbackError.runtimeType})',
+          LogLevel.error,
+        );
+      }
+      notifyListeners();
+      return rollbackSucceeded
+          ? 'حذف امن انجام نشد؛ لینک قبلی بازیابی شد'
+          : 'حذف ناموفق بود و بازیابی خودکار تأیید نشد؛ فهرست سرورها را بررسی کن';
+    }
+
+    notifyListeners();
+    log(LogKind.system, 'Manual server removed (${node.protocol})');
+    return null;
+  }
+
   // ───────── subscriptions ─────────
   Future<String?> addSub(String url) async {
     final u = url.trim();
@@ -789,19 +924,8 @@ class ZeusController extends ChangeNotifier {
         notifyListeners();
         return 'هیچ سروری دریافت نشد؛ لیست قبلی حفظ شد';
       }
-      // پینگ، علاقه‌مندی و آمارِ تست چندنمونه‌ای همین جلسه حفظ می‌شود
-      final old = {for (final n in nodes) n.rawUri: n};
-      for (final n in fresh) {
-        final o = old[n.rawUri];
-        if (o != null) {
-          n.pingMs = o.pingMs;
-          n.jitterMs = o.jitterMs;
-          n.lossPct = o.lossPct;
-          n.viaTcp = o.viaTcp;
-          n.favorite = o.favorite;
-        }
-      }
-      nodes = fresh;
+      // Preserve local single-link imports and measurements across feed refreshes.
+      nodes = mergeRefreshedNodes(fresh, nodes);
       if (selUri != null && !nodes.any((n) => n.rawUri == selUri) && !connected && !connecting) {
         selUri = null;
         await _saveSel();
@@ -1568,11 +1692,11 @@ class ZeusController extends ChangeNotifier {
   }
 
   /// تعداد سرورهای بی‌پاسخ (پینگ‌شده و timeout) که حذف‌شدنی‌اند؛ علاقه‌مندی‌ها و سرور انتخابی حفظ می‌شوند
-  int get deadCount => nodes.where((n) => n.pingMs == -1 && !n.favorite && n.rawUri != selUri).length;
+  int get deadCount => nodes.where((n) => isAutoRemovableDeadNode(n, selUri)).length;
 
   Future<int> removeDeadNodes() async {
     final before = nodes.length;
-    nodes.removeWhere((n) => n.pingMs == -1 && !n.favorite && n.rawUri != selUri);
+    nodes.removeWhere((n) => isAutoRemovableDeadNode(n, selUri));
     final removed = before - nodes.length;
     if (removed > 0) {
       await _saveNodes();
