@@ -1,70 +1,59 @@
 # ZEUS VPN
 
-<div align="center">
+ZEUS VPN is a Flutter Android VPN client built on `flutter_v2ray_client` and Xray. The current application supports VLESS, VMess, Trojan, Shadowsocks, SOCKS, subscription feeds, Cloudflare WARP, and configurable PATT-NG options.
 
-**Cyberpunk Neon VPN Client for Android — Xray core • PattNG • Cloudflare WARP**
+## Current verification status
 
-</div>
+- Pull requests and pushes to `main` run Dart analysis, unit/widget tests, and a debug APK build.
+- The debug APK uses the `.debug` application-ID suffix and can be installed beside a release build without replacing its app data.
+- CI uploads the debug APK as a short-lived verification artifact. It is not a production release.
+- Automatic APK publishing on every push is disabled. A public release now requires a manual workflow dispatch, all signing secrets, and a pinned signing-certificate fingerprint.
+- A successful CI run does not prove real-world VPN traffic, recovery after network changes, WARP behavior, physical-device background service behavior, or upgrade compatibility.
 
----
+## Security baseline
 
-## ✨ امکانات
+- Subscription URLs are accepted only over HTTPS. HTTP redirects are disabled for subscription downloads.
+- Android cleartext traffic is disabled in the generated manifest.
+- Android Auto Backup is disabled. This avoids restoring app data that may depend on device-local cryptographic keys.
+- Signing material must never be committed. The workflow checks tracked files for keystores and password-bearing signing files.
+- A keystore export was previously committed to repository history. The currently configured GitHub Actions signing secret must be verified by certificate fingerprint before it is used for another public release. The existence of signing secrets alone does not prove that the active signing identity is safe or compatible with installed copies.
+- Do not rotate the release key blindly. First compare the current certificate identity with the historical exposed key and decide whether existing installs must continue receiving in-place updates.
 
-- **هستهٔ Xray** از طریق پلاگین `flutter_v2ray_client` — VLESS / VMess / Trojan / Shadowsocks / SOCKS
-- **PattNG**: Fragment (tlshello)، Noise (UDP)، Mux، کنترل Fingerprint/uTLS، SNI/ALPN، REALITY و cipher suites
-- **Cloudflare WARP** با ثبت‌نام مستقیم از اپ (X25519 خالص Dart بدون پکیج خارجی) و زنجیرهٔ WARP↔Node
-- **تأیید واقعی تونل**: بعد از CONNECTED، عبور ترافیک سنجیده می‌شود (نه فقط وضعیت سرویس)
-- **پینگ هوشمند**: واقعی از طریق هسته یا TCP سریع + تست سرعت از داخل تونل (پروکسی HTTP محلی)
-- **اشتراک‌ها**: چند اشتراک با Base64 خودکار، کش سرورها، علاقه‌مندی‌ها و فیلتر/جستجو
-- **لاگ‌ها**: اتصال / هسته / سیستم با فیلتر هشدار-خطا و کپی سریع
-- رابط کاربری فارسی (RTL) با تم Cyberpunk Neon، پس‌زمینهٔ متحرک و ترنزیشن بدون هم‌پوشانی
+## Build locally
 
-## 🏗 معماری
+Requires Flutter stable and JDK 17.
 
-```
-lib/
-├── main.dart              # ورود اپ، تم، ZeusShell و منوی کشویی
-├── core/
-│   ├── controller.dart    # ZeusController (ChangeNotifier): اتصال، اشتراک، پینگ، سرعت، WARP، لاگ
-│   ├── config_builder.dart# ساخت کانفیگ Xray از لینک + PattNG + WARP
-│   └── models.dart        # مدل‌ها، پارسر لینک/اشتراک، پرچم کشورها
-├── pages/                 # HomePage / ServersPage / SubsPage / SettingsPage / LogsPage
-├── ui/                    # theme.dart (پالت و ویجت‌های نئونی) + transitions.dart
-└── warp.dart              # ثبت‌نام Cloudflare WARP + ساخت outbound WireGuard
-```
-
-## 🚀 بیلد
-
-```bash
+```sh
 flutter pub get
-flutter analyze
+flutter analyze --no-fatal-infos --no-fatal-warnings
 flutter test
-flutter build apk --release --split-per-abi
+flutter build apk --debug
 ```
 
-بیلد CI در `.github/workflows/build.yml` انجام می‌شود: پوشهٔ `android/` با `flutter create`
-ساخته، با `tools/patch_android.py` پچ می‌شود و APKهای split برای
-`arm64-v8a` / `armeabi-v7a` / `x86_64` در GitHub Releases منتشر می‌شوند.
+For a local release build, configure the same dedicated signing identity used by the intended distribution channel. Never use a default debug keystore for a public release.
 
-### امضای Release (اختیاری)
+## Controlled GitHub release
 
-برای امضای release، این Secretها را در ریپو تنظیم کنید:
+The `Build and Verify ZEUS VPN` workflow only publishes when manually dispatched with `publish_release=true`.
 
-| Secret | توضیح |
+Configure these GitHub Actions secrets:
+
+| Secret | Purpose |
 |---|---|
-| `KEYSTORE_B64` | فایل keystore به‌صورت Base64 |
-| `KEYSTORE_PASSWORD` | رمز keystore |
-| `KEY_ALIAS` | نام alias |
-| `KEY_PASSWORD` | رمز کلید |
+| `KEYSTORE_B64` | Base64-encoded Android keystore |
+| `KEYSTORE_PASSWORD` | Keystore password |
+| `KEY_ALIAS` | Release key alias |
+| `KEY_PASSWORD` | Release key password |
 
-بدون این Secretها، بیلد با امضای debug انجام می‌شود.
+Also configure the repository variable `ANDROID_RELEASE_CERT_SHA256` with the approved certificate SHA-256 fingerprint, without colons or with colons (both formats are accepted). The release job compares the certificate inside the keystore with this pinned value and stops if they differ or if the value is missing.
 
-## ⚙️ پیش‌نیازها
+See [docs/RELEASE_SIGNING.md](docs/RELEASE_SIGNING.md) before creating or rotating a release key.
 
-- Flutter ≥ 3.27 (Dart ≥ 3.6)
-- Android minSdk 21 (توسط قالب پیش‌فرض برآورده می‌شود)
+## Important production checks still required
 
-## آپدیت بدون حذف نسخهٔ قبلی
-آپدیت فقط وقتی کار می‌کند که همهٔ نسخه‌ها با یک کلید امضا شوند. یک‌بار `bash tools/make_keystore.sh` را اجرا کنید (JDK لازم است؛
-روی گوشی با Termux: `pkg install openjdk-17`) و چهار Secret خروجی را در GitHub بسازید. نسخه‌ای که قبلاً با کلید debug نصب شده،
-فقط همین یک بار باید حذف شود.
+- Physical-device testing of connect/disconnect, traffic routing, DNS, IPv4/IPv6, sleep/resume, mobile-network changes, and battery use.
+- Real traffic validation for every supported protocol and advanced transport option against the exact embedded Xray version.
+- WARP registration and tunnel validation against current Cloudflare behavior.
+- Release certificate continuity and upgrade testing on a device that has the previously distributed APK installed.
+- A verified encrypted export/import process before promising seamless credential migration between devices.
+

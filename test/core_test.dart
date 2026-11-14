@@ -10,6 +10,23 @@ List<int> _hex(String s) => [for (var i = 0; i < s.length; i += 2) int.parse(s.s
 String _toHex(List<int> b) => b.map((e) => e.toRadixString(16).padLeft(2, '0')).join();
 
 void main() {
+  group('subscription URL security', () {
+    test('accepts HTTPS URLs, including non-default ports and query tokens', () {
+      expect(
+        isSecureSubscriptionUrl('https://feed.example:8443/sub?token=abc'),
+        isTrue,
+      );
+    });
+
+    test('rejects cleartext, non-HTTP, relative, and hostless URLs', () {
+      expect(isSecureSubscriptionUrl('http://feed.example/sub'), isFalse);
+      expect(isSecureSubscriptionUrl('ftp://feed.example/sub'), isFalse);
+      expect(isSecureSubscriptionUrl('/relative/sub'), isFalse);
+      expect(isSecureSubscriptionUrl('https:///sub'), isFalse);
+      expect(isSecureSubscriptionUrl('  '), isFalse);
+    });
+  });
+
   group('subscription parsing', () {
     const plain = 'vless://u@h.example:443?security=tls#A\ntrojan://p@h2.example:443#B\nhttp://ignored.example';
 

@@ -1,19 +1,12 @@
 #!/usr/bin/env python3
-"""Patch the freshly generated `flutter create` android/ folder for the ZEUS VPN app:
+"""Patch Flutter-generated Android files for ZEUS VPN.
 
-1. AndroidManifest.xml -> add the permissions the VPN service needs
-   (INTERNET / POST_NOTIFICATIONS / FOREGROUND_SERVICE[_SPECIAL_USE]),
-   enable cleartext traffic and native-lib extraction.
-2. app build.gradle(.kts) -> packaging { jniLibs.useLegacyPackaging = true }
-   so the bundled Xray .so libraries are never stripped/compressed.
-3. gradle.properties -> drop the obsolete enableUncompressedNativeLibs flag.
-4. tools/icons/** -> copied over android/app/src/main/res (ZEUS launcher icon, adaptive + legacy).
-5. Android Lint tasks (lintVital*, lintAnalyze*) are disabled: lint crashes on JDK 17 with
-   NoSuchMethodError List.removeLast() while analysing plugin sources and is not needed to build the APK.
-
-The script is idempotent: running it twice changes nothing the second time.
+The patch is idempotent. It enforces a branded app label, disables Android
+Auto Backup and cleartext HTTP, preserves native Xray library packaging,
+adds the ZEUS launcher resources, and isolates debug installs from releases.
 """
 import os
+import re
 import shutil
 import sys
 
@@ -31,6 +24,16 @@ PERMS = [
 ]
 
 
+def _set_application_attribute(text: str, name: str, value: str) -> str:
+    pattern = re.compile(r'android:' + re.escape(name) + r'="[^"]*"')
+    replacement = f'android:{name}="{value}"'
+    if pattern.search(text):
+        return pattern.sub(replacement, text, count=1)
+    if "<application" not in text:
+        sys.exit("ERROR: application element not found in Android manifest")
+    return text.replace("<application", f"<application {replacement}", 1)
+
+
 def patch_manifest() -> None:
     if not os.path.exists(MANIFEST):
         sys.exit("ERROR: manifest not found: " + MANIFEST)
@@ -38,14 +41,23 @@ def patch_manifest() -> None:
         text = f.read()
     original = text
 
-    missing = [p for p in PERMS if p not in text]
+    missing = [permission for permission in PERMS if permission not in text]
     if missing and "<application" in text:
-        insert = "".join(f'    <uses-permission android:name="{p}" />\n' for p in missing)
+        insert = "".join(
+            f'    <uses-permission android:name="{permission}" />\n'
+            for permission in missing
+        )
         text = text.replace("<application", insert + "    <application", 1)
+
+    text = _set_application_attribute(text, "label", "ZEUS VPN")
+    text = _set_application_attribute(text, "allowBackup", "false")
+    text = _set_application_attribute(text, "usesCleartextTraffic", "false")
     if "android:extractNativeLibs" not in text and "<application" in text:
-        text = text.replace("<application", '<application android:extractNativeLibs="true"', 1)
-    if "android:usesCleartextTraffic" not in text and "<application" in text:
-        text = text.replace("<application", '<application android:usesCleartextTraffic="true"', 1)
+        text = text.replace(
+            "<application",
+            '<application android:extractNativeLibs="true"',
+            1,
+        )
 
     if text != original:
         with open(MANIFEST, "w", encoding="utf-8") as f:
@@ -80,14 +92,55 @@ def patch_gradle() -> None:
         print("gradle patched (appended): " + path)
 
 
+def patch_debug_application_id() -> None:
+    path = GRADLE_KTS if os.path.exists(GRADLE_KTS) else GRADLE_GROOVY
+    if not os.path.exists(path):
+        sys.exit("ERROR: gradle file not found")
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+
+    expected = (
+        'applicationIdSuffix = ".debug"'
+        if path.endswith(".kts")
+        else 'applicationIdSuffix ".debug"'
+    )
+    if expected in text:
+        print("debug application ID suffix already ok")
+        return
+    if "applicationIdSuffix" in text:
+        sys.exit("ERROR: unexpected applicationIdSuffix already exists")
+
+    match = re.search(r"(?m)^([ \t]*)buildTypes\s*\{", text)
+    if match is None:
+        sys.exit("ERROR: buildTypes block not found")
+
+    indent = match.group(1)
+    if path.endswith(".kts"):
+        block = (
+            '\n' + indent + '    getByName("debug") {\n'
+            + indent + '        applicationIdSuffix = ".debug"\n'
+            + indent + '    }\n'
+        )
+    else:
+        block = (
+            '\n' + indent + '    debug {\n'
+            + indent + '        applicationIdSuffix ".debug"\n'
+            + indent + '    }\n'
+        )
+    text = text[:match.end()] + block + text[match.end():]
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+    print("debug application ID suffix configured")
+
+
 def patch_props() -> None:
     if not os.path.exists(PROPS):
         print("props ok (missing)")
         return
     with open(PROPS, encoding="utf-8") as f:
         lines = f.readlines()
-    kept = [l for l in lines if "enableUncompressedNativeLibs" not in l]
-    if lines and len(kept) != len(lines):
+    kept = [line for line in lines if "enableUncompressedNativeLibs" not in line]
+    if len(kept) != len(lines):
         with open(PROPS, "w", encoding="utf-8") as f:
             f.write("".join(kept))
         print("props cleaned")
@@ -99,7 +152,7 @@ LINT_MARK = "ZEUS: lint-vital-off"
 
 
 def patch_lint() -> None:
-    """Disable Android Lint tasks in every module (the CI JDK makes lint crash on url_launcher)."""
+    """Disable the Android Lint tasks known to crash on the JDK 17 CI runner."""
     kts = os.path.join("android", "build.gradle.kts")
     groovy = os.path.join("android", "build.gradle")
     if os.path.isfile(kts):
@@ -108,7 +161,7 @@ def patch_lint() -> None:
             "\n// " + LINT_MARK + "\n"
             "subprojects {\n"
             "    tasks.configureEach {\n"
-            "        if (name.startsWith(\"lintVital\") || name.startsWith(\"lintAnalyze\") || name == \"lint\") {\n"
+            '        if (name.startsWith("lintVital") || name.startsWith("lintAnalyze") || name == "lint") {\n'
             "            enabled = false\n"
             "        }\n"
             "    }\n"
@@ -140,7 +193,7 @@ def patch_lint() -> None:
 
 
 def patch_icons() -> None:
-    """Copy the ZEUS launcher icon resources over the default Flutter ones."""
+    """Copy the ZEUS launcher icon resources over Flutter defaults."""
     if not os.path.isdir(ICONS_SRC):
         print("icons: no tools/icons folder, skipped")
         return
@@ -149,10 +202,10 @@ def patch_icons() -> None:
     count = 0
     for root, _dirs, files in os.walk(ICONS_SRC):
         rel = os.path.relpath(root, ICONS_SRC)
-        dst_dir = RES_DIR if rel == "." else os.path.join(RES_DIR, rel)
-        os.makedirs(dst_dir, exist_ok=True)
+        destination = RES_DIR if rel == "." else os.path.join(RES_DIR, rel)
+        os.makedirs(destination, exist_ok=True)
         for name in files:
-            shutil.copy2(os.path.join(root, name), os.path.join(dst_dir, name))
+            shutil.copy2(os.path.join(root, name), os.path.join(destination, name))
             count += 1
     print(f"icons copied: {count} files")
 
@@ -163,4 +216,5 @@ if __name__ == "__main__":
     patch_props()
     patch_icons()
     patch_lint()
+    patch_debug_application_id()
     print("ALL PATCHES DONE")

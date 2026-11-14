@@ -194,7 +194,16 @@
     }
   }
 
-  bool isSupportedLink(String uri) {
+  /// Subscription feeds are accepted only over HTTPS. This blocks cleartext
+/// credentials and prevents an HTTP URL from being saved and fetched later.
+bool isSecureSubscriptionUrl(String value) {
+  final uri = Uri.tryParse(value.trim());
+  return uri != null &&
+      uri.scheme.toLowerCase() == 'https' &&
+      uri.host.isNotEmpty;
+}
+
+bool isSupportedLink(String uri) {
     final u = uri.toLowerCase();
     return u.startsWith('vless://') ||
         u.startsWith('vmess://') ||

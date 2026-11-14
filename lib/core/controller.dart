@@ -553,7 +553,7 @@ class ZeusController extends ChangeNotifier {
   // ───────── subscriptions ─────────
   Future<String?> addSub(String url) async {
     final u = url.trim();
-    if (!u.startsWith('http')) return 'لینک معتبر نیست';
+    if (!isSecureSubscriptionUrl(u)) return 'فقط لینک اشتراک HTTPS معتبر پذیرفته می‌شود';
     if (subs.any((s) => s.url == u)) return 'این اشتراک قبلاً اضافه شده';
     subs.add(SubRecord(url: u, name: Uri.tryParse(u)?.host ?? ''));
     await _saveSubs();
@@ -569,8 +569,10 @@ class ZeusController extends ChangeNotifier {
   }
 
   Future<String?> addFreeSub(String url, String name) async {
-    if (subs.any((s) => s.url == url)) return 'این اشتراک قبلاً اضافه شده';
-    subs.add(SubRecord(url: url, name: name));
+    final u = url.trim();
+    if (!isSecureSubscriptionUrl(u)) return 'لینک اشتراک باید HTTPS معتبر باشد';
+    if (subs.any((s) => s.url == u)) return 'این اشتراک قبلاً اضافه شده';
+    subs.add(SubRecord(url: u, name: name));
     await _saveSubs();
     notifyListeners();
     return syncAll();
@@ -602,10 +604,20 @@ class ZeusController extends ChangeNotifier {
   }
 
   Future<_SubFetch> _fetchSub(String url) async {
+    if (!isSecureSubscriptionUrl(url)) {
+      throw const FormatException('Only HTTPS subscription URLs are allowed');
+    }
     final r = await _dio.get<String>(
       url,
-      options: Options(responseType: ResponseType.plain, headers: {'User-Agent': 'v2rayNG/1.8.0'}),
+      options: Options(
+        responseType: ResponseType.plain,
+        followRedirects: false,
+        headers: {'User-Agent': 'v2rayNG/1.8.0'},
+      ),
     );
+    if (r.realUri.scheme.toLowerCase() != 'https') {
+      throw const FormatException('Subscription response did not remain on HTTPS');
+    }
     final body = r.data ?? '';
     final meta = parseSubMeta(body, (k) => r.headers.value(k));
     // اشتراک فرمت Clash / Clash.Meta (YAML با کلید proxies:)
