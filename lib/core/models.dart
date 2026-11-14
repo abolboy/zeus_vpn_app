@@ -1,5 +1,55 @@
   // lib/core/models.dart — مدل‌ها و helperهای مستقل از UI
   import 'dart:convert';
+  
+  /// Redacts credentials from network and configuration errors before they
+  /// enter the in-memory log list or are copied to the clipboard.
+  String redactSensitiveLogText(String value) {
+    var text = value;
+
+    // Entire share URIs may contain UUIDs, passwords, or base64 credentials.
+    text = text.replaceAllMapped(
+      RegExp(r'\b(?:vless|vmess|trojan|ss|socks5?|https?)://\S+',
+          caseSensitive: false),
+      (match) {
+        final raw = match.group(0) ?? '';
+        final separator = raw.indexOf('://');
+        if (separator <= 0) return '[REDACTED_URI]';
+        final scheme = raw.substring(0, separator).toLowerCase();
+        final uri = Uri.tryParse(raw);
+        if (uri == null || uri.host.isEmpty) return scheme + '://[REDACTED]';
+        final port = uri.hasPort ? ':' + uri.port.toString() : '';
+        return scheme + '://' + uri.host + port + '/[REDACTED]';
+      },
+    );
+
+
+    // Authorization headers can use either Bearer or Basic credentials.
+    text = text.replaceAll(
+      RegExp(r'((?:Bearer|Basic)\s+)[A-Za-z0-9._~+/:=-]+', caseSensitive: false),
+      r'$1[REDACTED]',
+    );
+
+    // Redact standalone credential assignments in exception/config text.
+    text = text.replaceAllMapped(
+      RegExp(
+        r'("?((?:private[_-]?key|pre[_-]?shared[_-]?key|secret[_-]?key|password|passwd|access[_-]?token|client[_-]?secret|api[_-]?key|token|authorization))"?\s*[:=]\s*)(?:"[^"]*"|[^\s,;]+)',
+        caseSensitive: false,
+      ),
+      (match) => (match.group(1) ?? '') + '[REDACTED]',
+    );
+
+    // Cover secrets embedded in URL query strings even when the whole string
+    // is not recognized as a URI.
+    text = text.replaceAllMapped(
+      RegExp(
+        r'([?&](?:token|access_token|refresh_token|key|password|pass|auth|secret|client_secret|api_key)=)[^&#\s]+',
+        caseSensitive: false,
+      ),
+      (match) => (match.group(1) ?? '') + '[REDACTED]',
+    );
+
+    return text;
+  }
 
   // ───────────── Server node ─────────────
   class ServerNode {
