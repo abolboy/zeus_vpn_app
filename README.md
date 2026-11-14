@@ -1,6 +1,6 @@
 # ZEUS VPN
 
-ZEUS VPN is a Flutter Android VPN client built on `flutter_v2ray_client` and Xray. The current application supports VLESS, VMess, Trojan, Shadowsocks, SOCKS, subscription feeds, Cloudflare WARP, and configurable PATT-NG options.
+ZEUS VPN v2.11.0 is a Flutter Android VPN client built on `flutter_v2ray_client` and Xray. The current application supports VLESS, VMess, Trojan, Shadowsocks, SOCKS, subscription feeds, Cloudflare WARP, and configurable PATT-NG options.
 
 ## Current verification status
 
