@@ -198,6 +198,77 @@ void main() {
     });
   });
 
+  group('manual server links', () {
+    test('single VLESS link is represented as a local manual node', () {
+      const uri = 'vless://user-id@edge.example:443?security=tls#My%20Server';
+      expect(isSupportedLink(uri), isTrue);
+
+      final node = ServerNode.fromUri(uri, 'M');
+      expect(node.subTag, 'M');
+      expect(node.protocol, 'VLESS');
+      expect(node.host, 'edge.example');
+      expect(node.port, 443);
+      expect(node.displayName, 'My Server');
+      expect(node.rawUri, uri);
+    });
+
+    test('subscription refresh preserves manual nodes and feed state', () {
+      final manual = ServerNode.fromUri(
+        'vless://manual-id@manual.example:443?security=tls#Manual',
+        'M',
+      )
+        ..favorite = true
+        ..pingMs = 37
+        ..jitterMs = 4
+        ..lossPct = 0
+        ..viaTcp = true;
+      final previousFeedNode = ServerNode.fromUri(
+        'trojan://password@feed.example:443#Feed',
+        'S1',
+      )
+        ..favorite = true
+        ..pingMs = 52
+        ..jitterMs = 7
+        ..lossPct = 10;
+      final refreshedFeedNode = ServerNode.fromUri(
+        'trojan://password@feed.example:443#Feed',
+        'S1',
+      );
+      final newFeedNode = ServerNode.fromUri(
+        'vless://another-id@new-feed.example:443?security=reality#New',
+        'S1',
+      );
+
+      final merged = mergeRefreshedNodes(
+        [refreshedFeedNode, newFeedNode],
+        [manual, previousFeedNode],
+      );
+
+      expect(merged.map((node) => node.rawUri).toSet().length, merged.length);
+      expect(merged.where((node) => node.subTag == 'M').single, same(manual));
+      expect(manual.favorite, isTrue);
+      expect(manual.pingMs, 37);
+      expect(manual.viaTcp, isTrue);
+      expect(refreshedFeedNode.favorite, isTrue);
+      expect(refreshedFeedNode.pingMs, 52);
+      expect(refreshedFeedNode.jitterMs, 7);
+      expect(refreshedFeedNode.lossPct, 10);
+      expect(merged, contains(newFeedNode));
+    });
+
+    test('manual node is not duplicated when a feed publishes the same URI', () {
+      final manual = ServerNode.fromUri(
+        'vless://same-id@same.example:443?security=tls#Same',
+        'M',
+      );
+      final feed = ServerNode.fromUri(manual.rawUri, 'S1');
+      final merged = mergeRefreshedNodes([feed], [manual]);
+
+      expect(merged.length, 1);
+      expect(merged.single.subTag, 'S1');
+    });
+  });
+
   group('flagFromName', () {
     test('emoji in name', () => expect(flagFromName('🇩🇪 Berlin'), '🇩🇪'));
     test('long country word', () => expect(flagFromName('Germany Frankfurt 01'), '🇩🇪'));
