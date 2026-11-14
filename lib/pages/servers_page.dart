@@ -129,6 +129,40 @@ class _ServersPageState extends State<ServersPage> {
     _snack('لینک تکی به فهرست سرورها اضافه شد؛ برای اتصال، دکمهٔ اتصال را بزن');
   }
 
+  Future<void> _removeManualLink(ServerNode node) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('حذف لینک تکی؟'),
+        content: Text(
+          'سرور «${node.displayName.isEmpty ? node.host : node.displayName}» از فهرست این گوشی حذف شود؟',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('انصراف'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    final error = await c.removeSingleLink(node);
+    if (!mounted) return;
+    if (error != null) {
+      _snack(error, err: true);
+      return;
+    }
+    setState(() {
+      if (_pendingUri == node.rawUri) _pendingUri = null;
+    });
+    _snack('لینک تکی حذف شد');
+  }
+
   ServerNode? get _pending => _pendingUri == null
       ? null
       : c.nodes.cast<ServerNode?>().firstWhere((n) => n!.rawUri == _pendingUri, orElse: () => null);
@@ -791,6 +825,8 @@ class _ServersPageState extends State<ServersPage> {
               case 'chain':
                 c.setChain(n.rawUri);
                 _snack('به‌عنوان سرور واسطه (زنجیره) تنظیم شد');
+              case 'remove':
+                _removeManualLink(n);
             }
           },
           itemBuilder: (_) => [
@@ -798,6 +834,8 @@ class _ServersPageState extends State<ServersPage> {
             PopupMenuItem(value: 'fav', child: Text(n.favorite ? 'حذف از علاقه‌مندی' : 'علاقه‌مندی')),
             const PopupMenuItem(value: 'ping', child: Text('پینگ این سرور')),
             const PopupMenuItem(value: 'chain', child: Text('سرور واسطه (زنجیره)')),
+            if (n.subTag == 'M')
+              const PopupMenuItem(value: 'remove', child: Text('حذف لینک تکی')),
           ],
         ),
       );
