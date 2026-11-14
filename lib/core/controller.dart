@@ -388,7 +388,10 @@ class ZeusController extends ChangeNotifier {
     notifyListeners();
     // ✅ WARP: اگر WARP فعال است و تونل تأیید نشد، به احتمال زیاد endpoint روی این ISP
     // مسدود است؛ یک‌بار به‌طور خودکار endpoint بعدی امتحان و اتصال از نو برقرار می‌شود.
-    if (settings.warpAutoFix && warpReady && !_warpAutoTried) {
+    if (settings.warpAutoFix &&
+        warpReady &&
+        warp!.isCloudflareRegistered &&
+        !_warpAutoTried) {
       _warpAutoTried = true;
       final next = nextWarpEndpoint(warp!.endpoint);
       if (next != warp!.endpoint) {
@@ -1343,7 +1346,8 @@ class ZeusController extends ChangeNotifier {
         try {
           cfg = await registerWarp(
             proxyPort: connected ? kHttpPort : null,
-            preferredEndpoint: warp?.endpoint,
+            preferredEndpoint:
+                warp?.isCloudflareRegistered == true ? warp!.endpoint : null,
           );
           break;
         } on WarpException catch (e) {
@@ -1376,10 +1380,16 @@ class ZeusController extends ChangeNotifier {
   /// کانفیگ WireGuard (فرمت wgcf) را به‌جای ثبت‌نام خودکار وارد می‌کند. null = موفق
   Future<String?> importWarpConf(String text) async {
     try {
-      warp = parseWireGuardConf(text);
+      final imported = parseWireGuardConf(text);
+      warp = imported;
       warpOn = true;
+      if (imported.interfaceMtu != null &&
+          const [1280, 1380, 1420].contains(imported.interfaceMtu)) {
+        settings.warpMtu = imported.interfaceMtu!;
+        await saveSettings();
+      }
       await saveWarp();
-      log(LogKind.system, 'WARP config imported (${warp?.addressV4})');
+      log(LogKind.system, 'WireGuard profile imported (${warp?.addressV4})');
       notifyListeners();
       return null;
     } on FormatException catch (e) {
