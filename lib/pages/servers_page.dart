@@ -122,7 +122,10 @@ class _ServersPageState extends State<ServersPage> {
     }
 
     final normalized = normalizeLink(value);
-    setState(() => _pendingUri = normalized);
+    setState(() {
+      _pendingUri = normalized;
+      if (c.subs.isNotEmpty) _group = '*other';
+    });
     _snack('لینک تکی به فهرست سرورها اضافه شد؛ برای اتصال، دکمهٔ اتصال را بزن');
   }
 
