@@ -92,6 +92,42 @@ def patch_gradle() -> None:
         print("gradle patched (appended): " + path)
 
 
+def patch_min_sdk() -> None:
+    """Keep app minimum Android API aligned with flutter_secure_storage v11+."""
+    path = GRADLE_KTS if os.path.exists(GRADLE_KTS) else GRADLE_GROOVY
+    if not os.path.exists(path):
+        sys.exit("ERROR: gradle file not found")
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+
+    if path.endswith(".kts"):
+        expected = "minSdk = maxOf(flutter.minSdkVersion, 24)"
+        candidates = (
+            ("minSdk = flutter.minSdkVersion", expected),
+            ("minSdk = 21", expected),
+            ("minSdk = 23", expected),
+        )
+    else:
+        expected = "minSdkVersion Math.max(flutter.minSdkVersion, 24)"
+        candidates = (
+            ("minSdkVersion flutter.minSdkVersion", expected),
+            ("minSdkVersion 21", expected),
+            ("minSdkVersion 23", expected),
+        )
+
+    if expected in text:
+        print("minimum Android SDK already set to API 24 or higher")
+        return
+    for old, replacement in candidates:
+        if old in text:
+            text = text.replace(old, replacement, 1)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+            print("minimum Android SDK raised to API 24")
+            return
+    sys.exit("ERROR: unable to safely identify Android minSdk declaration")
+
+
 def patch_debug_application_id() -> None:
     path = GRADLE_KTS if os.path.exists(GRADLE_KTS) else GRADLE_GROOVY
     if not os.path.exists(path):
@@ -216,5 +252,6 @@ if __name__ == "__main__":
     patch_props()
     patch_icons()
     patch_lint()
+    patch_min_sdk()
     patch_debug_application_id()
     print("ALL PATCHES DONE")
