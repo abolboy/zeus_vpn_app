@@ -10,6 +10,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_v2ray_client/flutter_v2ray.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'credential_vault.dart';
+
 import '../warp.dart';
 import 'config_builder.dart';
 import 'clash_import.dart';
@@ -49,6 +51,14 @@ class ZeusController extends ChangeNotifier {
 
   // ───────── deps ─────────
   late final V2ray _v2ray = V2ray(onStatusChanged: _onStatus);
+  late final CredentialVault _credentialVault = CredentialVault(
+    storage: PlatformSecureKeyValueStore(),
+    onMigrationError: (key, error) => log(
+      LogKind.system,
+      'Secure storage migration for $key needs attention: $error',
+      LogLevel.warn,
+    ),
+  );
   final Dio _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 10),
     receiveTimeout: const Duration(seconds: 30),
@@ -151,7 +161,7 @@ class ZeusController extends ChangeNotifier {
     if (booted) return;
     booted = true;
     final p = await SharedPreferences.getInstance();
-    _loadPrefs(p);
+    await _loadPrefs(p);
     await _seedFreeSubs(p);
     log(LogKind.system, 'ZEUS starting…');
     await _initCore();
@@ -216,34 +226,74 @@ class ZeusController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _loadPrefs(SharedPreferences p) {
+  Future<String?> _readSecretPreference(
+    SharedPreferences preferences,
+    String key,
+  ) async {
     try {
-      final rawSubs = p.getString('subs_v2');
+      return await _credentialVault.readAndMigrate(preferences, key);
+    } catch (error) {
+      log(
+        LogKind.system,
+        'Secure preference "$key" could not be read: $error',
+        LogLevel.warn,
+      );
+      // Read-only fallback. The old value is retained if Keystore access fails.
+      return preferences.getString(key);
+    }
+  }
+
+  Future<void> _loadPrefs(SharedPreferences p) async {
+    try {
+      final rawSubs = await _readSecretPreference(p, 'subs_v2');
       if (rawSubs != null) {
-        subs = (jsonDecode(rawSubs) as List).map(SubRecord.fromJson).whereType<SubRecord>().toList();
+        subs = (jsonDecode(rawSubs) as List)
+            .map(SubRecord.fromJson)
+            .whereType<SubRecord>()
+            .toList();
+        if (p.containsKey('subs')) await p.remove('subs');
       } else {
-        subs = (p.getStringList('subs') ?? []).map((u) => SubRecord(url: u)).toList();
+        final legacySubs = p.getStringList('subs');
+        subs = (legacySubs ?? <String>[])
+            .map((url) => SubRecord(url: url))
+            .toList();
+        if (legacySubs != null) {
+          final encoded =
+              jsonEncode(subs.map((record) => record.toJson()).toList());
+          try {
+            await _credentialVault.write(p, 'subs_v2', encoded);
+            await p.remove('subs');
+          } catch (error) {
+            log(
+              LogKind.system,
+              'Legacy subscription migration failed; old data was retained: $error',
+              LogLevel.warn,
+            );
+          }
+        }
       }
     } catch (e) {
-      // داده‌ٔ خراب نباید جلوی بالا آمدن اپ را بگیرد
       subs = [];
       log(LogKind.system, 'Subs load error: $e', LogLevel.warn);
     }
-    selUri = p.getString('sel');
+
+    selUri = await _readSecretPreference(p, 'sel');
     warpOn = p.getBool('warp_on') ?? false;
-    warp = WarpConfig.tryDecode(p.getString('warp_json'));
+    warp = WarpConfig.tryDecode(await _readSecretPreference(p, 'warp_json'));
+
     try {
       final pj = p.getString('patt_json');
       if (pj != null) patt.loadJson(jsonDecode(pj) as Map);
-      final sj = p.getString('settings_json');
+
+      final sj = await _readSecretPreference(p, 'settings_json');
       if (sj != null) settings.loadJson(jsonDecode(sj) as Map);
-      final nc = p.getString('nodes_cache');
+
+      final nc = await _readSecretPreference(p, 'nodes_cache');
       if (nc != null) {
         nodes = (jsonDecode(nc) as List)
             .map((e) => ServerNode.fromJson(e as Map))
             .whereType<ServerNode>()
             .toList();
-        // ✅ پینگ جلسهٔ قبل معتبر نیست؛ تا سنجش مجدد «تست‌نشده» نمایش داده شود
         for (final n in nodes) {
           n.pingMs = -2;
         }
@@ -254,20 +304,56 @@ class ZeusController extends ChangeNotifier {
   }
 
   Future<SharedPreferences> get _p => SharedPreferences.getInstance();
-  Future<void> savePatt() async => (await _p).setString('patt_json', jsonEncode(patt.toJson()));
-  Future<void> saveSettings() async => (await _p).setString('settings_json', jsonEncode(settings.toJson()));
-  Future<void> _saveSubs() async =>
-      (await _p).setString('subs_v2', jsonEncode(subs.map((s) => s.toJson()).toList()));
-  Future<void> _saveNodes() async =>
-      (await _p).setString('nodes_cache', jsonEncode(nodes.map((n) => n.toJson()).toList()));
-  Future<void> _saveSel() async {
-    final p = await _p;
-    selUri == null ? await p.remove('sel') : await p.setString('sel', selUri!);
+
+  Future<void> savePatt() async =>
+      (await _p).setString('patt_json', jsonEncode(patt.toJson()));
+
+  // settings_json contains chainUri, so the entire document remains encrypted.
+  Future<void> saveSettings() async {
+    final preferences = await _p;
+    await _credentialVault.write(
+      preferences,
+      'settings_json',
+      jsonEncode(settings.toJson()),
+    );
   }
+
+  Future<void> _saveSubs() async {
+    final preferences = await _p;
+    await _credentialVault.write(
+      preferences,
+      'subs_v2',
+      jsonEncode(subs.map((record) => record.toJson()).toList()),
+    );
+  }
+
+  Future<void> _saveNodes() async {
+    final preferences = await _p;
+    await _credentialVault.write(
+      preferences,
+      'nodes_cache',
+      jsonEncode(nodes.map((node) => node.toJson()).toList()),
+    );
+  }
+
+  Future<void> _saveSel() async {
+    final preferences = await _p;
+    if (selUri == null) {
+      await _credentialVault.delete(preferences, 'sel');
+    } else {
+      await _credentialVault.write(preferences, 'sel', selUri!);
+    }
+  }
+
   Future<void> saveWarp() async {
-    final p = await _p;
-    await p.setBool('warp_on', warpOn);
-    await p.setString('warp_json', warp?.encode() ?? '');
+    final preferences = await _p;
+    final value = warp?.encode();
+    if (value == null || value.isEmpty) {
+      await _credentialVault.delete(preferences, 'warp_json');
+    } else {
+      await _credentialVault.write(preferences, 'warp_json', value);
+    }
+    await preferences.setBool('warp_on', warpOn);
   }
 
   /// برای صفحاتی که فیلدهای patt/settings را مستقیم تغییر می‌دهند
@@ -834,7 +920,7 @@ class ZeusController extends ChangeNotifier {
       for (final e in (j['subs'] as List? ?? const [])) {
         if (e is! Map) continue;
         final u = (e['u'] ?? '').toString();
-        if (!u.startsWith('http') || subs.any((s) => s.url == u)) continue;
+        if (!isSecureSubscriptionUrl(u) || subs.any((s) => s.url == u)) continue;
         subs.add(SubRecord(url: u, name: (e['n'] ?? '').toString()));
       }
       if (j['patt'] is Map) {
