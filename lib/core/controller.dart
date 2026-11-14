@@ -251,7 +251,6 @@ class ZeusController extends ChangeNotifier {
             .map(SubRecord.fromJson)
             .whereType<SubRecord>()
             .toList();
-        if (p.containsKey('subs')) await p.remove('subs');
       } else {
         final legacySubs = p.getStringList('subs');
         subs = (legacySubs ?? <String>[])
