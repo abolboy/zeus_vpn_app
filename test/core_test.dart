@@ -305,6 +305,35 @@ void main() {
       ]);
     });
 
+    test('dead-node auto-cleanup never removes manual links', () {
+      final manual = ServerNode.fromUri(
+        'vless://manual@manual.example:443?security=tls#Manual',
+        'M',
+      )..pingMs = -1;
+      final deadSubscription = ServerNode.fromUri(
+        'vless://dead@dead.example:443?security=tls#Dead',
+        'S1',
+      )..pingMs = -1;
+      final favoriteSubscription = ServerNode.fromUri(
+        'vless://favorite@favorite.example:443?security=tls#Favorite',
+        'S1',
+      )
+        ..pingMs = -1
+        ..favorite = true;
+      final selectedSubscription = ServerNode.fromUri(
+        'vless://selected@selected.example:443?security=tls#Selected',
+        'S1',
+      )..pingMs = -1;
+
+      expect(isAutoRemovableDeadNode(manual, null), isFalse);
+      expect(isAutoRemovableDeadNode(deadSubscription, null), isTrue);
+      expect(isAutoRemovableDeadNode(favoriteSubscription, null), isFalse);
+      expect(
+        isAutoRemovableDeadNode(selectedSubscription, selectedSubscription.rawUri),
+        isFalse,
+      );
+    });
+
     test('manual node is not duplicated when a feed publishes the same URI', () {
       final manual = ServerNode.fromUri(
         'vless://same-id@same.example:443?security=tls#Same',
