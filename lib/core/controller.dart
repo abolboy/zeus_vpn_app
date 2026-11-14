@@ -251,6 +251,20 @@ class ZeusController extends ChangeNotifier {
             .map(SubRecord.fromJson)
             .whereType<SubRecord>()
             .toList();
+        // Retire a legacy StringList only after the authoritative v2 snapshot
+        // has been successfully written to encrypted storage.
+        if (p.getStringList('subs') != null) {
+          try {
+            await _credentialVault.write(p, 'subs_v2', rawSubs);
+            await p.remove('subs');
+          } catch (error) {
+            log(
+              LogKind.system,
+              'Legacy subscription list retained until secure storage is available: $error',
+              LogLevel.warn,
+            );
+          }
+        }
       } else {
         final legacySubs = p.getStringList('subs');
         subs = (legacySubs ?? <String>[])
@@ -324,6 +338,7 @@ class ZeusController extends ChangeNotifier {
       'subs_v2',
       jsonEncode(subs.map((record) => record.toJson()).toList()),
     );
+    if (preferences.containsKey('subs')) await preferences.remove('subs');
   }
 
   Future<void> _saveNodes() async {
