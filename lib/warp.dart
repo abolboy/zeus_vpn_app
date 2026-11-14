@@ -157,13 +157,18 @@ WarpKeyPair generateWarpKeyPair([Object? _]) {
 // ───────────────────────── Config model ─────────────────────────
 
 class WarpConfig {
-  final String privateKey;      // کلید خصوصی ما (base64)
-  final String publicKey;       // کلید عمومی ما (base64)
-  final String peerPublicKey;   // کلید عمومی Cloudflare
-  final String addressV4;       // مثل 172.16.0.2/32
-  final String addressV6;       // مثل 2606:4700:110:...:/128 (ممکن است خالی باشد)
-  final String endpoint;        // host:port
-  final List<int> reserved;     // ۳ بایت
+  final String privateKey;
+  final String publicKey;
+  final String peerPublicKey;
+  final String preSharedKey;
+  final String addressV4;
+  final String addressV6;
+  final String endpoint;
+  final List<int> reserved;
+  final List<String> allowedIPs;
+  final List<String> dnsServers;
+  final int keepAlive;
+  final int? interfaceMtu;
   final String deviceId;
   final String token;
   final String registeredAt;
@@ -179,16 +184,28 @@ class WarpConfig {
     required this.deviceId,
     required this.token,
     required this.registeredAt,
+    this.preSharedKey = '',
+    this.allowedIPs = const <String>[],
+    this.dnsServers = const <String>[],
+    this.keepAlive = 25,
+    this.interfaceMtu,
   });
+
+  bool get isCloudflareRegistered => deviceId.isNotEmpty && token.isNotEmpty;
 
   WarpConfig copyWith({String? endpoint}) => WarpConfig(
         privateKey: privateKey,
         publicKey: publicKey,
         peerPublicKey: peerPublicKey,
+        preSharedKey: preSharedKey,
         addressV4: addressV4,
         addressV6: addressV6,
         endpoint: endpoint ?? this.endpoint,
         reserved: reserved,
+        allowedIPs: List<String>.unmodifiable(allowedIPs),
+        dnsServers: List<String>.unmodifiable(dnsServers),
+        keepAlive: keepAlive,
+        interfaceMtu: interfaceMtu,
         deviceId: deviceId,
         token: token,
         registeredAt: registeredAt,
@@ -198,10 +215,15 @@ class WarpConfig {
         'privateKey': privateKey,
         'publicKey': publicKey,
         'peerPublicKey': peerPublicKey,
+        'preSharedKey': preSharedKey,
         'addressV4': addressV4,
         'addressV6': addressV6,
         'endpoint': endpoint,
         'reserved': reserved,
+        'allowedIPs': allowedIPs,
+        'dnsServers': dnsServers,
+        'keepAlive': keepAlive,
+        'interfaceMtu': interfaceMtu,
         'deviceId': deviceId,
         'token': token,
         'registeredAt': registeredAt,
@@ -211,12 +233,23 @@ class WarpConfig {
         privateKey: (j['privateKey'] ?? '') as String,
         publicKey: (j['publicKey'] ?? '') as String,
         peerPublicKey: (j['peerPublicKey'] ?? '') as String,
+        preSharedKey: (j['preSharedKey'] ?? '') as String,
         addressV4: (j['addressV4'] ?? '172.16.0.2/32') as String,
         addressV6: (j['addressV6'] ?? '') as String,
         endpoint: (j['endpoint'] ?? kWarpEndpoints.first) as String,
         reserved: ((j['reserved'] as List?) ?? const [0, 0, 0])
             .map((e) => (e as num).toInt())
             .toList(),
+        allowedIPs: ((j['allowedIPs'] as List?) ?? const [])
+            .whereType<String>()
+            .toList(),
+        dnsServers: ((j['dnsServers'] as List?) ?? const [])
+            .whereType<String>()
+            .toList(),
+        keepAlive: j['keepAlive'] is num ? (j['keepAlive'] as num).toInt() : 25,
+        interfaceMtu: j['interfaceMtu'] is num
+            ? (j['interfaceMtu'] as num).toInt()
+            : null,
         deviceId: (j['deviceId'] ?? '') as String,
         token: (j['token'] ?? '') as String,
         registeredAt: (j['registeredAt'] ?? '') as String,
@@ -233,10 +266,51 @@ class WarpConfig {
     return null;
   }
 
-  bool get isValid =>
-      privateKey.isNotEmpty && peerPublicKey.isNotEmpty && addressV4.isNotEmpty;
+  static bool _validKey(String value) {
+    try {
+      return base64.decode(base64.normalize(value)).length == 32;
+    } catch (_) {
+      try {
+        return base64Url.decode(base64Url.normalize(value)).length == 32;
+      } catch (_) {
+        return false;
+      }
+    }
+  }
 
-  /// outbound آمادهٔ Xray (پروتکل wireguard)
+  static bool _validCidr(String value) {
+    final parts = value.split('/');
+    if (parts.length != 2) return false;
+    final address = InternetAddress.tryParse(parts[0]);
+    final prefix = int.tryParse(parts[1]);
+    if (address == null || prefix == null) return false;
+    final maxPrefix = address.type == InternetAddressType.IPv4 ? 32 : 128;
+    return prefix >= 0 && prefix <= maxPrefix;
+  }
+
+  static bool _validEndpoint(String value) {
+    final uri = Uri.tryParse('udp://$value');
+    return uri != null &&
+        uri.host.isNotEmpty &&
+        uri.hasPort &&
+        uri.port >= 1 &&
+        uri.port <= 65535;
+  }
+
+  bool get isValid =>
+      _validKey(privateKey) &&
+      _validKey(peerPublicKey) &&
+      (preSharedKey.isEmpty || _validKey(preSharedKey)) &&
+      _validCidr(addressV4) &&
+      (addressV6.isEmpty || _validCidr(addressV6)) &&
+      _validEndpoint(endpoint) &&
+      reserved.length == 3 &&
+      reserved.every((value) => value >= 0 && value <= 255) &&
+      (allowedIPs.isEmpty || allowedIPs.every(_validCidr)) &&
+      keepAlive >= 0 &&
+      keepAlive <= 65535;
+
+  /// تبدیل تنظیمات استاندارد WireGuard به outbound در هستهٔ Xray.
   Map<String, dynamic> toXrayOutbound({
     String tag = 'warp',
     String? endpointOverride,
@@ -246,28 +320,31 @@ class WarpConfig {
   }) {
     final addrs = <String>[addressV4];
     if (includeV6 && addressV6.isNotEmpty) addrs.add(addressV6);
+    final peer = <String, dynamic>{
+      'publicKey': peerPublicKey,
+      'endpoint': endpointOverride ?? endpoint,
+      'keepAlive': keepAlive,
+      'allowedIPs': allowedIPs.isEmpty
+          ? const <String>['0.0.0.0/0', '::/0']
+          : List<String>.of(allowedIPs),
+      if (preSharedKey.isNotEmpty) 'preSharedKey': preSharedKey,
+    };
+    final settings = <String, dynamic>{
+      'secretKey': privateKey,
+      'address': addrs,
+      'peers': <Map<String, dynamic>>[peer],
+      'reserved': reserved,
+      'mtu': mtu,
+      'workers': workers,
+      if (dnsServers.isNotEmpty) 'remoteDNS': List<String>.of(dnsServers),
+      'domainStrategy': includeV6 && addressV6.isNotEmpty
+          ? 'ForceIPv4v6'
+          : 'ForceIPv4',
+    };
     return <String, dynamic>{
       'tag': tag,
       'protocol': 'wireguard',
-      'settings': <String, dynamic>{
-        'secretKey': privateKey,
-        'address': addrs,
-        'peers': <Map<String, dynamic>>[
-          <String, dynamic>{
-            'publicKey': peerPublicKey,
-            'endpoint': endpointOverride ?? endpoint,
-            'keepAlive': 25,
-          },
-        ],
-        'reserved': reserved,
-        'mtu': mtu,
-        'workers': workers,
-        // ForceIPv4 برای سازگاری حداکثری: روی خیلی از شبکه‌ها IPv6 نداریم و ForceIPv4v6
-        // هندشیک WireGuard را روی DNS/رزولوشن گیر می‌انداخت.
-        'domainStrategy': includeV6 && addressV6.isNotEmpty
-            ? 'ForceIPv4v6'
-            : 'ForceIPv4',
-      },
+      'settings': settings,
     };
   }
 }
@@ -394,77 +471,182 @@ Future<WarpConfig> registerWarp({
   }
 }
 
-/// پارس کانفیگ WireGuard (فرمت wgcf / ابزارهای WARP) به WarpConfig.
-/// در خطا FormatException با پیام فارسی پرتاب می‌شود.
+/// Parse one standard WireGuard client configuration into the Xray profile model.
+/// Multiple peers are rejected explicitly because the current app exposes one active
+/// WireGuard peer per profile rather than silently merging different peers.
 WarpConfig parseWireGuardConf(String text) {
   final iface = <String, String>{};
   final peer = <String, String>{};
   var section = '';
+  var peerCount = 0;
+
   for (final raw in text.split(RegExp(r'[\r\n]+'))) {
-    final l = raw.trim();
-    if (l.isEmpty || l.startsWith('#') || l.startsWith(';')) continue;
-    if (l.startsWith('[') && l.endsWith(']')) {
-      section = l.substring(1, l.length - 1).trim().toLowerCase();
+    final line = raw.trim();
+    if (line.isEmpty || line.startsWith('#') || line.startsWith(';')) continue;
+    if (line.startsWith('[') && line.endsWith(']')) {
+      section = line.substring(1, line.length - 1).trim().toLowerCase();
+      if (section == 'peer') {
+        peerCount++;
+        if (peerCount > 1) {
+          throw const FormatException(
+            'این نسخه از برنامه در هر پروفایل فقط یک بخش [Peer] را پشتیبانی می‌کند',
+          );
+        }
+      }
+      if (section != 'interface' && section != 'peer') {
+        throw FormatException('بخش [$section] در پروفایل پشتیبانی نمی‌شود');
+      }
       continue;
     }
-    final i = l.indexOf('=');
-    if (i <= 0) continue;
-    final k = l.substring(0, i).trim().toLowerCase();
-    final v = l.substring(i + 1).trim(); // کلیدهای base64 خودشان «=» دارند؛ فقط اولین «=» جداکننده است
+    final separator = line.indexOf('=');
+    if (separator <= 0) continue;
+    final key = line.substring(0, separator).trim().toLowerCase();
+    final value = line.substring(separator + 1).trim();
     if (section == 'interface') {
-      iface[k] = v;
+      iface[key] = value;
     } else if (section == 'peer') {
-      peer[k] = v;
+      peer[key] = value;
     }
   }
 
-  bool key32(String v) {
+  List<int>? decodeKey(String value) {
     try {
-      return base64Decode(v).length == 32;
+      return base64.decode(base64.normalize(value));
     } catch (_) {
-      return false;
+      try {
+        return base64Url.decode(base64Url.normalize(value));
+      } catch (_) {
+        return null;
+      }
     }
   }
 
-  final priv = iface['privatekey'] ?? '';
-  if (!key32(priv)) throw const FormatException('PrivateKey معتبر نیست (باید یک کلید base64 با ۳۲ بایت باشد)');
-  final peerPub = peer['publickey'] ?? '';
-  if (!key32(peerPub)) throw const FormatException('PublicKey بخش [Peer] معتبر نیست');
+  bool validKey(String value) => decodeKey(value)?.length == 32;
 
-  var v4 = '';
-  var v6 = '';
-  for (final a in (iface['address'] ?? '').split(',')) {
-    final t = a.trim();
-    if (t.isEmpty) continue;
-    if (t.contains(':')) {
-      if (v6.isEmpty) v6 = t.contains('/') ? t : '$t/128';
-    } else if (v4.isEmpty) {
-      v4 = t.contains('/') ? t : '$t/32';
+  bool validCidr(String value) {
+    final parts = value.split('/');
+    if (parts.length != 2) return false;
+    final address = InternetAddress.tryParse(parts[0].trim());
+    final prefix = int.tryParse(parts[1].trim());
+    if (address == null || prefix == null) return false;
+    final maxPrefix = address.type == InternetAddressType.IPv4 ? 32 : 128;
+    return prefix >= 0 && prefix <= maxPrefix;
+  }
+
+  final privateKey = iface['privatekey'] ?? '';
+  if (!validKey(privateKey)) {
+    throw const FormatException(
+      'PrivateKey معتبر نیست؛ باید یک کلید Base64 با ۳۲ بایت باشد',
+    );
+  }
+  final peerPublicKey = peer['publickey'] ?? '';
+  if (!validKey(peerPublicKey)) {
+    throw const FormatException(
+      'PublicKey بخش [Peer] معتبر نیست؛ باید یک کلید Base64 با ۳۲ بایت باشد',
+    );
+  }
+
+  final preSharedKey = (peer['presharedkey'] ?? '').trim();
+  if (preSharedKey.isNotEmpty && !validKey(preSharedKey)) {
+    throw const FormatException('PresharedKey معتبر نیست؛ باید یک کلید Base64 با ۳۲ بایت باشد');
+  }
+
+  var addressV4 = '';
+  var addressV6 = '';
+  for (final rawAddress in (iface['address'] ?? '').split(',')) {
+    var address = rawAddress.trim();
+    if (address.isEmpty) continue;
+    final parsed = InternetAddress.tryParse(address.split('/').first);
+    if (parsed == null) {
+      throw FormatException('آدرس Interface نامعتبر است: $address');
+    }
+    if (!address.contains('/')) {
+      address += parsed.type == InternetAddressType.IPv4 ? '/32' : '/128';
+    }
+    if (!validCidr(address)) {
+      throw FormatException('طول پیشوند آدرس نامعتبر است: $address');
+    }
+    if (parsed.type == InternetAddressType.IPv4 && addressV4.isEmpty) {
+      addressV4 = address;
+    } else if (parsed.type == InternetAddressType.IPv6 && addressV6.isEmpty) {
+      addressV6 = address;
     }
   }
-  if (v4.isEmpty) throw const FormatException('Address (IPv4) پیدا نشد');
+  if (addressV4.isEmpty) {
+    throw const FormatException('آدرس IPv4 در بخش [Interface] پیدا نشد');
+  }
 
-  var ep = (peer['endpoint'] ?? '').trim();
-  if (ep.isEmpty) ep = kWarpEndpoints.first;
+  final endpoint = (peer['endpoint'] ?? '').trim();
+  if (endpoint.isEmpty) {
+    throw const FormatException('Endpoint بخش [Peer] الزامی است؛ مقصد پیش‌فرض Cloudflare اعمال نمی‌شود');
+  }
+  final endpointUri = Uri.tryParse('udp://$endpoint');
+  if (endpointUri == null ||
+      endpointUri.host.isEmpty ||
+      !endpointUri.hasPort ||
+      endpointUri.port < 1 ||
+      endpointUri.port > 65535) {
+    throw const FormatException('Endpoint باید به‌شکل host:port یا [IPv6]:port باشد');
+  }
+
+  final allowedIPs = (peer['allowedips'] ?? '')
+      .split(',')
+      .map((value) => value.trim())
+      .where((value) => value.isNotEmpty)
+      .toList();
+  if (allowedIPs.any((value) => !validCidr(value))) {
+    throw const FormatException('AllowedIPs باید شامل آدرس‌های معتبر CIDR باشد');
+  }
+
+  final keepAliveText = (peer['persistentkeepalive'] ?? '').trim();
+  final keepAlive = keepAliveText.isEmpty ? 0 : int.tryParse(keepAliveText);
+  if (keepAlive == null || keepAlive < 0 || keepAlive > 65535) {
+    throw const FormatException('PersistentKeepalive باید عددی بین 0 تا 65535 باشد');
+  }
+
+  final mtuText = (iface['mtu'] ?? '').trim();
+  final interfaceMtu = mtuText.isEmpty ? null : int.tryParse(mtuText);
+  if (mtuText.isNotEmpty &&
+      (interfaceMtu == null || interfaceMtu < 576 || interfaceMtu > 9000)) {
+    throw const FormatException('MTU باید عددی بین 576 تا 9000 باشد');
+  }
+
+  final dnsServers = (iface['dns'] ?? '')
+      .split(',')
+      .map((value) => value.trim())
+      .where((value) => value.isNotEmpty && InternetAddress.tryParse(value) != null)
+      .toList();
 
   var reserved = <int>[0, 0, 0];
-  final rs = iface['reserved'] ?? peer['reserved'];
-  if (rs != null) {
-    final parts = rs.replaceAll(RegExp(r'[\[\]\s]'), '').split(',').map(int.tryParse).toList();
-    if (parts.length == 3 && parts.every((e) => e != null && e >= 0 && e <= 255)) {
-      reserved = [for (final e in parts) e!];
+  final reservedText = (iface['reserved'] ?? peer['reserved'] ?? '').trim();
+  if (reservedText.isNotEmpty) {
+    final parts = reservedText
+        .replaceAll(RegExp(r'[\[\]\s]'), '')
+        .split(',')
+        .map(int.tryParse)
+        .toList();
+    if (parts.length != 3 ||
+        parts.any((value) => value == null || value < 0 || value > 255)) {
+      throw const FormatException('Reserved باید دقیقاً سه عدد بین 0 تا 255 باشد');
     }
+    reserved = [for (final value in parts) value!];
   }
 
-  final pub = base64Encode(x25519(base64Decode(priv), [9, ...List<int>.filled(31, 0)]));
+  final base = List<int>.filled(32, 0)..[0] = 9;
+  final publicKey = base64Encode(x25519(decodeKey(privateKey)!, base));
   return WarpConfig(
-    privateKey: priv,
-    publicKey: pub,
-    peerPublicKey: peerPub,
-    addressV4: v4,
-    addressV6: v6,
-    endpoint: ep,
+    privateKey: privateKey,
+    publicKey: publicKey,
+    peerPublicKey: peerPublicKey,
+    preSharedKey: preSharedKey,
+    addressV4: addressV4,
+    addressV6: addressV6,
+    endpoint: endpoint,
     reserved: reserved,
+    allowedIPs: allowedIPs,
+    dnsServers: dnsServers,
+    keepAlive: keepAlive,
+    interfaceMtu: interfaceMtu,
     deviceId: '',
     token: '',
     registeredAt: 'imported',
