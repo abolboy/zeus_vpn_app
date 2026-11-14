@@ -41,4 +41,4 @@ A password-protected backup format is a separate feature and must not be confuse
 
 ## Android version requirement
 
-This build uses `flutter_secure_storage 11.2.0`, which requires Dart 3.8 or newer and Android API 24 or newer. The generated Android Gradle configuration is patched to enforce minSdk 24, and CI verifies the patch is present.
+This build uses `flutter_secure_storage 11.2.0` and is verified with Flutter 3.50.0 / Dart 3.13.0. The project targets Android API 24 or newer. The generated Android Gradle configuration is patched to enforce minSdk 24, and CI verifies the patch is present.
