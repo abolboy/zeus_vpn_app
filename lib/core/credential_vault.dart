@@ -13,7 +13,10 @@ abstract interface class SecureKeyValueStore {
 class PlatformSecureKeyValueStore implements SecureKeyValueStore {
   PlatformSecureKeyValueStore()
       : _storage = const FlutterSecureStorage(
-          aOptions: AndroidOptions(migrateWithBackup: true),
+          aOptions: AndroidOptions(
+            migrateWithBackup: true,
+            resetOnError: false,
+          ),
         );
 
   final FlutterSecureStorage _storage;
