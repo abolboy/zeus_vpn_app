@@ -164,6 +164,9 @@
         ..lossPct = old.lossPct
         ..viaTcp = old.viaTcp
         ..favorite = old.favorite;
+      // Manual ownership takes precedence when a subscription also publishes
+      // the same URI; this keeps the link after that feed later removes it.
+      if (old.subTag == 'M') node.subTag = 'M';
     }
 
     final seen = fresh.map((node) => node.rawUri).toSet();
