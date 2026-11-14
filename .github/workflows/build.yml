@@ -75,6 +75,12 @@ jobs:
               else 'applicationIdSuffix ".debug"'
           )
           assert debug_suffix in gradle_text, "Debug APK must use a separate .debug application ID"
+          minimum_sdk = (
+              "minSdk = maxOf(flutter.minSdkVersion, 24)"
+              if gradle_file.suffix == ".kts"
+              else "minSdkVersion Math.max(flutter.minSdkVersion, 24)"
+          )
+          assert minimum_sdk in gradle_text, "Android minSdk must be at least API 24 for secure credential storage"
 
           tracked = subprocess.run(
               ["git", "ls-files", "-z"],
@@ -104,6 +110,14 @@ jobs:
 
       - name: Resolve dependencies
         run: flutter pub get
+
+      - name: Upload resolved dependency lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: zeus-vpn-resolved-pubspec-lock
+          path: pubspec.lock
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Analyze Dart code
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
