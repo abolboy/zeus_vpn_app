@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zeus_vpn/core/credential_vault.dart';
 import 'package:zeus_vpn/core/clash_import.dart';
+import 'package:zeus_vpn/core/config_builder.dart';
 import 'package:zeus_vpn/core/free_profiles.dart';
 import 'package:zeus_vpn/core/models.dart';
 import 'package:zeus_vpn/warp.dart';
@@ -386,6 +387,55 @@ void main() {
       expect(peer['preSharedKey'], psk);
       expect(peer['allowedIPs'], ['10.20.0.0/16']);
       expect(peer['keepAlive'], 15);
+    });
+
+    test('WireGuard-only mode routes the Xray proxy through the imported peer', () {
+      final privateKey = base64Encode(List<int>.filled(32, 1));
+      final publicKey = base64Encode(List<int>.filled(32, 2));
+      final peerKey = base64Encode(List<int>.filled(32, 3));
+      final psk = base64Encode(List<int>.filled(32, 4));
+      final profile = WarpConfig(
+        privateKey: privateKey,
+        publicKey: publicKey,
+        peerPublicKey: peerKey,
+        preSharedKey: psk,
+        addressV4: '10.8.0.2/32',
+        addressV6: '',
+        endpoint: '203.0.113.8:51820',
+        reserved: const [0, 0, 0],
+        allowedIPs: const ['0.0.0.0/0'],
+        dnsServers: const ['1.1.1.1'],
+        keepAlive: 25,
+        deviceId: '',
+        token: '',
+        registeredAt: 'imported',
+      );
+
+      final config = ConfigBuilder(
+        patt: Patt(),
+        warp: profile,
+        warpOn: true,
+        warpMtu: 1420,
+      ).buildWarpOnly();
+
+      final outbounds = (config['outbounds'] as List).cast<Map>();
+      final wireGuard = outbounds.firstWhere((outbound) => outbound['tag'] == 'proxy');
+      final settings = wireGuard['settings'] as Map;
+      final peers = (settings['peers'] as List).cast<Map>();
+      final peer = peers.single;
+
+      expect(wireGuard['protocol'], 'wireguard');
+      expect(settings['secretKey'], privateKey);
+      expect(settings['mtu'], 1420);
+      expect(settings['remoteDNS'], ['1.1.1.1']);
+      expect(peer['publicKey'], peerKey);
+      expect(peer['preSharedKey'], psk);
+      expect(peer['allowedIPs'], ['0.0.0.0/0']);
+      expect(peer['endpoint'], '203.0.113.8:51820');
+      expect(peer['keepAlive'], 25);
+
+      final rules = ((config['routing'] as Map)['rules'] as List).cast<Map>();
+      expect(rules.last['outboundTag'], 'proxy');
     });
 
     test('old raw-outbound format is rejected (user must re-register)', () {
