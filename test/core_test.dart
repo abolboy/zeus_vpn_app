@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:zeus_vpn/core/credential_vault.dart';
 import 'package:zeus_vpn/core/clash_import.dart';
 import 'package:zeus_vpn/core/free_profiles.dart';
 import 'package:zeus_vpn/core/models.dart';
@@ -9,7 +11,99 @@ import 'package:zeus_vpn/warp.dart';
 List<int> _hex(String s) => [for (var i = 0; i < s.length; i += 2) int.parse(s.substring(i, i + 2), radix: 16)];
 String _toHex(List<int> b) => b.map((e) => e.toRadixString(16).padLeft(2, '0')).join();
 
+class _MemorySecureKeyValueStore implements SecureKeyValueStore {
+  final Map<String, String> values = <String, String>{};
+  bool failReads = false;
+  bool failWrites = false;
+  bool failDeletes = false;
+
+  @override
+  Future<String?> read(String key) async {
+    if (failReads) throw StateError('simulated secure read failure');
+    return values[key];
+  }
+
+  @override
+  Future<void> write(String key, String value) async {
+    if (failWrites) throw StateError('simulated secure write failure');
+    values[key] = value;
+  }
+
+  @override
+  Future<void> delete(String key) async {
+    if (failDeletes) throw StateError('simulated secure delete failure');
+    values.remove(key);
+  }
+}
+
 void main() {
+  group('credential vault migration', () {
+    test('writes encrypted value before removing legacy plaintext', () async {
+      SharedPreferences.setMockInitialValues({'subs_v2': 'legacy-subscription-secret'});
+      final preferences = await SharedPreferences.getInstance();
+      final secure = _MemorySecureKeyValueStore();
+      final vault = CredentialVault(storage: secure);
+
+      final value = await vault.readAndMigrate(preferences, 'subs_v2');
+
+      expect(value, 'legacy-subscription-secret');
+      expect(secure.values['subs_v2'], 'legacy-subscription-secret');
+      expect(preferences.getString('subs_v2'), isNull);
+    });
+
+    test('retains plaintext when secure migration write fails', () async {
+      SharedPreferences.setMockInitialValues({'warp_json': 'legacy-private-key-json'});
+      final preferences = await SharedPreferences.getInstance();
+      final secure = _MemorySecureKeyValueStore()..failWrites = true;
+      final vault = CredentialVault(storage: secure);
+
+      final value = await vault.readAndMigrate(preferences, 'warp_json');
+
+      expect(value, 'legacy-private-key-json');
+      expect(preferences.getString('warp_json'), 'legacy-private-key-json');
+      expect(secure.values.containsKey('warp_json'), isFalse);
+    });
+
+    test('encrypted value takes precedence and removes old duplicate', () async {
+      SharedPreferences.setMockInitialValues({'sel': 'old-server-uri'});
+      final preferences = await SharedPreferences.getInstance();
+      final secure = _MemorySecureKeyValueStore()
+        ..values['sel'] = 'encrypted-server-uri';
+      final vault = CredentialVault(storage: secure);
+
+      expect(await vault.readAndMigrate(preferences, 'sel'), 'encrypted-server-uri');
+      expect(preferences.getString('sel'), isNull);
+    });
+
+    test('new writes go only to secure storage and deletion happens there first', () async {
+      SharedPreferences.setMockInitialValues({'nodes_cache': 'old-cache'});
+      final preferences = await SharedPreferences.getInstance();
+      final secure = _MemorySecureKeyValueStore();
+      final vault = CredentialVault(storage: secure);
+
+      await vault.write(preferences, 'nodes_cache', 'new-server-cache');
+      expect(secure.values['nodes_cache'], 'new-server-cache');
+      expect(preferences.getString('nodes_cache'), isNull);
+
+      await vault.delete(preferences, 'nodes_cache');
+      expect(secure.values.containsKey('nodes_cache'), isFalse);
+      expect(preferences.getString('nodes_cache'), isNull);
+    });
+
+    test('failed secure writes never delete the existing legacy value', () async {
+      SharedPreferences.setMockInitialValues({'settings_json': 'legacy-settings'});
+      final preferences = await SharedPreferences.getInstance();
+      final secure = _MemorySecureKeyValueStore()..failWrites = true;
+      final vault = CredentialVault(storage: secure);
+
+      await expectLater(
+        vault.write(preferences, 'settings_json', 'new-settings'),
+        throwsStateError,
+      );
+      expect(preferences.getString('settings_json'), 'legacy-settings');
+    });
+  });
+
   group('subscription URL security', () {
     test('accepts HTTPS URLs, including non-default ports and query tokens', () {
       expect(
