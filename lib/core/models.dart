@@ -118,6 +118,34 @@
     }
   }
 
+  /// Merge subscription results with local manual links.
+  /// Existing measurements and favorites are retained by normalized share URI.
+  List<ServerNode> mergeRefreshedNodes(
+    List<ServerNode> fresh,
+    List<ServerNode> existing,
+  ) {
+    final previous = {for (final node in existing) node.rawUri: node};
+
+    for (final node in fresh) {
+      final old = previous[node.rawUri];
+      if (old == null) continue;
+      node
+        ..pingMs = old.pingMs
+        ..jitterMs = old.jitterMs
+        ..lossPct = old.lossPct
+        ..viaTcp = old.viaTcp
+        ..favorite = old.favorite;
+    }
+
+    final seen = fresh.map((node) => node.rawUri).toSet();
+    for (final node in existing.where((node) => node.subTag == 'M')) {
+      // If a feed later publishes the exact same URI, keep the feed-owned tag
+      // and do not create a duplicate manual entry.
+      if (seen.add(node.rawUri)) fresh.add(node);
+    }
+    return fresh;
+  }
+
   // ───────────── Link parsing ─────────────
   class ParsedLink {
     final String name;
