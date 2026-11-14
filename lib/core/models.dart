@@ -118,6 +118,14 @@
     }
   }
 
+  /// Auto-cleanup is limited to subscription nodes; local manual links require explicit deletion.
+  bool isAutoRemovableDeadNode(ServerNode node, String? selectedUri) {
+    return node.subTag != 'M' &&
+        node.pingMs == -1 &&
+        !node.favorite &&
+        node.rawUri != selectedUri;
+  }
+
   /// Remove only selected subscription groups and reindex the remaining groups.
   /// Manual entries (M) and unrelated local nodes are retained.
   List<ServerNode> removeSubscriptionNodesAndReindex(
