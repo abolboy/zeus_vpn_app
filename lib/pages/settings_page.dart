@@ -266,14 +266,16 @@ class _SettingsPageState extends State<SettingsPage> {
                             if (c.connected) setState(() => _dirty = true);
                           },
                         ),
-                        const Divider(height: 1),
-                        _switch(
-                          icon: Icons.auto_fix_high,
-                          title: 'تعویض خودکار Endpoint',
-                          subtitle: 'اگر بعد از اتصال تونل تأیید نشد، endpoint بعدی خودکار امتحان می‌شود',
-                          value: s.warpAutoFix,
-                          onChanged: (v) => c.setWarpAutoFix(v),
-                        ),
+                        if (c.warp?.isCloudflareRegistered == true) ...[
+                          const Divider(height: 1),
+                          _switch(
+                            icon: Icons.auto_fix_high,
+                            title: 'تعویض خودکار Endpoint',
+                            subtitle: 'اگر تونل WARP تأیید نشد، endpoint بعدی Cloudflare امتحان می‌شود',
+                            value: s.warpAutoFix,
+                            onChanged: (v) => c.setWarpAutoFix(v),
+                          ),
+                        ],
                       ],
                     ],
                   ),
