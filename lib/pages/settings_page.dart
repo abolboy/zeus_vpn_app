@@ -229,6 +229,16 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                       if (c.warp?.isValid == true) ...[
                         const Divider(height: 1),
+                        if (c.warp?.isCloudflareRegistered != true)
+                          ListTile(
+                            leading: Icon(Icons.router_outlined, color: kGreen),
+                            title: const Text('Endpoint WireGuard'),
+                            subtitle: Text(
+                              c.warp!.endpoint,
+                              textDirection: TextDirection.ltr,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
                         if (c.warp?.isCloudflareRegistered == true) ...[
                           _dropdown<String>(
                           icon: Icons.router_outlined,
