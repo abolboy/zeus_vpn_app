@@ -126,7 +126,21 @@
   ) {
     final sorted = removedZeroBasedIndexes.toList()..sort();
     nodes.removeWhere((node) {
-      final match = RegExp(r'^S(\d+)
+      final number = node.subTag.startsWith('S')
+          ? int.tryParse(node.subTag.substring(1))
+          : null;
+      if (number == null || number <= 0) return false;
+      final oldIndex = number - 1;
+      if (removedZeroBasedIndexes.contains(oldIndex)) return true;
+      final removedBefore = sorted.where((index) => index < oldIndex).length;
+      if (removedBefore > 0) {
+        node.subTag = 'S${oldIndex - removedBefore + 1}';
+      }
+      return false;
+    });
+    return nodes;
+  }
+
   /// Existing measurements and favorites are retained by normalized share URI.
   List<ServerNode> mergeRefreshedNodes(
     List<ServerNode> fresh,
