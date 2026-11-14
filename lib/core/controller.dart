@@ -1692,11 +1692,11 @@ class ZeusController extends ChangeNotifier {
   }
 
   /// تعداد سرورهای بی‌پاسخ (پینگ‌شده و timeout) که حذف‌شدنی‌اند؛ علاقه‌مندی‌ها و سرور انتخابی حفظ می‌شوند
-  int get deadCount => nodes.where((n) => n.pingMs == -1 && !n.favorite && n.rawUri != selUri).length;
+  int get deadCount => nodes.where((n) => isAutoRemovableDeadNode(n, selUri)).length;
 
   Future<int> removeDeadNodes() async {
     final before = nodes.length;
-    nodes.removeWhere((n) => n.pingMs == -1 && !n.favorite && n.rawUri != selUri);
+    nodes.removeWhere((n) => isAutoRemovableDeadNode(n, selUri));
     final removed = before - nodes.length;
     if (removed > 0) {
       await _saveNodes();
