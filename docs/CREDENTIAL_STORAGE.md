@@ -27,7 +27,7 @@ The migration is automatic and idempotent:
 5. Only after the secure write succeeds, remove the plaintext value.
 6. If secure storage is unavailable or the write fails, keep the old value and report a warning. New writes do not fall back to plaintext.
 
-The migration code is covered by tests for successful movement, failure retention, precedence of an already encrypted value, secure-only new writes, and deletion ordering.
+The migration code is covered by unit tests for successful movement, failure retention, precedence of an already encrypted value, secure-only new writes, and deletion ordering. CI also runs an Android API 35 emulator integration test against the actual platform Keystore plugin, verifying migration, read/write and delete behavior.
 
 ## Reinstall and device transfer
 
