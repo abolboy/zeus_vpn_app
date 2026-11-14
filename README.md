@@ -14,6 +14,7 @@ ZEUS VPN is a Flutter Android VPN client built on `flutter_v2ray_client` and Xra
 
 - Subscription URLs are accepted only over HTTPS. HTTP redirects are disabled for subscription downloads.
 - Individual VLESS, VMess, Trojan, Shadowsocks and SOCKS share links can be added directly from the server list without creating an HTTPS subscription. Manually added servers are stored with the server cache and remain present after subscription refreshes.
+- Manually added share URIs use the same encrypted local server-cache path as subscription nodes when combined with the Android Keystore credential-storage changes. They remain device-bound and are not included in plaintext clipboard exports unless the user explicitly copies a share link.
 - Standard single-peer WireGuard `.conf` profiles can be imported. The app preserves the Interface address, DNS, supported MTU, Peer endpoint, public key, optional preshared key, AllowedIPs, and PersistentKeepalive when generating the Xray WireGuard outbound.
 - Imported WireGuard profiles are not treated as Cloudflare WARP registrations: Cloudflare endpoint rotation is disabled for them, so an AWS endpoint is never silently replaced with a Cloudflare endpoint.
 - The current importer intentionally rejects configurations with multiple `[Peer]` sections. Import a client profile with one server peer per app profile.
