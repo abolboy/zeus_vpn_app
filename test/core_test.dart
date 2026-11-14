@@ -407,6 +407,27 @@ void main() {
       expect(peer['keepAlive'], 15);
     });
 
+    test('default WireGuard routes match the configured address families', () {
+      final key = base64Encode(List<int>.filled(32, 5));
+      final peerKey = base64Encode(List<int>.filled(32, 6));
+      final ipv4Only = WarpConfig(
+        privateKey: key,
+        publicKey: key,
+        peerPublicKey: peerKey,
+        addressV4: '10.8.0.2/32',
+        addressV6: '',
+        endpoint: '203.0.113.8:51820',
+        reserved: const [0, 0, 0],
+        deviceId: '',
+        token: '',
+        registeredAt: 'imported',
+      );
+
+      final peer = (((ipv4Only.toXrayOutbound()['settings'] as Map)['peers'] as List)
+          .single as Map);
+      expect(peer['allowedIPs'], ['0.0.0.0/0']);
+    });
+
     test('WireGuard-only mode routes the Xray proxy through the imported peer', () {
       final privateKey = base64Encode(List<int>.filled(32, 1));
       final publicKey = base64Encode(List<int>.filled(32, 2));
