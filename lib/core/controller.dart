@@ -584,7 +584,7 @@ class ZeusController extends ChangeNotifier {
     } catch (error) {
       log(
         LogKind.system,
-        'Manual server link rejected: $error',
+        'Manual server link rejected (${error.runtimeType})',
         LogLevel.warn,
       );
       return 'این لینک برای هستهٔ فعلی ZEUS معتبر یا پشتیبانی‌شده نیست';
