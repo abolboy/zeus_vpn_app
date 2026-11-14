@@ -22,6 +22,12 @@
       },
     );
 
+    // Authorization headers are sometimes formatted as a Bearer scheme.
+    text = text.replaceAll(
+      RegExp(r'(Bearer\s+)[A-Za-z0-9._~+/-]+=*', caseSensitive: false),
+      r'$1[REDACTED]',
+    );
+
     // Redact standalone credential assignments in exception/config text.
     text = text.replaceAllMapped(
       RegExp(
@@ -41,11 +47,6 @@
       (match) => (match.group(1) ?? '') + '[REDACTED]',
     );
 
-    // Authorization headers are sometimes formatted as a Bearer scheme.
-    text = text.replaceAll(
-      RegExp(r'(Bearer\s+)[A-Za-z0-9._~+/-]+=*', caseSensitive: false),
-      r'$1[REDACTED]',
-    );
     return text;
   }
 
