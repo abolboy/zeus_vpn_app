@@ -599,7 +599,7 @@ class ZeusController extends ChangeNotifier {
       } catch (rollbackError) {
         log(
           LogKind.system,
-          'Manual server deletion rollback could not be verified: $rollbackError',
+          'Manual server deletion rollback could not be verified (${rollbackError.runtimeType})',
           LogLevel.error,
         );
       }
