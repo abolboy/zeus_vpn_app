@@ -18,13 +18,21 @@ ZEUS VPN is a Flutter Android VPN client built on `flutter_v2ray_client` and Xra
 - The current importer intentionally rejects configurations with multiple `[Peer]` sections. Import a client profile with one server peer per app profile.
 - Android cleartext traffic is disabled in the generated manifest.
 - Android Auto Backup is disabled. This avoids restoring app data that may depend on device-local cryptographic keys.
+- Sensitive app preferences are migrated into Android Keystore-backed encrypted storage. The app's secure-storage migration preserves plaintext values if the encrypted write fails.
 - Signing material must never be committed. The workflow checks tracked files for keystores and password-bearing signing files.
 - A keystore export was previously committed to repository history. The currently configured GitHub Actions signing secret must be verified by certificate fingerprint before it is used for another public release. The existence of signing secrets alone does not prove that the active signing identity is safe or compatible with installed copies.
 - Do not rotate the release key blindly. First compare the current certificate identity with the historical exposed key and decide whether existing installs must continue receiving in-place updates.
 
+## Credential storage
+
+- Subscription URLs, cached server URIs, the active server URI, the WireGuard/WARP profile (including private keys), and connection settings containing a chain URI are stored with `flutter_secure_storage` using Android Keystore-backed encryption.
+- On first launch after the security update, legacy values are migrated from SharedPreferences. The secure write happens before the plaintext value is removed. If migration fails, the old value is retained for recovery and the app logs a warning; new secrets are never written back to plaintext storage.
+- Android Auto Backup remains disabled because the encrypted values depend on the device's Android Keystore. Reinstalling or moving to another device can require the user to re-import subscriptions and WireGuard credentials.
+- The manual `ZEUS-BACKUP` clipboard export still includes subscription URLs. Its Base64 encoding is **not encryption**; the app asks for confirmation before copying it. Treat that text as a credential file and never post it publicly.
+
 ## Build locally
 
-Requires Flutter stable and JDK 17.
+Requires Flutter 3.35 or newer, Dart 3.8 or newer, JDK 17, and Android API 24 or newer.
 
 ```sh
 flutter pub get
