@@ -77,6 +77,15 @@ jobs:
           gradle_kts = Path("android/app/build.gradle.kts")
           gradle_file = gradle_kts if gradle_kts.is_file() else Path("android/app/build.gradle")
           gradle_text = gradle_file.read_text(encoding="utf-8")
+          expected_application_id = "ir.zeus.zeus_vpn"
+          application_id_line = (
+              f'applicationId = "{expected_application_id}"'
+              if gradle_file.suffix == ".kts"
+              else f'applicationId "{expected_application_id}"'
+          )
+          assert application_id_line in gradle_text, (
+              "Application ID must remain ir.zeus.zeus_vpn to preserve update compatibility"
+          )
           debug_suffix = (
               'applicationIdSuffix = ".debug"'
               if gradle_file.suffix == ".kts"
