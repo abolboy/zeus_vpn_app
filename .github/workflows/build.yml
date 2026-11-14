@@ -136,6 +136,47 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  android-keystore:
+    name: Verify real Android Keystore migration
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.50.0"
+          cache: true
+
+      - name: Create Android project files
+        run: flutter create --platforms=android --project-name zeus_vpn --org ir.zeus .
+
+      - name: Patch Android files
+        run: python3 tools/patch_android.py
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Run Android Keystore integration test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: flutter test integration_test/credential_vault_integration_test.dart -d emulator-5554
+
   release:
     name: Build and publish signed release APKs
     if: github.event_name == 'workflow_dispatch' && inputs.publish_release == 'true'
