@@ -23,16 +23,16 @@
     );
 
 
-    // Authorization headers are sometimes formatted as a Bearer scheme.
+    // Authorization headers can use either Bearer or Basic credentials.
     text = text.replaceAll(
-      RegExp(r'(Bearer\s+)[A-Za-z0-9._~+/-]+=*', caseSensitive: false),
+      RegExp(r'((?:Bearer|Basic)\s+)[A-Za-z0-9._~+/:=-]+', caseSensitive: false),
       r'$1[REDACTED]',
     );
 
     // Redact standalone credential assignments in exception/config text.
     text = text.replaceAllMapped(
       RegExp(
-        r'((?:private[_-]?key|pre[_-]?shared[_-]?key|secret[_-]?key|password|passwd|access[_-]?token|client[_-]?secret|api[_-]?key|token|authorization)\s*[:=]\s*)(?:"[^"]*"|[^\s,;]+)',
+        r'("?((?:private[_-]?key|pre[_-]?shared[_-]?key|secret[_-]?key|password|passwd|access[_-]?token|client[_-]?secret|api[_-]?key|token|authorization))"?\s*[:=]\s*)(?:"[^"]*"|[^\s,;]+)',
         caseSensitive: false,
       ),
       (match) => (match.group(1) ?? '') + '[REDACTED]',
