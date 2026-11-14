@@ -1,12 +1,13 @@
 # ZEUS VPN
 
-ZEUS VPN is a Flutter Android VPN client built on `flutter_v2ray_client` and Xray. The current application supports VLESS, VMess, Trojan, Shadowsocks, SOCKS, subscription feeds, Cloudflare WARP, and configurable PATT-NG options.
+ZEUS VPN v2.11.0 is a Flutter Android VPN client built on `flutter_v2ray_client` and Xray. The current application supports VLESS, VMess, Trojan, Shadowsocks, SOCKS, subscription feeds, Cloudflare WARP, and configurable PATT-NG options.
 
 ## Current verification status
 
 - Pull requests and pushes to `main` run Dart analysis, unit/widget tests, and a debug APK build.
 - The debug APK uses the `.debug` application-ID suffix and can be installed beside a release build without replacing its app data.
 - CI uploads the debug APK as a short-lived verification artifact. It is not a production release.
+- CI runs a separate Android API 35 emulator test against the real Android Keystore-backed storage adapter.
 - Automatic APK publishing on every push is disabled. A public release now requires a manual workflow dispatch, all signing secrets, and a pinned signing-certificate fingerprint.
 - A successful CI run does not prove real-world VPN traffic, recovery after network changes, WARP behavior, physical-device background service behavior, or upgrade compatibility.
 
@@ -18,13 +19,21 @@ ZEUS VPN is a Flutter Android VPN client built on `flutter_v2ray_client` and Xra
 - The current importer intentionally rejects configurations with multiple `[Peer]` sections. Import a client profile with one server peer per app profile.
 - Android cleartext traffic is disabled in the generated manifest.
 - Android Auto Backup is disabled. This avoids restoring app data that may depend on device-local cryptographic keys.
+- Sensitive app preferences are migrated into Android Keystore-backed encrypted storage. The app's secure-storage migration preserves plaintext values if the encrypted write fails.
 - Signing material must never be committed. The workflow checks tracked files for keystores and password-bearing signing files.
 - A keystore export was previously committed to repository history. The currently configured GitHub Actions signing secret must be verified by certificate fingerprint before it is used for another public release. The existence of signing secrets alone does not prove that the active signing identity is safe or compatible with installed copies.
 - Do not rotate the release key blindly. First compare the current certificate identity with the historical exposed key and decide whether existing installs must continue receiving in-place updates.
 
+## Credential storage
+
+- Subscription URLs, cached server URIs, the active server URI, the WireGuard/WARP profile (including private keys), and connection settings containing a chain URI are stored with `flutter_secure_storage` using Android Keystore-backed encryption. Keystore errors do not trigger automatic secure-store resets.
+- On first launch after the security update, legacy values are migrated from SharedPreferences. The secure write happens before the plaintext value is removed. If migration fails, the old value is retained for recovery and the app logs a warning; new secrets are never written back to plaintext storage.
+- Android Auto Backup remains disabled because the encrypted values depend on the device's Android Keystore. Reinstalling or moving to another device can require the user to re-import subscriptions and WireGuard credentials.
+- The manual `ZEUS-BACKUP` clipboard export still includes subscription URLs. Its Base64 encoding is **not encryption**; the app asks for confirmation before copying it. Treat that text as a credential file and never post it publicly.
+
 ## Build locally
 
-Requires Flutter stable and JDK 17.
+Verified with Flutter 3.50.0, Dart 3.13.0, JDK 17, and Android API 24 or newer.
 
 ```sh
 flutter pub get

@@ -1,7 +1,10 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:zeus_vpn/core/credential_vault.dart';
 import 'package:zeus_vpn/core/clash_import.dart';
+import 'package:zeus_vpn/core/config_builder.dart';
 import 'package:zeus_vpn/core/free_profiles.dart';
 import 'package:zeus_vpn/core/models.dart';
 import 'package:zeus_vpn/warp.dart';
@@ -9,7 +12,146 @@ import 'package:zeus_vpn/warp.dart';
 List<int> _hex(String s) => [for (var i = 0; i < s.length; i += 2) int.parse(s.substring(i, i + 2), radix: 16)];
 String _toHex(List<int> b) => b.map((e) => e.toRadixString(16).padLeft(2, '0')).join();
 
+class _MemorySecureKeyValueStore implements SecureKeyValueStore {
+  final Map<String, String> values = <String, String>{};
+  bool failReads = false;
+  bool failWrites = false;
+  bool failDeletes = false;
+
+  @override
+  Future<String?> read(String key) async {
+    if (failReads) throw StateError('simulated secure read failure');
+    return values[key];
+  }
+
+  @override
+  Future<void> write(String key, String value) async {
+    if (failWrites) throw StateError('simulated secure write failure');
+    values[key] = value;
+  }
+
+  @override
+  Future<void> delete(String key) async {
+    if (failDeletes) throw StateError('simulated secure delete failure');
+    values.remove(key);
+  }
+}
+
 void main() {
+  group('credential vault migration', () {
+    test('writes encrypted value before removing legacy plaintext', () async {
+      SharedPreferences.setMockInitialValues({'subs_v2': 'legacy-subscription-secret'});
+      final preferences = await SharedPreferences.getInstance();
+      final secure = _MemorySecureKeyValueStore();
+      final vault = CredentialVault(storage: secure);
+
+      final value = await vault.readAndMigrate(preferences, 'subs_v2');
+
+      expect(value, 'legacy-subscription-secret');
+      expect(secure.values['subs_v2'], 'legacy-subscription-secret');
+      expect(preferences.getString('subs_v2'), isNull);
+    });
+
+    test('retains plaintext when secure migration write fails', () async {
+      SharedPreferences.setMockInitialValues({'warp_json': 'legacy-private-key-json'});
+      final preferences = await SharedPreferences.getInstance();
+      final secure = _MemorySecureKeyValueStore()..failWrites = true;
+      final vault = CredentialVault(storage: secure);
+
+      final value = await vault.readAndMigrate(preferences, 'warp_json');
+
+      expect(value, 'legacy-private-key-json');
+      expect(preferences.getString('warp_json'), 'legacy-private-key-json');
+      expect(secure.values.containsKey('warp_json'), isFalse);
+    });
+
+    test('secure read failure falls back to legacy value without deleting it', () async {
+      SharedPreferences.setMockInitialValues({'warp_json': 'legacy-profile'});
+      final preferences = await SharedPreferences.getInstance();
+      final secure = _MemorySecureKeyValueStore()..failReads = true;
+      final vault = CredentialVault(storage: secure);
+
+      expect(await vault.readAndMigrate(preferences, 'warp_json'), 'legacy-profile');
+      expect(preferences.getString('warp_json'), 'legacy-profile');
+      expect(secure.values.containsKey('warp_json'), isFalse);
+    });
+
+    test('encrypted value takes precedence and removes old duplicate', () async {
+      SharedPreferences.setMockInitialValues({'sel': 'old-server-uri'});
+      final preferences = await SharedPreferences.getInstance();
+      final secure = _MemorySecureKeyValueStore()
+        ..values['sel'] = 'encrypted-server-uri';
+      final vault = CredentialVault(storage: secure);
+
+      expect(await vault.readAndMigrate(preferences, 'sel'), 'encrypted-server-uri');
+      expect(preferences.getString('sel'), isNull);
+    });
+
+    test('new writes go only to secure storage and deletion happens there first', () async {
+      SharedPreferences.setMockInitialValues({'nodes_cache': 'old-cache'});
+      final preferences = await SharedPreferences.getInstance();
+      final secure = _MemorySecureKeyValueStore();
+      final vault = CredentialVault(storage: secure);
+
+      await vault.write(preferences, 'nodes_cache', 'new-server-cache');
+      expect(secure.values['nodes_cache'], 'new-server-cache');
+      expect(preferences.getString('nodes_cache'), isNull);
+
+      await vault.delete(preferences, 'nodes_cache');
+      expect(secure.values.containsKey('nodes_cache'), isFalse);
+      expect(preferences.getString('nodes_cache'), isNull);
+    });
+
+    test('failed secure writes never delete the existing legacy value', () async {
+      SharedPreferences.setMockInitialValues({'settings_json': 'legacy-settings'});
+      final preferences = await SharedPreferences.getInstance();
+      final secure = _MemorySecureKeyValueStore()..failWrites = true;
+      final vault = CredentialVault(storage: secure);
+
+      await expectLater(
+        vault.write(preferences, 'settings_json', 'new-settings'),
+        throwsStateError,
+      );
+      expect(preferences.getString('settings_json'), 'legacy-settings');
+    });
+  });
+
+  group('sensitive log redaction', () {
+    test('hides share URIs and query-bearing subscription URLs', () {
+      const input =
+          'Sub failed: vless://123e4567-e89b-12d3-a456-426614174000@vpn.example:443?security=tls '
+          'while requesting https://feed.example/sub?token=secret-value';
+      final output = redactSensitiveLogText(input);
+
+      expect(output, isNot(contains('123e4567-e89b-12d3-a456-426614174000')));
+      expect(output, isNot(contains('secret-value')));
+      expect(output, contains('vpn.example'));
+      expect(output, contains('feed.example'));
+      expect(output, contains('[REDACTED]'));
+    });
+
+    test('redacts plain and JSON credential fields plus Bearer and Basic headers', () {
+      const input =
+          'PrivateKey = U0VDUkVUS0VZ AccessToken: abc.def.ghi '
+          'Authorization: Bearer token-value '
+          '{"privateKey":"json-private-value","preSharedKey":"json-psk-value"} '
+          'Authorization: Basic dXNlcjpwYXNzd29yZA==';
+      final output = redactSensitiveLogText(input);
+
+      for (final secret in [
+        'U0VDUkVUS0VZ',
+        'abc.def.ghi',
+        'token-value',
+        'json-private-value',
+        'json-psk-value',
+        'dXNlcjpwYXNzd29yZA==',
+      ]) {
+        expect(output, isNot(contains(secret)), reason: 'Leaked $secret');
+      }
+      expect(output, contains('[REDACTED]'));
+    });
+  });
+
   group('subscription URL security', () {
     test('accepts HTTPS URLs, including non-default ports and query tokens', () {
       expect(
@@ -213,6 +355,15 @@ void main() {
         ),
         throwsFormatException,
       );
+      expect(
+        () => parseWireGuardConf(
+          '[Interface]\\nPrivateKey = $priv\\nAddress = 10.8.0.2/32\\n'
+          'DNS = dns.example.com\\n'
+          '[Peer]\\nPublicKey = $peer\\nEndpoint = 203.0.113.7:51820\\n',
+        ),
+        throwsFormatException,
+        reason: 'Xray remoteDNS must contain IP addresses, not DNS hostnames.',
+      );
     });
 
     test('config round-trip and Xray outbound retains WireGuard peer fields', () {
@@ -264,7 +415,77 @@ void main() {
       );
     });
 
-    test('IPv6 WireGuard endpoint resolution uses ForceIPv4v6 only for dual-stack profiles', () {
+    test('default WireGuard routes match the configured address families', () {
+      final key = base64Encode(List<int>.filled(32, 5));
+      final peerKey = base64Encode(List<int>.filled(32, 6));
+      final ipv4Only = WarpConfig(
+        privateKey: key,
+        publicKey: key,
+        peerPublicKey: peerKey,
+        addressV4: '10.8.0.2/32',
+        addressV6: '',
+        endpoint: '203.0.113.8:51820',
+        reserved: const [0, 0, 0],
+        deviceId: '',
+        token: '',
+        registeredAt: 'imported',
+      );
+
+      final peer = (((ipv4Only.toXrayOutbound()['settings'] as Map)['peers'] as List)
+          .single as Map);
+      expect(peer['allowedIPs'], ['0.0.0.0/0']);
+    });
+
+    test('WireGuard-only mode routes the Xray proxy through the imported peer', () {
+      final privateKey = base64Encode(List<int>.filled(32, 1));
+      final publicKey = base64Encode(List<int>.filled(32, 2));
+      final peerKey = base64Encode(List<int>.filled(32, 3));
+      final psk = base64Encode(List<int>.filled(32, 4));
+      final profile = WarpConfig(
+        privateKey: privateKey,
+        publicKey: publicKey,
+        peerPublicKey: peerKey,
+        preSharedKey: psk,
+        addressV4: '10.8.0.2/32',
+        addressV6: '',
+        endpoint: '203.0.113.8:51820',
+        reserved: const [0, 0, 0],
+        allowedIPs: const ['0.0.0.0/0'],
+        dnsServers: const ['1.1.1.1'],
+        keepAlive: 25,
+        deviceId: '',
+        token: '',
+        registeredAt: 'imported',
+      );
+
+      final config = ConfigBuilder(
+        patt: Patt(),
+        warp: profile,
+        warpOn: true,
+        warpMtu: 1420,
+      ).buildWarpOnly();
+
+      final outbounds = (config['outbounds'] as List).cast<Map>();
+      final wireGuard = outbounds.firstWhere((outbound) => outbound['tag'] == 'proxy');
+      final settings = wireGuard['settings'] as Map;
+      final peers = (settings['peers'] as List).cast<Map>();
+      final peer = peers.single;
+
+      expect(wireGuard['protocol'], 'wireguard');
+      expect(settings['secretKey'], privateKey);
+      expect(settings['mtu'], 1420);
+      expect(settings['remoteDNS'], ['1.1.1.1']);
+      expect(peer['publicKey'], peerKey);
+      expect(peer['preSharedKey'], psk);
+      expect(peer['allowedIPs'], ['0.0.0.0/0']);
+      expect(peer['endpoint'], '203.0.113.8:51820');
+      expect(peer['keepAlive'], 25);
+
+      final rules = ((config['routing'] as Map)['rules'] as List).cast<Map>();
+      expect(rules.last['outboundTag'], 'proxy');
+    });
+
+    test('IPv6 WireGuard endpoint resolution uses ForceIPv4v6 for dual-stack profiles', () {
       final key = base64Encode(List<int>.filled(32, 12));
       final peerKey = base64Encode(List<int>.filled(32, 13));
       final dualStack = WarpConfig(
@@ -279,7 +500,6 @@ void main() {
         token: '',
         registeredAt: 'imported',
       );
-
       final outbound = dualStack.toXrayOutbound();
       final streamSettings = outbound['streamSettings'] as Map;
       final sockopt = streamSettings['sockopt'] as Map;

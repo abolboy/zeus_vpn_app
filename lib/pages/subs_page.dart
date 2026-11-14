@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../core/controller.dart';
 import '../core/models.dart';
 import '../ui/theme.dart';
+import '../ui/credential_warning.dart';
 
 class SubsPage extends StatefulWidget {
   final VoidCallback onBack;
@@ -41,8 +42,8 @@ class _SubsPageState extends State<SubsPage> {
       _snack('کلیپ‌بورد خالی است', err: true);
       return;
     }
-    if (!t.startsWith('http')) {
-      _snack('متن کلیپ‌بورد لینک اشتراک نیست', err: true);
+    if (!isSecureSubscriptionUrl(t)) {
+      _snack('لینک اشتراک باید HTTPS معتبر باشد', err: true);
       return;
     }
     await _add(t);
@@ -194,11 +195,8 @@ class _SubsPageState extends State<SubsPage> {
                 ZeusTile(
                   icon: Icons.backup_outlined,
                   title: 'پشتیبان‌گیری (کپی)',
-                  subtitle: 'اشتراک‌ها و تنظیمات PattNG در یک متن',
-                  onTap: () {
-                    Clipboard.setData(ClipboardData(text: c.exportBackup()));
-                    _snack('پشتیبان کپی شد؛ آن را جایی امن نگه دارید');
-                  },
+                  subtitle: 'حاوی لینک‌های حساس اشتراک؛ متن خروجی رمزنگاری‌شده نیست',
+                  onTap: _exportBackup,
                 ),
                 ZeusTile(
                   icon: Icons.restore,
@@ -210,12 +208,7 @@ class _SubsPageState extends State<SubsPage> {
                   icon: Icons.ios_share,
                   title: 'کپی همهٔ لینک‌ها (TXT)',
                   subtitle: 'هر سرور در یک خط، برای اشتراک‌گذاری',
-                  onTap: c.nodes.isEmpty
-                      ? null
-                      : () {
-                          Clipboard.setData(ClipboardData(text: c.exportLinks()));
-                          _snack('${c.nodes.length} لینک کپی شد');
-                        },
+                  onTap: c.nodes.isEmpty ? null : _copyAllLinks,
                 ),
 
                 if (c.subs.isNotEmpty) ...[
@@ -238,6 +231,52 @@ class _SubsPageState extends State<SubsPage> {
           Text(v, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: kGreen)),
         ],
       );
+
+  Future<void> _copySensitiveText(
+    String value, {
+    required String subject,
+    required String successMessage,
+  }) async {
+    if (!await confirmSensitiveCopy(context, subject: subject)) return;
+    await Clipboard.setData(ClipboardData(text: value));
+    _snack(successMessage);
+  }
+
+  Future<void> _copyAllLinks() async {
+    if (c.nodes.isEmpty) return;
+    await _copySensitiveText(
+      c.exportLinks(),
+      subject: 'فهرست لینک‌های سرورها',
+      successMessage: '${c.nodes.length} لینک کپی شد',
+    );
+  }
+
+  Future<void> _exportBackup() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('پشتیبان شامل اطلاعات حساس است'),
+        content: const Text(
+          'متن پشتیبان حاوی لینک‌های اشتراک و ممکن است شامل توکن دسترسی باشد. '
+          'کدگذاری Base64 رمزنگاری نیست. آن را در گروه‌ها، چت عمومی یا مخزن Git قرار ندهید. '
+          'فقط در محل امنی که کنترلش را دارید نگه دارید.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('انصراف'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('کپی پشتیبان'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await Clipboard.setData(ClipboardData(text: c.exportBackup()));
+    _snack('پشتیبان کپی شد؛ آن را به‌صورت محرمانه نگه دارید');
+  }
 
   Future<void> _restore() async {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
@@ -309,10 +348,11 @@ class _SubsPageState extends State<SubsPage> {
           IconButton(
             visualDensity: VisualDensity.compact,
             tooltip: 'کپی لینک',
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: s.url));
-              _snack('لینک کپی شد');
-            },
+            onPressed: () => _copySensitiveText(
+              s.url,
+              subject: 'لینک اشتراک',
+              successMessage: 'لینک اشتراک کپی شد',
+            ),
             icon: Icon(Icons.copy, color: kMuted, size: 18),
           ),
           IconButton(
