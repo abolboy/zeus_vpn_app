@@ -480,7 +480,7 @@ WarpConfig parseWireGuardConf(String text) {
   var section = '';
   var peerCount = 0;
 
-  for (final raw in text.split(RegExp(r'[\\r\\n]+'))) {
+  for (final raw in text.split(RegExp(r'[\r\n]+'))) {
     final line = raw.trim();
     if (line.isEmpty || line.startsWith('#') || line.startsWith(';')) continue;
     if (line.startsWith('[') && line.endsWith(']')) {
@@ -621,7 +621,7 @@ WarpConfig parseWireGuardConf(String text) {
   final reservedText = (iface['reserved'] ?? peer['reserved'] ?? '').trim();
   if (reservedText.isNotEmpty) {
     final parts = reservedText
-        .replaceAll(RegExp(r'[\\[\\]\\s]'), '')
+        .replaceAll(RegExp(r'[\[\]\s]'), '')
         .split(',')
         .map(int.tryParse)
         .toList();
