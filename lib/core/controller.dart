@@ -564,6 +564,54 @@ class ZeusController extends ChangeNotifier {
     return syncAll();
   }
 
+  /// Adds one share URI directly to the local server list without creating a subscription.
+  /// Manual nodes use the M tag and are preserved when subscription feeds refresh.
+  Future<String?> addSingleLink(String value) async {
+    final uri = value.trim();
+    if (uri.isEmpty || !isSupportedLink(uri)) {
+      return 'لینک باید یکی از فرمت‌های VLESS، VMess، Trojan، Shadowsocks یا SOCKS باشد';
+    }
+
+    late final ServerNode node;
+    try {
+      node = ServerNode.fromUri(uri, 'M');
+      if (node.protocol == '?' || node.host.isEmpty || node.port < 1) {
+        return 'ساختار لینک سرور کامل یا معتبر نیست';
+      }
+
+      // Parse through the same Xray config builder used for a real connection.
+      _builder.build(node.rawUri);
+    } catch (error) {
+      log(
+        LogKind.system,
+        'Manual server link rejected: $error',
+        LogLevel.warn,
+      );
+      return 'این لینک برای هستهٔ فعلی ZEUS معتبر یا پشتیبانی‌شده نیست';
+    }
+
+    if (nodes.any((existing) => existing.rawUri == node.rawUri)) {
+      return 'این سرور قبلاً به فهرست اضافه شده است';
+    }
+
+    nodes.add(node);
+    try {
+      await _saveNodes();
+    } catch (error) {
+      nodes.removeWhere((existing) => existing.rawUri == node.rawUri);
+      log(
+        LogKind.system,
+        'Manual server could not be saved: $error',
+        LogLevel.error,
+      );
+      return 'ذخیرهٔ سرور ناموفق بود؛ دوباره تلاش کن';
+    }
+
+    notifyListeners();
+    log(LogKind.system, 'Manual server added (${node.protocol})');
+    return null;
+  }
+
   /// افزودن اشتراک از فهرست «رایگان» با نام دلخواه
   /// بعد از به‌روزرسانی: پینگ همه، و در صورت فعال بودن، حذف سرورهای بی‌پاسخ
   Future<void> _postSyncPipeline() async {
@@ -689,8 +737,10 @@ class ZeusController extends ChangeNotifier {
         notifyListeners();
         return 'هیچ سروری دریافت نشد؛ لیست قبلی حفظ شد';
       }
-      // پینگ، علاقه‌مندی و آمارِ تست چندنمونه‌ای همین جلسه حفظ می‌شود
+      // Keep local single-link imports alongside subscription-provided servers.
+      // A feed refresh must never silently remove a manually added server.
       final old = {for (final n in nodes) n.rawUri: n};
+      final manual = nodes.where((n) => n.subTag == 'M').toList();
       for (final n in fresh) {
         final o = old[n.rawUri];
         if (o != null) {
@@ -700,6 +750,10 @@ class ZeusController extends ChangeNotifier {
           n.viaTcp = o.viaTcp;
           n.favorite = o.favorite;
         }
+      }
+      final freshUris = fresh.map((n) => n.rawUri).toSet();
+      for (final n in manual) {
+        if (freshUris.add(n.rawUri)) fresh.add(n);
       }
       nodes = fresh;
       if (selUri != null && !nodes.any((n) => n.rawUri == selUri) && !connected && !connecting) {
