@@ -13,6 +13,9 @@ ZEUS VPN is a Flutter Android VPN client built on `flutter_v2ray_client` and Xra
 ## Security baseline
 
 - Subscription URLs are accepted only over HTTPS. HTTP redirects are disabled for subscription downloads.
+- Standard single-peer WireGuard `.conf` profiles can be imported. The app preserves the Interface address, DNS, supported MTU, Peer endpoint, public key, optional preshared key, AllowedIPs, and PersistentKeepalive when generating the Xray WireGuard outbound.
+- Imported WireGuard profiles are not treated as Cloudflare WARP registrations: Cloudflare endpoint rotation is disabled for them, so an AWS endpoint is never silently replaced with a Cloudflare endpoint.
+- The current importer intentionally rejects configurations with multiple `[Peer]` sections. Import a client profile with one server peer per app profile.
 - Android cleartext traffic is disabled in the generated manifest.
 - Android Auto Backup is disabled. This avoids restoring app data that may depend on device-local cryptographic keys.
 - Signing material must never be committed. The workflow checks tracked files for keystores and password-bearing signing files.
@@ -54,6 +57,7 @@ See [docs/RELEASE_SIGNING.md](docs/RELEASE_SIGNING.md) before creating or rotati
 - Physical-device testing of connect/disconnect, traffic routing, DNS, IPv4/IPv6, sleep/resume, mobile-network changes, and battery use.
 - Real traffic validation for every supported protocol and advanced transport option against the exact embedded Xray version.
 - WARP registration and tunnel validation against current Cloudflare behavior.
+- AWS WireGuard client-profile validation against the actual server peer, firewall/security-group UDP port, forwarding/NAT policy, and the exact AllowedIPs required by the intended split- or full-tunnel design.
 - Release certificate continuity and upgrade testing on a device that has the previously distributed APK installed.
 - A verified encrypted export/import process before promising seamless credential migration between devices.
 

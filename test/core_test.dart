@@ -160,37 +160,100 @@ void main() {
       expect(base64Encode(x25519(priv, base)), kp.publicKey);
     });
 
-    test('WireGuard conf import', () {
+    test('WireGuard conf import preserves a standard AWS-style profile', () {
       final priv = base64Encode(List<int>.filled(32, 7));
       final peer = base64Encode(List<int>.filled(32, 9));
-      final cfg = parseWireGuardConf('[Interface]\nPrivateKey = $priv\nAddress = 172.16.0.2/32, 2606:4700:110:8a36::1/128\n\n'
-          '[Peer]\nPublicKey = $peer\nEndpoint = engage.cloudflareclient.com:2408\n');
-      expect(cfg.addressV4, '172.16.0.2/32');
-      expect(cfg.addressV6, '2606:4700:110:8a36::1/128');
-      expect(cfg.endpoint, 'engage.cloudflareclient.com:2408');
+      final psk = base64Encode(List<int>.filled(32, 11));
+      final cfg = parseWireGuardConf(
+        '[Interface]\n'
+        'PrivateKey = $priv\n'
+        'Address = 10.8.0.2/32, fd00::2/128\n'
+        'DNS = 1.1.1.1, 2606:4700:4700::1111\n'
+        'MTU = 1420\n\n'
+        '[Peer]\n'
+        'PublicKey = $peer\n'
+        'PresharedKey = $psk\n'
+        'AllowedIPs = 10.8.0.0/24, 0.0.0.0/0, ::/0\n'
+        'Endpoint = 203.0.113.7:51820\n'
+        'PersistentKeepalive = 25\n',
+      );
+
+      expect(cfg.addressV4, '10.8.0.2/32');
+      expect(cfg.addressV6, 'fd00::2/128');
+      expect(cfg.endpoint, '203.0.113.7:51820');
+      expect(cfg.allowedIPs, ['10.8.0.0/24', '0.0.0.0/0', '::/0']);
+      expect(cfg.preSharedKey, psk);
+      expect(cfg.keepAlive, 25);
+      expect(cfg.dnsServers, ['1.1.1.1', '2606:4700:4700::1111']);
+      expect(cfg.interfaceMtu, 1420);
+      expect(cfg.isCloudflareRegistered, isFalse);
       expect(cfg.reserved, [0, 0, 0]);
       expect(base64Decode(cfg.publicKey).length, 32);
+
+      final outbound = cfg.toXrayOutbound();
+      final settings = outbound['settings'] as Map;
+      final peerSettings = (settings['peers'] as List).single as Map;
+      expect(outbound['protocol'], 'wireguard');
+      expect(peerSettings['allowedIPs'], cfg.allowedIPs);
+      expect(peerSettings['preSharedKey'], psk);
+      expect(peerSettings['keepAlive'], 25);
+      expect(settings['remoteDNS'], cfg.dnsServers);
+
+      expect(
+        () => parseWireGuardConf('[Interface]\nPrivateKey = $priv\nAddress = 1.2.3.4/32\n[Peer]\nPublicKey = $peer\n'),
+        throwsFormatException,
+        reason: 'An absent endpoint must never silently switch to a Cloudflare endpoint.',
+      );
       expect(() => parseWireGuardConf('[Interface]\nAddress = 1.2.3.4/32'), throwsFormatException);
+      expect(
+        () => parseWireGuardConf(
+          '[Interface]\nPrivateKey = $priv\nAddress = 10.8.0.2/32\n'
+          '[Peer]\nPublicKey = $peer\nEndpoint = 203.0.113.7:51820\n'
+          '[Peer]\nPublicKey = $peer\nEndpoint = 203.0.113.8:51820\n',
+        ),
+        throwsFormatException,
+      );
     });
 
-    test('config round-trip and xray outbound', () {
+    test('config round-trip and Xray outbound retains WireGuard peer fields', () {
+      final privateKey = base64Encode(List<int>.filled(32, 7));
+      final publicKey = base64Encode(List<int>.filled(32, 8));
+      final peerKey = base64Encode(List<int>.filled(32, 9));
+      final psk = base64Encode(List<int>.filled(32, 10));
       final cfg = WarpConfig(
-        privateKey: 'k',
-        publicKey: 'p',
-        peerPublicKey: 'peer',
+        privateKey: privateKey,
+        publicKey: publicKey,
+        peerPublicKey: peerKey,
+        preSharedKey: psk,
         addressV4: '172.16.0.2/32',
         addressV6: '',
-        endpoint: 'engage.cloudflareclient.com:2408',
+        endpoint: '203.0.113.7:51820',
         reserved: [1, 2, 3],
-        deviceId: 'd',
-        token: 't',
+        allowedIPs: const ['10.20.0.0/16'],
+        dnsServers: const ['10.20.0.2'],
+        keepAlive: 15,
+        interfaceMtu: 1380,
+        deviceId: 'device-id',
+        token: 'token',
         registeredAt: 'now',
       );
       final back = WarpConfig.tryDecode(cfg.encode());
       expect(back?.isValid, true);
-      final out = back!.toXrayOutbound(tag: 'warp');
+      expect(back?.isCloudflareRegistered, true);
+      expect(back?.preSharedKey, psk);
+      expect(back?.allowedIPs, ['10.20.0.0/16']);
+      expect(back?.dnsServers, ['10.20.0.2']);
+      expect(back?.keepAlive, 15);
+
+      final out = back!.toXrayOutbound(tag: 'wireguard', mtu: 1280);
+      final settings = out['settings'] as Map;
+      final peer = (settings['peers'] as List).single as Map;
       expect(out['protocol'], 'wireguard');
-      expect((out['settings'] as Map)['reserved'], [1, 2, 3]);
+      expect(settings['reserved'], [1, 2, 3]);
+      expect(settings['mtu'], 1280, reason: 'The app MTU selection remains the active override.');
+      expect(peer['preSharedKey'], psk);
+      expect(peer['allowedIPs'], ['10.20.0.0/16']);
+      expect(peer['keepAlive'], 15);
     });
 
     test('old raw-outbound format is rejected (user must re-register)', () {
