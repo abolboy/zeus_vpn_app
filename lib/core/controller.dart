@@ -1380,8 +1380,14 @@ class ZeusController extends ChangeNotifier {
   /// کانفیگ WireGuard (فرمت wgcf) را به‌جای ثبت‌نام خودکار وارد می‌کند. null = موفق
   Future<String?> importWarpConf(String text) async {
     try {
-      warp = parseWireGuardConf(text);
+      final imported = parseWireGuardConf(text);
+      warp = imported;
       warpOn = true;
+      if (imported.interfaceMtu != null &&
+          const [1280, 1380, 1420].contains(imported.interfaceMtu)) {
+        settings.warpMtu = imported.interfaceMtu!;
+        await saveSettings();
+      }
       await saveWarp();
       log(LogKind.system, 'WireGuard profile imported (${warp?.addressV4})');
       notifyListeners();
