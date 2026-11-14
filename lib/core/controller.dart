@@ -738,24 +738,7 @@ class ZeusController extends ChangeNotifier {
         return 'هیچ سروری دریافت نشد؛ لیست قبلی حفظ شد';
       }
       // Keep local single-link imports alongside subscription-provided servers.
-      // A feed refresh must never silently remove a manually added server.
-      final old = {for (final n in nodes) n.rawUri: n};
-      final manual = nodes.where((n) => n.subTag == 'M').toList();
-      for (final n in fresh) {
-        final o = old[n.rawUri];
-        if (o != null) {
-          n.pingMs = o.pingMs;
-          n.jitterMs = o.jitterMs;
-          n.lossPct = o.lossPct;
-          n.viaTcp = o.viaTcp;
-          n.favorite = o.favorite;
-        }
-      }
-      final freshUris = fresh.map((n) => n.rawUri).toSet();
-      for (final n in manual) {
-        if (freshUris.add(n.rawUri)) fresh.add(n);
-      }
-      nodes = fresh;
+      nodes = mergeRefreshedNodes(fresh, nodes);
       if (selUri != null && !nodes.any((n) => n.rawUri == selUri) && !connected && !connecting) {
         selUri = null;
         await _saveSel();
