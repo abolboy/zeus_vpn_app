@@ -405,6 +405,14 @@ void main() {
       expect(peer['preSharedKey'], psk);
       expect(peer['allowedIPs'], ['10.20.0.0/16']);
       expect(peer['keepAlive'], 15);
+      final streamSettings = out['streamSettings'] as Map;
+      final sockopt = streamSettings['sockopt'] as Map;
+      expect(sockopt['domainStrategy'], 'ForceIPv4');
+      expect(
+        settings.containsKey('domainStrategy'),
+        isFalse,
+        reason: 'Xray 26.9.9 reads WireGuard endpoint resolution policy from streamSettings.sockopt.',
+      );
     });
 
     test('default WireGuard routes match the configured address families', () {
@@ -423,9 +431,36 @@ void main() {
         registeredAt: 'imported',
       );
 
-      final peer = (((ipv4Only.toXrayOutbound()['settings'] as Map)['peers'] as List)
-          .single as Map);
+      final outbound = ipv4Only.toXrayOutbound();
+      final peer = (((outbound['settings'] as Map)['peers'] as List).single as Map);
+      final streamSettings = outbound['streamSettings'] as Map;
+      final sockopt = streamSettings['sockopt'] as Map;
       expect(peer['allowedIPs'], ['0.0.0.0/0']);
+      expect(sockopt['domainStrategy'], 'ForceIPv4');
+    });
+
+    test('IPv6 WireGuard endpoint resolution uses ForceIPv4v6 only for dual-stack profiles', () {
+      final key = base64Encode(List<int>.filled(32, 12));
+      final peerKey = base64Encode(List<int>.filled(32, 13));
+      final dualStack = WarpConfig(
+        privateKey: key,
+        publicKey: key,
+        peerPublicKey: peerKey,
+        addressV4: '10.8.0.2/32',
+        addressV6: 'fd00::2/128',
+        endpoint: 'wg.example.com:51820',
+        reserved: const [0, 0, 0],
+        deviceId: '',
+        token: '',
+        registeredAt: 'imported',
+      );
+
+      final outbound = dualStack.toXrayOutbound();
+      final streamSettings = outbound['streamSettings'] as Map;
+      final sockopt = streamSettings['sockopt'] as Map;
+      expect(sockopt['domainStrategy'], 'ForceIPv4v6');
+      final settings = outbound['settings'] as Map;
+      expect(settings.containsKey('domainStrategy'), isFalse);
     });
 
     test('WireGuard-only mode routes the Xray proxy through the imported peer', () {
