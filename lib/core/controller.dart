@@ -180,7 +180,7 @@ class ZeusController extends ChangeNotifier {
   /// اشتراک‌های داخلی («سرورهای رایگان») را یک‌بار به‌ازای هر آدرس اضافه می‌کند؛
   /// اگر کاربر حذفشان کند دوباره اضافه نمی‌شوند.
   Future<void> _seedFreeSubs(SharedPreferences p) async {
-    // اشتراک داخلیِ بازنشسته («سرورهای رایگان» نسخه‌های قبلی) از لیست کاربر پاک می‌شود
+    // Retire only old built-in groups; keep personal subscriptions and manual links.
     final retiredIndexes = <int>{};
     for (var i = 0; i < subs.length; i++) {
       final url = subs[i].url;
@@ -189,23 +189,61 @@ class ZeusController extends ChangeNotifier {
         retiredIndexes.add(i);
       }
     }
+
     if (retiredIndexes.isNotEmpty) {
-      final sortedRetired = retiredIndexes.toList()..sort();
       final removedUris = nodes.where((node) {
-        final match = RegExp(r'^S(\d+)
+        final number = node.subTag.startsWith('S')
+            ? int.tryParse(node.subTag.substring(1))
+            : null;
+        if (number == null || number <= 0) return false;
+        return retiredIndexes.contains(number - 1);
+      }).map((node) => node.rawUri).toSet();
+
+      final previousSelection = selUri;
+      final previousChain = settings.chainUri;
+
+      final sortedRetired = retiredIndexes.toList()..sort();
+      for (final index in sortedRetired.reversed) {
+        subs.removeAt(index);
+      }
+      removeSubscriptionNodesAndReindex(nodes, retiredIndexes);
+
+      if (selUri != null &&
+          !nodes.any((node) => node.rawUri == selUri) &&
+          !connected &&
+          !connecting) {
+        selUri = null;
+      }
+      if (!connected &&
+          !connecting &&
+          previousChain.isNotEmpty &&
+          removedUris.contains(previousChain)) {
+        settings.chainUri = '';
+      }
+
+      await _saveSubs();
+      await _saveNodes();
+      if (previousSelection != selUri) await _saveSel();
+      if (previousChain != settings.chainUri) await saveSettings();
+      await p.remove('free_seeded_urls');
+      log(LogKind.system, 'Retired built-in free subscription removed');
+    }
+
     if (kFreeSubscriptions.isEmpty) return;
     final seeded = (p.getStringList('free_seeded_urls') ?? <String>[]).toSet();
     final before = seeded.length;
     var added = false;
-    for (final u in kFreeSubscriptions) {
-      if (seeded.contains(u)) continue;
-      seeded.add(u);
-      if (!subs.any((s) => s.url == u)) {
-        subs.add(SubRecord(url: u, name: kFreeSubName));
+    for (final url in kFreeSubscriptions) {
+      if (seeded.contains(url)) continue;
+      seeded.add(url);
+      if (!subs.any((subscription) => subscription.url == url)) {
+        subs.add(SubRecord(url: url, name: kFreeSubName));
         added = true;
       }
     }
-    if (seeded.length != before) await p.setStringList('free_seeded_urls', seeded.toList());
+    if (seeded.length != before) {
+      await p.setStringList('free_seeded_urls', seeded.toList());
+    }
     if (added) {
       await _saveSubs();
       log(LogKind.system, 'Built-in free subscription added');
