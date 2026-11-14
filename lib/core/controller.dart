@@ -1535,13 +1535,15 @@ class ZeusController extends ChangeNotifier {
       // Best-effort rollback if the new secure value was written before a later
       // preference operation failed. If Keystore is unavailable, the vault
       // preserves the old stored value and this rollback is logged.
+      var rollbackSucceeded = false;
       try {
         await saveWarp();
         if (applyImportedMtu) await saveSettings();
+        rollbackSucceeded = true;
       } catch (rollbackError) {
         log(
           LogKind.system,
-          'WireGuard profile rollback failed: $rollbackError',
+          'WireGuard profile rollback could not be verified: $rollbackError',
           LogLevel.error,
         );
       }
@@ -1552,7 +1554,9 @@ class ZeusController extends ChangeNotifier {
         LogLevel.error,
       );
       notifyListeners();
-      return 'پروفایل خوانده شد، اما ذخیرهٔ امن آن ناموفق بود؛ پروفایل قبلی حفظ شد. جزئیات در لاگ‌ها ثبت شد.';
+      return rollbackSucceeded
+          ? 'ذخیرهٔ امن پروفایل ناموفق بود؛ پروفایل قبلی بازیابی شد. جزئیات در لاگ‌ها ثبت شد.'
+          : 'ذخیرهٔ امن پروفایل ناموفق بود و بازیابی خودکار تأیید نشد؛ وضعیت پروفایل را پیش از اتصال بررسی کن. جزئیات در لاگ‌ها ثبت شد.';
     }
   }
 
