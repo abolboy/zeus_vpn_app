@@ -110,7 +110,7 @@ def patch_debug_application_id() -> None:
     if "applicationIdSuffix" in text:
         sys.exit("ERROR: unexpected applicationIdSuffix already exists")
 
-    match = re.search(r"(?m)^([ \\t]*)buildTypes\\s*\\{", text)
+    match = re.search(r"(?m)^([ \t]*)buildTypes\s*\{", text)
     if match is None:
         sys.exit("ERROR: buildTypes block not found")
 
