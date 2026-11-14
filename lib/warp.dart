@@ -337,14 +337,20 @@ class WarpConfig {
       'mtu': mtu,
       'workers': workers,
       if (dnsServers.isNotEmpty) 'remoteDNS': List<String>.of(dnsServers),
-      'domainStrategy': includeV6 && addressV6.isNotEmpty
-          ? 'ForceIPv4v6'
-          : 'ForceIPv4',
     };
+    // Xray 26.9.9 reads endpoint DNS policy from streamSettings.sockopt.
+    // A domainStrategy inside WireGuard settings is not part of WireGuardConfig.
+    final endpointStrategy =
+        includeV6 && addressV6.isNotEmpty ? 'ForceIPv4v6' : 'ForceIPv4';
     return <String, dynamic>{
       'tag': tag,
       'protocol': 'wireguard',
       'settings': settings,
+      'streamSettings': <String, dynamic>{
+        'sockopt': <String, dynamic>{
+          'domainStrategy': endpointStrategy,
+        },
+      },
     };
   }
 }

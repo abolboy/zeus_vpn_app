@@ -23,7 +23,9 @@ AllowedIPs = 0.0.0.0/0
 PersistentKeepalive = 25
 ```
 
-For dual-stack full-tunnel routing, add `::/0` to `AllowedIPs` only when IPv6 is configured end-to-end on the client, server, and AWS network. For split tunneling, set `AllowedIPs` to only the private destination CIDRs that should traverse the tunnel.
+For full-tunnel routing, use `0.0.0.0/0`; add `::/0` only when IPv6 is configured end-to-end on the client, server, and AWS network.
+
+**Current ZEUS limitation:** the app routes the selected proxy traffic through the WireGuard outbound, but it does not yet generate complementary direct-route rules for destinations outside a restricted `AllowedIPs` list. Use full-tunnel `AllowedIPs` for the supported configuration. Do not rely on a narrow split-tunnel list to make all other traffic fall back to the normal internet path; unmatched traffic may fail instead. Split-tunnel routing needs a separate app-level routing feature and device tests before it can be called supported.
 
 The `PublicKey` under `[Peer]` must be the server's WireGuard public key. The `PrivateKey` under `[Interface]` must be the phone/client's private key. The `Endpoint` must be the server's externally reachable public address and its actual WireGuard UDP listening port, not the EC2 instance's private VPC address.
 
@@ -50,7 +52,7 @@ The profile parser validates and carries forward:
 - MTU when it matches one of the app's supported presets
 - Three-byte `Reserved` value used by profiles that provide it
 
-The current app accepts one peer per profile. Multiple `[Peer]` sections are rejected rather than being merged incorrectly. If `AllowedIPs` is omitted, the Xray WireGuard outbound's documented default is full-tunnel IPv4 and IPv6; explicit routes are preferable so the intended traffic policy is clear.
+The current app accepts one peer per profile. Multiple `[Peer]` sections are rejected rather than being merged incorrectly. If `AllowedIPs` is omitted, ZEUS supplies a full-tunnel default for the address families configured on the interface. Explicit full-tunnel routes are preferable so the intended traffic policy is clear.
 
 ## Server-side requirements
 
@@ -59,7 +61,7 @@ A successful import does not configure the AWS instance. Verify separately that:
 - The EC2 security group and any host firewall allow inbound UDP on the WireGuard listening port.
 - The client endpoint uses the correct public IP/EIP or DNS record and port.
 - The client peer exists on the server with the correct public key and tunnel address.
-- IP forwarding and the required routing/NAT rules are configured for the intended full-tunnel or split-tunnel design.
+- IP forwarding and the required routing/NAT rules are configured for the full-tunnel design currently supported by ZEUS.
 - The server's return routes and any VPC route/security rules permit the traffic you expect.
 
 The importer does not probe or modify the VPS, security group, firewall, forwarding, or NAT settings.

@@ -57,7 +57,7 @@ See [docs/RELEASE_SIGNING.md](docs/RELEASE_SIGNING.md) before creating or rotati
 - Physical-device testing of connect/disconnect, traffic routing, DNS, IPv4/IPv6, sleep/resume, mobile-network changes, and battery use.
 - Real traffic validation for every supported protocol and advanced transport option against the exact embedded Xray version.
 - WARP registration and tunnel validation against current Cloudflare behavior.
-- AWS WireGuard client-profile validation against the actual server peer, firewall/security-group UDP port, forwarding/NAT policy, and the exact AllowedIPs required by the intended split- or full-tunnel design.
+- AWS WireGuard full-tunnel client-profile validation against the actual server peer, firewall/security-group UDP port, forwarding/NAT policy, and the exact AllowedIPs. Split-tunnel fallback routing is not implemented yet.
 - Release certificate continuity and upgrade testing on a device that has the previously distributed APK installed.
 - A verified encrypted export/import process before promising seamless credential migration between devices.
 
