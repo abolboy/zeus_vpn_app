@@ -8,6 +8,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../core/controller.dart';
 import '../core/models.dart';
 import '../ui/theme.dart';
+import '../ui/credential_warning.dart';
 
 class ServersPage extends StatefulWidget {
   final VoidCallback onBack;
@@ -549,9 +550,10 @@ class _ServersPageState extends State<ServersPage> {
               NeonButton(
                 label: 'کپی لینک',
                 icon: Icons.copy,
-                onTap: () {
-                  Clipboard.setData(ClipboardData(text: n.rawUri));
-                  Navigator.pop(ctx);
+                onTap: () async {
+                  if (!await confirmSensitiveCopy(context, subject: 'لینک سرور')) return;
+                  await Clipboard.setData(ClipboardData(text: n.rawUri));
+                  if (ctx.mounted) Navigator.pop(ctx);
                   _snack('لینک کپی شد');
                 },
               ),
