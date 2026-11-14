@@ -41,7 +41,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: "3.50.0"
           cache: true
 
       - name: Create Android project files
@@ -75,6 +75,12 @@ jobs:
               else 'applicationIdSuffix ".debug"'
           )
           assert debug_suffix in gradle_text, "Debug APK must use a separate .debug application ID"
+          minimum_sdk = (
+              "minSdk = maxOf(flutter.minSdkVersion, 24)"
+              if gradle_file.suffix == ".kts"
+              else "minSdkVersion Math.max(flutter.minSdkVersion, 24)"
+          )
+          assert minimum_sdk in gradle_text, "Android minSdk must be at least API 24 for secure credential storage"
 
           tracked = subprocess.run(
               ["git", "ls-files", "-z"],
@@ -105,6 +111,14 @@ jobs:
       - name: Resolve dependencies
         run: flutter pub get
 
+      - name: Upload resolved dependency lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: zeus-vpn-resolved-pubspec-lock
+          path: pubspec.lock
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Analyze Dart code
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
@@ -122,10 +136,51 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  android-keystore:
+    name: Verify real Android Keystore migration
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.50.0"
+          cache: true
+
+      - name: Create Android project files
+        run: flutter create --platforms=android --project-name zeus_vpn --org ir.zeus .
+
+      - name: Patch Android files
+        run: python3 tools/patch_android.py
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Run Android Keystore integration test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: flutter test integration_test/credential_vault_integration_test.dart -d emulator-5554
+
   release:
     name: Build and publish signed release APKs
     if: github.event_name == 'workflow_dispatch' && inputs.publish_release == 'true'
-    needs: verify
+    needs: [verify, android-keystore]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -143,7 +198,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: "3.50.0"
           cache: true
 
       - name: Create Android project files
