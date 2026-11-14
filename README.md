@@ -7,6 +7,7 @@ ZEUS VPN v2.11.0 is a Flutter Android VPN client built on `flutter_v2ray_client`
 - Pull requests and pushes to `main` run Dart analysis, unit/widget tests, and a debug APK build.
 - The debug APK uses the `.debug` application-ID suffix and can be installed beside a release build without replacing its app data.
 - CI uploads the debug APK as a short-lived verification artifact. It is not a production release.
+- CI runs a separate Android API 35 emulator test against the real Android Keystore-backed storage adapter.
 - Automatic APK publishing on every push is disabled. A public release now requires a manual workflow dispatch, all signing secrets, and a pinned signing-certificate fingerprint.
 - A successful CI run does not prove real-world VPN traffic, recovery after network changes, WARP behavior, physical-device background service behavior, or upgrade compatibility.
 
