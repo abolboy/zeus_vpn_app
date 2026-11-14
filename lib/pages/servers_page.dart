@@ -523,8 +523,13 @@ class _ServersPageState extends State<ServersPage> {
   }
 
   /// نگه‌داشتن روی سرور: QR و کپی لینک برای اشتراک‌گذاری
-  void _share(ServerNode n) {
+  void _share(ServerNode n) async {
     HapticFeedback.selectionClick();
+    final confirmed = await confirmSensitiveCopy(
+      context,
+      subject: 'کد QR لینک سرور',
+    );
+    if (!confirmed || !mounted) return;
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: kSurface2,
@@ -551,7 +556,6 @@ class _ServersPageState extends State<ServersPage> {
                 label: 'کپی لینک',
                 icon: Icons.copy,
                 onTap: () async {
-                  if (!await confirmSensitiveCopy(context, subject: 'لینک سرور')) return;
                   await Clipboard.setData(ClipboardData(text: n.rawUri));
                   if (ctx.mounted) Navigator.pop(ctx);
                   _snack('لینک کپی شد');
