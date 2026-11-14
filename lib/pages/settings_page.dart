@@ -105,7 +105,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('کانفیگ WireGuard (WARP)'),
+        title: const Text('پروفایل WireGuard / WARP'),
         content: SizedBox(
           width: double.maxFinite,
           child: TextField(
@@ -113,7 +113,7 @@ class _SettingsPageState extends State<SettingsPage> {
             minLines: 5,
             maxLines: 9,
             style: TextStyle(fontFamily: kMono, fontSize: 11.5),
-            decoration: const InputDecoration(hintText: '[Interface]\nPrivateKey = …\nAddress = 172.16.0.2/32\n\n[Peer]\nPublicKey = …\nEndpoint = …'),
+            decoration: const InputDecoration(hintText: '[Interface]\nPrivateKey = …\nAddress = 10.0.0.2/32\nDNS = 1.1.1.1\n\n[Peer]\nPublicKey = …\nAllowedIPs = 0.0.0.0/0, ::/0\nEndpoint = 203.0.113.1:51820'),
           ),
         ),
         actions: [
@@ -126,7 +126,7 @@ class _SettingsPageState extends State<SettingsPage> {
     Future.delayed(const Duration(milliseconds: 500), ctl.dispose);
     if (ok != true) return;
     final err = await c.importWarpConf(text);
-    _snack(err ?? 'کانفیگ WARP وارد و فعال شد', err: err != null);
+    _snack(err ?? 'پروفایل WireGuard وارد و فعال شد', err: err != null);
     if (err == null && c.connected) setState(() => _dirty = true);
   }
 
@@ -191,16 +191,16 @@ class _SettingsPageState extends State<SettingsPage> {
                 if (_dirty && c.connected) _reconnectBanner(),
 
                 // ───────── WARP ─────────
-                const SectionLabel('Cloudflare WARP'),
+                const SectionLabel('WireGuard / Cloudflare WARP'),
                 GlassCard(
                   child: Column(
                     children: [
                       _switch(
                         icon: Icons.cloud_outlined,
-                        title: 'WARP روی سرور',
+                        title: 'تونل WireGuard روی سرور',
                         subtitle: c.warp?.isValid == true
-                            ? 'ثبت‌شده • ${c.warp!.addressV4}'
-                            : 'ثبت نشده — اول «ثبت WARP» را بزنید',
+                            ? 'پروفایل آماده • ${c.warp!.addressV4}'
+                            : 'پروفایل WireGuard وارد یا ثبت نشده است',
                         value: c.warpOn,
                         onChanged: (v) async {
                           await c.setWarpOn(v);
@@ -210,7 +210,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       const Divider(height: 1),
                       ListTile(
                         leading: Icon(Icons.how_to_reg_outlined, color: kGreen),
-                        title: Text(c.warp?.isValid == true ? 'ثبت مجدد WARP' : 'ثبت WARP'),
+                        title: Text(c.warp?.isCloudflareRegistered == true ? 'ثبت مجدد Cloudflare WARP' : 'ثبت Cloudflare WARP'),
                         subtitle: Text(c.connected ? 'از طریق تونل فعلی ثبت می‌شود' : 'به اینترنت آزاد یا اتصال فعال نیاز دارد',
                             style: const TextStyle(fontSize: 11)),
                         trailing: c.busy
@@ -221,15 +221,16 @@ class _SettingsPageState extends State<SettingsPage> {
                       const Divider(height: 1),
                       ListTile(
                         leading: Icon(Icons.vpn_key_outlined, color: kGreen),
-                        title: const Text('وارد کردن کانفیگ WireGuard'),
-                        subtitle: const Text('اگر ثبت خودکار جواب نداد: متن wgcf-profile.conf را جایگذاری کنید',
+                        title: const Text('وارد کردن پروفایل WireGuard'),
+                        subtitle: const Text('محتوای فایل WireGuard با بخش‌های [Interface] و [Peer] را جایگذاری کنید',
                             style: TextStyle(fontSize: 11)),
                         trailing: Icon(Icons.chevron_left, color: kMuted),
                         onTap: _importWarp,
                       ),
                       if (c.warp?.isValid == true) ...[
                         const Divider(height: 1),
-                        _dropdown<String>(
+                        if (c.warp?.isCloudflareRegistered == true) ...[
+                          _dropdown<String>(
                           icon: Icons.router_outlined,
                           title: 'Endpoint',
                           value: kWarpEndpoints.contains(c.warp!.endpoint) ? c.warp!.endpoint : kWarpEndpoints.first,
@@ -240,12 +241,13 @@ class _SettingsPageState extends State<SettingsPage> {
                           },
                         ),
                         const Divider(height: 1),
+                        ],
                         _dropdown<String>(
                           icon: Icons.alt_route,
-                          title: 'حالت WARP',
+                          title: 'حالت WireGuard',
                           value: s.warpMode == 'only' ? 'only' : 'chain',
                           items: const ['chain', 'only'],
-                          label: (v) => v == 'only' ? 'فقط WARP — بدون سرور' : 'روی سرور فعال (زنجیره)',
+                          label: (v) => v == 'only' ? 'فقط WireGuard — بدون سرور' : 'زنجیره روی سرور فعال',
                           onChanged: (v) {
                             c.setWarpMode(v);
                             if (c.connected) setState(() => _dirty = true);
@@ -254,7 +256,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         const Divider(height: 1),
                         _dropdown<int>(
                           icon: Icons.settings_ethernet,
-                          title: 'MTU تونل WARP',
+                          title: 'MTU تونل WireGuard',
                           value: s.warpMtu,
                           items: const [1280, 1380, 1420],
                           // اگر WARP وصل نمی‌شود، ۱۳۸۰ را امتحان کنید
@@ -264,14 +266,16 @@ class _SettingsPageState extends State<SettingsPage> {
                             if (c.connected) setState(() => _dirty = true);
                           },
                         ),
-                        const Divider(height: 1),
-                        _switch(
-                          icon: Icons.auto_fix_high,
-                          title: 'تعویض خودکار Endpoint',
-                          subtitle: 'اگر بعد از اتصال تونل تأیید نشد، endpoint بعدی خودکار امتحان می‌شود',
-                          value: s.warpAutoFix,
-                          onChanged: (v) => c.setWarpAutoFix(v),
-                        ),
+                        if (c.warp?.isCloudflareRegistered == true) ...[
+                          const Divider(height: 1),
+                          _switch(
+                            icon: Icons.auto_fix_high,
+                            title: 'تعویض خودکار Endpoint',
+                            subtitle: 'اگر تونل WARP تأیید نشد، endpoint بعدی Cloudflare امتحان می‌شود',
+                            value: s.warpAutoFix,
+                            onChanged: (v) => c.setWarpAutoFix(v),
+                          ),
+                        ],
                       ],
                     ],
                   ),
