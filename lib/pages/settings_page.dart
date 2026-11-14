@@ -97,6 +97,38 @@ class _SettingsPageState extends State<SettingsPage> {
     if (mounted) setState(() {});
   }
 
+  Future<bool> _confirmWireGuardProfileReplacement({
+    required String action,
+  }) async {
+    final current = c.warp;
+    if (current?.isValid != true) return true;
+
+    return await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('جایگزینی پروفایل WireGuard؟'),
+            content: Text(
+              'در حال حاضر یک پروفایل با Endpoint زیر ذخیره شده است:\\n'
+              '${current!.endpoint}\\n\\n'
+              '$action پروفایل و کلید خصوصی فعلی را جایگزین می‌کند. '
+              'اگر هنوز به آن سرور نیاز داری، قبل از ادامه فایل تنظیماتش را در محل امن نگه دار.',
+              textDirection: TextDirection.rtl,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('نگه‌داشتن پروفایل فعلی'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('جایگزینی'),
+              ),
+            ],
+          ),
+        ) ==
+        true;
+  }
+
   Future<void> _importWarp() async {
     final ctl = TextEditingController();
     final clip = (await Clipboard.getData(Clipboard.kTextPlain))?.text ?? '';
@@ -125,6 +157,11 @@ class _SettingsPageState extends State<SettingsPage> {
     final text = ctl.text;
     Future.delayed(const Duration(milliseconds: 500), ctl.dispose);
     if (ok != true) return;
+    if (!await _confirmWireGuardProfileReplacement(
+      action: 'واردکردن پروفایل جدید',
+    )) {
+      return;
+    }
     final err = await c.importWarpConf(text);
     _snack(err ?? 'پروفایل WireGuard وارد و فعال شد', err: err != null);
     if (err == null && c.connected) setState(() => _dirty = true);
@@ -162,6 +199,11 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _registerWarp() async {
+    if (!await _confirmWireGuardProfileReplacement(
+      action: 'ثبت‌نام Cloudflare WARP',
+    )) {
+      return;
+    }
     final err = await c.warpRegister();
     if (err != null) {
       _snack(err, err: true);
@@ -210,9 +252,19 @@ class _SettingsPageState extends State<SettingsPage> {
                       const Divider(height: 1),
                       ListTile(
                         leading: Icon(Icons.how_to_reg_outlined, color: kGreen),
-                        title: Text(c.warp?.isCloudflareRegistered == true ? 'ثبت مجدد Cloudflare WARP' : 'ثبت Cloudflare WARP'),
-                        subtitle: Text(c.connected ? 'از طریق تونل فعلی ثبت می‌شود' : 'به اینترنت آزاد یا اتصال فعال نیاز دارد',
-                            style: const TextStyle(fontSize: 11)),
+                        title: Text(
+                          c.warp?.isCloudflareRegistered == true
+                              ? 'ثبت مجدد Cloudflare WARP'
+                              : 'ثبت Cloudflare WARP',
+                        ),
+                        subtitle: Text(
+                          c.warp?.isValid == true && c.warp?.isCloudflareRegistered != true
+                              ? 'پروفایل فعلی WireGuard پس از تأیید جایگزین می‌شود'
+                              : (c.connected
+                                  ? 'از طریق تونل فعلی ثبت می‌شود'
+                                  : 'به اینترنت آزاد یا اتصال فعال نیاز دارد'),
+                          style: const TextStyle(fontSize: 11),
+                        ),
                         trailing: c.busy
                             ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: kGreen))
                             : Icon(Icons.chevron_left, color: kMuted),
