@@ -211,6 +211,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       children: [
         _logo(),
+        _idleCommandCenter(),
         _updateBanner(),
         _announce(),
         const SizedBox(height: 14),
@@ -271,6 +272,73 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       ],
     );
   }
+
+  // مرکز فرماندهی در حالت آماده‌به‌کار؛ مقادیر از کنترلر واقعی VPN خوانده می‌شوند.
+  // نقشه صرفاً نمایش گرافیکی مسیر/شبکه است و موقعیت جغرافیایی دقیق ادعا نمی‌کند.
+  Widget _idleCommandCenter() => GlassCard(
+        hud: true,
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.public, color: kBlue, size: 17),
+                const SizedBox(width: 7),
+                const Expanded(
+                  child: Text(
+                    'نمای شبکه ZEUS',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+                  ),
+                ),
+                StatusBadge(
+                  c.connected ? 'LIVE' : 'STANDBY',
+                  color: c.connected ? kGreen : kMuted,
+                  pulse: c.connected,
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            SizedBox(
+              height: 94,
+              child: RepaintBoundary(
+                child: CustomPaint(
+                  size: Size.infinite,
+                  painter: _MapPainter(zeusClock, _stateColor),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(height: 1, color: kBorder),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _kv(
+                    'پینگ سرور',
+                    c.selected?.pingText ?? '--',
+                    Icons.network_ping,
+                  ),
+                ),
+                Expanded(
+                  child: _kv(
+                    'دانلود',
+                    fmtMbps(c.downSpeed),
+                    Icons.download_rounded,
+                  ),
+                ),
+                Expanded(
+                  child: _kv(
+                    'آپلود',
+                    fmtMbps(c.upSpeed),
+                    Icons.upload_rounded,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
 
   /// بنر نسخهٔ جدید (از GitHub Releases)
   bool _updateHidden = false;
@@ -395,6 +463,22 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         hud: true,
         child: Column(
           children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'مانیتور ترافیک',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+                  ),
+                ),
+                StatusBadge(
+                  c.connected ? 'LIVE' : 'STANDBY',
+                  color: c.connected ? kGreen : kMuted,
+                  pulse: c.connected,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
             Row(
               children: [
                 _speedCell(Icons.download_rounded, 'دانلود', fmtRate(c.downSpeed), kGreen),
