@@ -32,7 +32,7 @@ ZEUS VPN is a Flutter Android VPN client built on `flutter_v2ray_client` and Xra
 
 ## Build locally
 
-Requires Flutter 3.35 or newer, Dart 3.8 or newer, JDK 17, and Android API 24 or newer.
+Verified with Flutter 3.50.0, Dart 3.13.0, JDK 17, and Android API 24 or newer.
 
 ```sh
 flutter pub get
