@@ -15,6 +15,14 @@ on:
           - "false"
           - "true"
         default: "false"
+      verify_signing_identity:
+        description: "Only compare the current GitHub signing secret with the certificate in the previously distributed APK"
+        required: true
+        type: choice
+        options:
+          - "false"
+          - "true"
+        default: "false"
 
 permissions:
   contents: read
@@ -69,6 +77,15 @@ jobs:
           gradle_kts = Path("android/app/build.gradle.kts")
           gradle_file = gradle_kts if gradle_kts.is_file() else Path("android/app/build.gradle")
           gradle_text = gradle_file.read_text(encoding="utf-8")
+          expected_application_id = "ir.zeus.zeus_vpn"
+          application_id_line = (
+              f'applicationId = "{expected_application_id}"'
+              if gradle_file.suffix == ".kts"
+              else f'applicationId "{expected_application_id}"'
+          )
+          assert application_id_line in gradle_text, (
+              "Application ID must remain ir.zeus.zeus_vpn to preserve update compatibility"
+          )
           debug_suffix = (
               'applicationIdSuffix = ".debug"'
               if gradle_file.suffix == ".kts"
@@ -177,6 +194,53 @@ jobs:
           disable-animations: true
           script: flutter test integration_test/credential_vault_integration_test.dart -d emulator-5554
 
+  verify-signing-identity:
+    name: Verify existing release signing identity (no APK publish)
+    if: github.event_name == 'workflow_dispatch' && inputs.verify_signing_identity == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Compare GitHub keystore certificate with the previously distributed APK
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in KEYSTORE_B64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Required signing value is missing: $name"
+              exit 1
+            fi
+          done
+
+          mkdir -p "$RUNNER_TEMP/zeus-signing-check"
+          key_file="$RUNNER_TEMP/zeus-signing-check/release.jks"
+          chmod 700 "$RUNNER_TEMP/zeus-signing-check"
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$key_file"
+          chmod 600 "$key_file"
+
+          actual="$(keytool -list -v -keystore "$key_file" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" 2>/dev/null | awk -F': ' '/SHA256:/{print $2; exit}' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+          expected="BC9439740C809594CE3CBEEAF9ED942B08B6C9E36CAE8BC1E2B649490A68FB2C"
+
+          if [ -z "$actual" ]; then
+            echo "::error::Could not read the active release certificate from the configured keystore."
+            exit 1
+          fi
+          echo "Current release certificate SHA-256: $actual"
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::The active GitHub signing secret does not match the certificate in previously distributed ZEUS VPN v2.10.1 APKs. Do not publish an update until the signing identity is reconciled."
+            exit 1
+          fi
+          echo "::notice::The active signing identity matches the previously distributed ZEUS VPN APK certificate. No APK was built or published by this verification job."
+
   release:
     name: Build and publish signed release APKs
     if: github.event_name == 'workflow_dispatch' && inputs.publish_release == 'true'
@@ -213,7 +277,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          EXPECTED_CERT_SHA256: ${{ vars.ANDROID_RELEASE_CERT_SHA256 }}
+          EXPECTED_CERT_SHA256: ${{ vars.ANDROID_RELEASE_CERT_SHA256 || 'BC9439740C809594CE3CBEEAF9ED942B08B6C9E36CAE8BC1E2B649490A68FB2C' }}
         run: |
           set -euo pipefail
           for name in KEYSTORE_B64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD EXPECTED_CERT_SHA256; do
