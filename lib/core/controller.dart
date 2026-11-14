@@ -1461,8 +1461,23 @@ class ZeusController extends ChangeNotifier {
         }
       }
       if (cfg == null) return 'ثبت‌نام WARP ناموفق بود';
+      final previousWarp = warp;
       warp = cfg;
-      await saveWarp();
+      try {
+        await saveWarp();
+      } catch (error) {
+        warp = previousWarp;
+        try {
+          await saveWarp();
+        } catch (rollbackError) {
+          log(
+            LogKind.system,
+            'WARP profile rollback also failed: $rollbackError',
+            LogLevel.error,
+          );
+        }
+        rethrow;
+      }
       log(LogKind.system, 'WARP registered (${warp?.addressV4})');
       return null;
     } on WarpException catch (e) {
@@ -1477,25 +1492,67 @@ class ZeusController extends ChangeNotifier {
     }
   }
 
-  /// کانفیگ WireGuard (فرمت wgcf) را به‌جای ثبت‌نام خودکار وارد می‌کند. null = موفق
+  /// Import a WireGuard client profile without losing the previously saved profile
+  /// when parsing or encrypted persistence fails.
   Future<String?> importWarpConf(String text) async {
+    late final WarpConfig imported;
     try {
-      final imported = parseWireGuardConf(text);
+      imported = parseWireGuardConf(text);
+    } on FormatException catch (e) {
+      return e.message;
+    } catch (error) {
+      log(LogKind.system, 'WireGuard profile parse failed: $error', LogLevel.warn);
+      return 'خواندن پروفایل WireGuard ناموفق بود';
+    }
+
+    final previousWarp = warp;
+    final previousWarpOn = warpOn;
+    final previousMtu = settings.warpMtu;
+    final importedMtu = imported.interfaceMtu;
+    final applyImportedMtu =
+        importedMtu != null &&
+        const [1280, 1380, 1420].contains(importedMtu) &&
+        importedMtu != previousMtu;
+
+    try {
       warp = imported;
       warpOn = true;
-      if (imported.interfaceMtu != null &&
-          const [1280, 1380, 1420].contains(imported.interfaceMtu)) {
-        settings.warpMtu = imported.interfaceMtu!;
+      await saveWarp();
+
+      if (applyImportedMtu) {
+        settings.warpMtu = importedMtu;
         await saveSettings();
       }
-      await saveWarp();
+
       log(LogKind.system, 'WireGuard profile imported (${warp?.addressV4})');
       notifyListeners();
       return null;
-    } on FormatException catch (e) {
-      return e.message;
-    } catch (_) {
-      return 'کانفیگ قابل خواندن نیست';
+    } catch (error) {
+      warp = previousWarp;
+      warpOn = previousWarpOn;
+      settings.warpMtu = previousMtu;
+
+      // Best-effort rollback if the new secure value was written before a later
+      // preference operation failed. If Keystore is unavailable, the vault
+      // preserves the old stored value and this rollback is logged.
+      try {
+        await saveWarp();
+        if (applyImportedMtu) await saveSettings();
+      } catch (rollbackError) {
+        log(
+          LogKind.system,
+          'WireGuard profile rollback failed: $rollbackError',
+          LogLevel.error,
+        );
+      }
+
+      log(
+        LogKind.system,
+        'WireGuard profile could not be saved securely: $error',
+        LogLevel.error,
+      );
+      notifyListeners();
+      return 'پروفایل خوانده شد، اما ذخیرهٔ امن آن ناموفق بود؛ پروفایل قبلی حفظ شد. جزئیات در لاگ‌ها ثبت شد.';
     }
   }
 
