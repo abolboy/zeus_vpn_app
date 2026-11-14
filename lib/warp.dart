@@ -325,7 +325,10 @@ class WarpConfig {
       'endpoint': endpointOverride ?? endpoint,
       'keepAlive': keepAlive,
       'allowedIPs': allowedIPs.isEmpty
-          ? const <String>['0.0.0.0/0', '::/0']
+          ? <String>[
+              '0.0.0.0/0',
+              if (includeV6 && addressV6.isNotEmpty) '::/0',
+            ]
           : List<String>.of(allowedIPs),
       if (preSharedKey.isNotEmpty) 'preSharedKey': preSharedKey,
     };
