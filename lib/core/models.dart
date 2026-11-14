@@ -22,6 +22,7 @@
       },
     );
 
+
     // Authorization headers are sometimes formatted as a Bearer scheme.
     text = text.replaceAll(
       RegExp(r'(Bearer\s+)[A-Za-z0-9._~+/-]+=*', caseSensitive: false),
