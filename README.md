@@ -25,7 +25,7 @@ ZEUS VPN is a Flutter Android VPN client built on `flutter_v2ray_client` and Xra
 
 ## Credential storage
 
-- Subscription URLs, cached server URIs, the active server URI, the WireGuard/WARP profile (including private keys), and connection settings containing a chain URI are stored with `flutter_secure_storage` using Android Keystore-backed encryption.
+- Subscription URLs, cached server URIs, the active server URI, the WireGuard/WARP profile (including private keys), and connection settings containing a chain URI are stored with `flutter_secure_storage` using Android Keystore-backed encryption. Keystore errors do not trigger automatic secure-store resets.
 - On first launch after the security update, legacy values are migrated from SharedPreferences. The secure write happens before the plaintext value is removed. If migration fails, the old value is retained for recovery and the app logs a warning; new secrets are never written back to plaintext storage.
 - Android Auto Backup remains disabled because the encrypted values depend on the device's Android Keystore. Reinstalling or moving to another device can require the user to re-import subscriptions and WireGuard credentials.
 - The manual `ZEUS-BACKUP` clipboard export still includes subscription URLs. Its Base64 encoding is **not encryption**; the app asks for confirmation before copying it. Treat that text as a credential file and never post it publicly.
