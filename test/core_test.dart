@@ -511,6 +511,57 @@ void main() {
     });
   });
 
+  group('retired subscription cleanup', () {
+    test('removes only retired subscription nodes and preserves manual nodes', () {
+      final retired = ServerNode.fromUri(
+        'vless://retired@retired.example:443?security=tls#Retired',
+        'S1',
+      );
+      final personalFirst = ServerNode.fromUri(
+        'vless://personal-one@personal.example:443?security=tls#PersonalOne',
+        'S2',
+      );
+      final manual = ServerNode.fromUri(
+        'vless://manual@manual.example:443?security=tls#Manual',
+        'M',
+      );
+      final personalSecond = ServerNode.fromUri(
+        'vless://personal-two@personal.example:444?security=tls#PersonalTwo',
+        'S3',
+      );
+      final nodes = [retired, personalFirst, manual, personalSecond];
+
+      removeSubscriptionNodesAndReindex(nodes, {0});
+
+      expect(nodes.map((node) => node.rawUri).toList(), [
+        personalFirst.rawUri,
+        manual.rawUri,
+        personalSecond.rawUri,
+      ]);
+      expect(personalFirst.subTag, 'S1');
+      expect(manual.subTag, 'M');
+      expect(personalSecond.subTag, 'S2');
+    });
+
+    test('removing multiple subscription groups reindexes only later groups', () {
+      final first = ServerNode.fromUri('trojan://a@a.example:443#A', 'S1');
+      final second = ServerNode.fromUri('trojan://b@b.example:443#B', 'S2');
+      final third = ServerNode.fromUri('trojan://c@c.example:443#C', 'S3');
+      final fourth = ServerNode.fromUri('trojan://d@d.example:443#D', 'S4');
+      final manual = ServerNode.fromUri('vless://m@m.example:443?security=tls#M', 'M');
+      final nodes = [first, second, third, fourth, manual];
+
+      removeSubscriptionNodesAndReindex(nodes, {0, 2});
+
+      expect(nodes.map((node) => node.subTag).toList(), ['S1', 'S2', 'M']);
+      expect(nodes.map((node) => node.rawUri).toList(), [
+        second.rawUri,
+        fourth.rawUri,
+        manual.rawUri,
+      ]);
+    });
+  });
+
   group('subscription meta & built-in servers', () {
     test('reads title, userinfo and announce from comment lines', () {
       const body = '# profile-title: Test\n# subscription-userinfo: upload=10; download=20; total=100; expire=1893456000\n'
