@@ -162,10 +162,12 @@ class ZeusController extends ChangeNotifier {
     booted = true;
     final p = await SharedPreferences.getInstance();
     await _loadPrefs(p);
-    await _seedFreeSubs(p);
     log(LogKind.system, 'ZEUS starting…');
     await _initCore();
-    unawaited(_detectRunningTunnel());
+    // Detect a tunnel left running by the previous process before pruning
+    // retired subscriptions, so active selection/chain state is preserved.
+    await _detectRunningTunnel();
+    await _seedFreeSubs(p);
     if (subs.isNotEmpty) {
       syncAll().then((_) {
         if (settings.autoConnect && !connected && !connecting) quickConnect();
@@ -205,7 +207,16 @@ class ZeusController extends ChangeNotifier {
       for (final index in sortedRetired.reversed) {
         subs.removeAt(index);
       }
-      removeSubscriptionNodesAndReindex(nodes, retiredIndexes);
+      final preserveUris = <String>{};
+      if (connected || connecting) {
+        if (selUri != null) preserveUris.add(selUri!);
+        if (settings.chainUri.isNotEmpty) preserveUris.add(settings.chainUri);
+      }
+      removeSubscriptionNodesAndReindex(
+        nodes,
+        retiredIndexes,
+        preserveUris: preserveUris,
+      );
 
       if (selUri != null &&
           !nodes.any((node) => node.rawUri == selUri) &&
