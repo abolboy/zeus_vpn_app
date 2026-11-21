@@ -118,6 +118,29 @@
     }
   }
 
+  /// Remove only selected subscription groups and reindex the remaining groups.
+  /// Manual entries (M) and unrelated local nodes are retained.
+  List<ServerNode> removeSubscriptionNodesAndReindex(
+    List<ServerNode> nodes,
+    Set<int> removedZeroBasedIndexes,
+  ) {
+    final sorted = removedZeroBasedIndexes.toList()..sort();
+    nodes.removeWhere((node) {
+      final number = node.subTag.startsWith('S')
+          ? int.tryParse(node.subTag.substring(1))
+          : null;
+      if (number == null || number <= 0) return false;
+      final oldIndex = number - 1;
+      if (removedZeroBasedIndexes.contains(oldIndex)) return true;
+      final removedBefore = sorted.where((index) => index < oldIndex).length;
+      if (removedBefore > 0) {
+        node.subTag = 'S${oldIndex - removedBefore + 1}';
+      }
+      return false;
+    });
+    return nodes;
+  }
+
   // ───────────── Link parsing ─────────────
   class ParsedLink {
     final String name;
