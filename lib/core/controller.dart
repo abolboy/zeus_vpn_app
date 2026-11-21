@@ -162,11 +162,9 @@ class ZeusController extends ChangeNotifier {
     booted = true;
     final p = await SharedPreferences.getInstance();
     await _loadPrefs(p);
+    await _seedFreeSubs(p);
     log(LogKind.system, 'ZEUS starting…');
     await _initCore();
-    await _seedFreeSubs(p);
-    // Best-effort state sync; cleanup preserves configured server references
-    // independently of whether the tunnel probe can confirm connectivity.
     unawaited(_detectRunningTunnel());
     if (subs.isNotEmpty) {
       syncAll().then((_) {
@@ -182,71 +180,31 @@ class ZeusController extends ChangeNotifier {
   /// اشتراک‌های داخلی («سرورهای رایگان») را یک‌بار به‌ازای هر آدرس اضافه می‌کند؛
   /// اگر کاربر حذفشان کند دوباره اضافه نمی‌شوند.
   Future<void> _seedFreeSubs(SharedPreferences p) async {
-    // Retire only old built-in groups; keep personal subscriptions and manual links.
-    final retiredIndexes = <int>{};
-    for (var i = 0; i < subs.length; i++) {
-      final url = subs[i].url;
-      if (kRetiredFreeSubscriptions.contains(url) &&
-          !kFreeSubscriptions.contains(url)) {
-        retiredIndexes.add(i);
-      }
-    }
-
-    if (retiredIndexes.isNotEmpty) {
-      final previousSelection = selUri;
-      final previousChain = settings.chainUri;
-      final sortedRetired = retiredIndexes.toList()..sort();
-      for (final index in sortedRetired.reversed) {
-        subs.removeAt(index);
-      }
-      // Keep configured selections even if the connectivity probe cannot
-      // confirm a tunnel (for example, when the probe endpoint is unreachable).
-      final preserveUris = <String>{
-        if (selUri != null) selUri!,
-        if (settings.chainUri.isNotEmpty) settings.chainUri,
-      };
-      removeSubscriptionNodesAndReindex(
-        nodes,
-        retiredIndexes,
-        preserveUris: preserveUris,
-      );
-
-      if (selUri != null &&
-          !nodes.any((node) => node.rawUri == selUri) &&
-          !connected &&
-          !connecting) {
-        selUri = null;
-      }
-      if (!connected &&
-          !connecting &&
-          previousChain.isNotEmpty &&
-          !nodes.any((node) => node.rawUri == previousChain)) {
-        settings.chainUri = '';
-      }
-
+    // اشتراک داخلیِ بازنشسته («سرورهای رایگان» نسخه‌های قبلی) از لیست کاربر پاک می‌شود
+    final before0 = subs.length;
+    subs.removeWhere((s) => kRetiredFreeSubscriptions.contains(s.url) && !kFreeSubscriptions.contains(s.url));
+    if (subs.length != before0) {
+      nodes = [];
+      selUri = null;
       await _saveSubs();
       await _saveNodes();
-      if (previousSelection != selUri) await _saveSel();
-      if (previousChain != settings.chainUri) await saveSettings();
+      await _saveSel();
       await p.remove('free_seeded_urls');
       log(LogKind.system, 'Retired built-in free subscription removed');
     }
-
     if (kFreeSubscriptions.isEmpty) return;
     final seeded = (p.getStringList('free_seeded_urls') ?? <String>[]).toSet();
     final before = seeded.length;
     var added = false;
-    for (final url in kFreeSubscriptions) {
-      if (seeded.contains(url)) continue;
-      seeded.add(url);
-      if (!subs.any((subscription) => subscription.url == url)) {
-        subs.add(SubRecord(url: url, name: kFreeSubName));
+    for (final u in kFreeSubscriptions) {
+      if (seeded.contains(u)) continue;
+      seeded.add(u);
+      if (!subs.any((s) => s.url == u)) {
+        subs.add(SubRecord(url: u, name: kFreeSubName));
         added = true;
       }
     }
-    if (seeded.length != before) {
-      await p.setStringList('free_seeded_urls', seeded.toList());
-    }
+    if (seeded.length != before) await p.setStringList('free_seeded_urls', seeded.toList());
     if (added) {
       await _saveSubs();
       log(LogKind.system, 'Built-in free subscription added');
