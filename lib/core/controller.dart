@@ -164,10 +164,10 @@ class ZeusController extends ChangeNotifier {
     await _loadPrefs(p);
     log(LogKind.system, 'ZEUS starting…');
     await _initCore();
-    // Detect a tunnel left running by the previous process before pruning
-    // retired subscriptions, so active selection/chain state is preserved.
-    await _detectRunningTunnel();
     await _seedFreeSubs(p);
+    // Best-effort state sync; cleanup preserves configured server references
+    // independently of whether the tunnel probe can confirm connectivity.
+    unawaited(_detectRunningTunnel());
     if (subs.isNotEmpty) {
       syncAll().then((_) {
         if (settings.autoConnect && !connected && !connecting) quickConnect();
@@ -193,25 +193,18 @@ class ZeusController extends ChangeNotifier {
     }
 
     if (retiredIndexes.isNotEmpty) {
-      final removedUris = nodes.where((node) {
-        final number = node.subTag.startsWith('S')
-            ? int.tryParse(node.subTag.substring(1))
-            : null;
-        if (number == null || number <= 0) return false;
-        return retiredIndexes.contains(number - 1);
-      }).map((node) => node.rawUri).toSet();
-
       final previousSelection = selUri;
       final previousChain = settings.chainUri;
       final sortedRetired = retiredIndexes.toList()..sort();
       for (final index in sortedRetired.reversed) {
         subs.removeAt(index);
       }
-      final preserveUris = <String>{};
-      if (connected || connecting) {
-        if (selUri != null) preserveUris.add(selUri!);
-        if (settings.chainUri.isNotEmpty) preserveUris.add(settings.chainUri);
-      }
+      // Keep configured selections even if the connectivity probe cannot
+      // confirm a tunnel (for example, when the probe endpoint is unreachable).
+      final preserveUris = <String>{
+        if (selUri != null) selUri!,
+        if (settings.chainUri.isNotEmpty) settings.chainUri,
+      };
       removeSubscriptionNodesAndReindex(
         nodes,
         retiredIndexes,
@@ -227,7 +220,7 @@ class ZeusController extends ChangeNotifier {
       if (!connected &&
           !connecting &&
           previousChain.isNotEmpty &&
-          removedUris.contains(previousChain)) {
+          !nodes.any((node) => node.rawUri == previousChain)) {
         settings.chainUri = '';
       }
 
