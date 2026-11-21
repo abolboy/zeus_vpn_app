@@ -543,6 +543,27 @@ void main() {
       expect(personalSecond.subTag, 'S2');
     });
 
+    test('preserves the active retired node as manual', () {
+      final active = ServerNode.fromUri(
+        'vless://active@active.example:443?security=tls#Active',
+        'S1',
+      );
+      final other = ServerNode.fromUri(
+        'vless://other@other.example:443?security=tls#Other',
+        'S1',
+      );
+      final nodes = [active, other];
+
+      removeSubscriptionNodesAndReindex(
+        nodes,
+        {0},
+        preserveUris: {active.rawUri},
+      );
+
+      expect(nodes, [active]);
+      expect(active.subTag, 'M');
+    });
+
     test('removing multiple subscription groups reindexes only later groups', () {
       final first = ServerNode.fromUri('trojan://a@a.example:443#A', 'S1');
       final second = ServerNode.fromUri('trojan://b@b.example:443#B', 'S2');
